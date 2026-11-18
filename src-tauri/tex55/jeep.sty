@@ -1,0 +1,68 @@
+% jeep.sty -- stand-in written for opensw (MIT licence, see the opensw repository).
+%
+% Scientific Word 5.x styles sw20jart/sw20jrep/sw20jar2 load G. W. Stewart's
+% "jeep" style, which opensw does not ship. When the user's own Scientific Word
+% 5.x installation is found, opensw uses the original instead of this file.
+% This file gives the same page size, heading form and the commands those
+% styles call, using standard LaTeX mechanisms.
+
+% --- page size (letter paper: 5.75in x 7.5in of text) ---
+\setlength{\topmargin}{.25in}
+\setlength{\textheight}{7.5in}
+\setlength{\oddsidemargin}{.375in}
+\setlength{\evensidemargin}{.375in}
+\setlength{\textwidth}{5.75in}
+
+% --- lengths some styles adjust ---
+\newlength{\chaptopsep}\setlength{\chaptopsep}{.5in}
+\newlength{\chapaftersep}\setlength{\chapaftersep}{.5in}
+\newlength{\underheadsep}\setlength{\underheadsep}{.5ex}
+
+% --- section headings: "1. Title", section large bold, lower levels normal bold ---
+\renewcommand\@seccntformat[1]{\csname the#1\endcsname.~}
+\renewcommand\section{\@startsection{section}{1}{\z@}%
+  {-3.5ex \@plus -1ex \@minus -.2ex}{2.3ex \@plus.2ex}{\large\bfseries}}
+\renewcommand\subsection{\@startsection{subsection}{2}{\z@}%
+  {-3.25ex\@plus -1ex \@minus -.2ex}{1.5ex \@plus .2ex}{\normalsize\bfseries}}
+\renewcommand\subsubsection{\@startsection{subsubsection}{3}{\z@}%
+  {-3.25ex\@plus -1ex \@minus -.2ex}{1.5ex \@plus .2ex}{\normalsize\bfseries}}
+
+% --- theorems: bold "Theorem 1." then slanted text ---
+\def\thmcounterend{.}
+\def\@begintheorem#1#2{\slshape \trivlist
+  \item[\hskip \labelsep{\bfseries #1\ #2\thmcounterend}]}
+\def\@opargbegintheorem#1#2#3{\slshape \trivlist
+  \item[\hskip \labelsep{\bfseries #1\ #2\ (#3)\thmcounterend}]}
+
+% --- number equations, theorems, figures and tables within sections ---
+\def\numberbysection{%
+  \renewcommand{\theequation}{\thesection.\arabic{equation}}\@addtoreset{equation}{section}%
+  \@ifundefined{c@theorem}{}{\renewcommand{\thetheorem}{\thesection.\arabic{theorem}}\@addtoreset{theorem}{section}}%
+  \renewcommand{\thefigure}{\thesection.\arabic{figure}}\@addtoreset{figure}{section}%
+  \renewcommand{\thetable}{\thesection.\arabic{table}}\@addtoreset{table}{section}}
+\def\numberbysubsection{%
+  \renewcommand{\theequation}{\thesubsection.\arabic{equation}}\@addtoreset{equation}{subsection}%
+  \@ifundefined{c@theorem}{}{\renewcommand{\thetheorem}{\thesubsection.\arabic{theorem}}\@addtoreset{theorem}{subsection}}%
+  \renewcommand{\thefigure}{\thesubsection.\arabic{figure}}\@addtoreset{figure}{subsection}%
+  \renewcommand{\thetable}{\thesubsection.\arabic{table}}\@addtoreset{table}{subsection}}
+
+% --- three-part head and foot: \lhead \chead \rhead \lfoot \cfoot \rfoot (+ \e... for even pages) ---
+\def\@lhead{}\def\@chead{}\def\@rhead{}\def\@lfoot{}\def\@cfoot{}\def\@rfoot{}
+\def\@elhead{}\def\@echead{}\def\@erhead{}\def\@elfoot{}\def\@ecfoot{}\def\@erfoot{}
+\def\lhead#1{\gdef\@lhead{#1}\gdef\@elhead{#1}}  \def\elhead#1{\gdef\@elhead{#1}}
+\def\chead#1{\gdef\@chead{#1}\gdef\@echead{#1}}  \def\echead#1{\gdef\@echead{#1}}
+\def\rhead#1{\gdef\@rhead{#1}\gdef\@erhead{#1}}  \def\erhead#1{\gdef\@erhead{#1}}
+\def\lfoot#1{\gdef\@lfoot{#1}\gdef\@elfoot{#1}}  \def\elfoot#1{\gdef\@elfoot{#1}}
+\def\cfoot#1{\gdef\@cfoot{#1}\gdef\@ecfoot{#1}}  \def\ecfoot#1{\gdef\@ecfoot{#1}}
+\def\rfoot#1{\gdef\@rfoot{#1}\gdef\@erfoot{#1}}  \def\erfoot#1{\gdef\@erfoot{#1}}
+\def\@threepart#1#2#3{\rlap{#1}\hfil{#2}\hfil\llap{#3}}
+\def\ps@threepartheadings{%
+  \def\@oddhead{\@threepart{\@lhead}{\@chead}{\@rhead}}%
+  \def\@oddfoot{\@threepart{\@lfoot}{\@cfoot}{\@rfoot}}%
+  \def\@evenhead{\@threepart{\@elhead}{\@echead}{\@erhead}}%
+  \def\@evenfoot{\@threepart{\@elfoot}{\@ecfoot}{\@erfoot}}}
+\pagestyle{threepartheadings}
+\def\underhead{}\def\nounderhead{}
+
+% --- table of contents with tighter section entries ---
+\def\tighttoc{\def\l@section{\@dottedtocline{1}{0em}{1.4em}}}

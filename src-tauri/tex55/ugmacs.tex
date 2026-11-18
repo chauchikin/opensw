@@ -1,0 +1,8 @@
+% ugmacs.tex, written for opensw (MIT license)
+% Names used in the Scientific Word 5.x user guide documents.
+\def\SW{{\sl Scientific Word\/}}
+\def\SWPRINTSTYLES{{\sl Scientific Word\/} {\bf Print Styles}}
+\newcount\YandY \YandY=0
+% a PostScript picture, written for the dvi driver in use
+\def\SPECIALPS#1{\ifnum\YandY=1 language "PS", include "{#1}"\else ps {#1}\fi}
+\newcount\landscape \landscape=0

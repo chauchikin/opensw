@@ -1,0 +1,253 @@
+[
+  {
+    "name": "sw_get",
+    "description": "讀出整份文件。format: \"latex\"（預設）、\"markdown\"、\"json\"（編輯器內部格式）。",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "format": {
+          "type": "string"
+        }
+      }
+    }
+  },
+  {
+    "name": "sw_outline",
+    "description": "文件的區塊清單：每塊的編號 index、種類、文字開頭、公式。改某一塊前先用這個找編號。",
+    "inputSchema": {
+      "type": "object",
+      "properties": {}
+    }
+  },
+  {
+    "name": "sw_set",
+    "description": "用 LaTeX 取代整份文件（可以是完整文件或只有內文）。",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "latex": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "latex"
+      ]
+    }
+  },
+  {
+    "name": "sw_insert",
+    "description": "在第 index 塊之後插入 LaTeX 內容（段落、公式、清單、定理都可以）；不給 index 就加在文件最後；index = -1 加在最前面。",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "latex": {
+          "type": "string"
+        },
+        "index": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "latex"
+      ]
+    }
+  },
+  {
+    "name": "sw_replaceBlock",
+    "description": "用 LaTeX 取代第 index 塊。",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "index": {
+          "type": "integer"
+        },
+        "latex": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "index",
+        "latex"
+      ]
+    }
+  },
+  {
+    "name": "sw_deleteBlock",
+    "description": "刪掉第 index 塊。",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "index": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "index"
+      ]
+    }
+  },
+  {
+    "name": "sw_find",
+    "description": "找文字（不含公式內），回傳每個位置所在的區塊編號。",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "text": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "text"
+      ]
+    }
+  },
+  {
+    "name": "sw_replace",
+    "description": "把文字 find 換成 with（不含公式內）；all 為 false 時只換第一個。",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "find": {
+          "type": "string"
+        },
+        "with": {
+          "type": "string"
+        },
+        "all": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "find",
+        "with"
+      ]
+    }
+  },
+  {
+    "name": "sw_formulas",
+    "description": "列出所有公式（行內與獨立）和所在的區塊編號。",
+    "inputSchema": {
+      "type": "object",
+      "properties": {}
+    }
+  },
+  {
+    "name": "sw_setFormula",
+    "description": "把第 n 個公式（formulas 的順序）改成新的 LaTeX。",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "n": {
+          "type": "integer"
+        },
+        "latex": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "n",
+        "latex"
+      ]
+    }
+  },
+  {
+    "name": "sw_undo",
+    "description": "復原上一步。",
+    "inputSchema": {
+      "type": "object",
+      "properties": {}
+    }
+  },
+  {
+    "name": "sw_redo",
+    "description": "重做。",
+    "inputSchema": {
+      "type": "object",
+      "properties": {}
+    }
+  },
+  {
+    "name": "sw_open",
+    "description": "開啟檔案：桌面版給 path（.sci 或 5.x 的 .tex）。",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "path"
+      ]
+    }
+  },
+  {
+    "name": "sw_save",
+    "description": "存成 .sci：桌面版給 path，不給就存回原本的檔（5.x 的 .tex 不會被覆蓋）。",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string"
+        }
+      }
+    }
+  },
+  {
+    "name": "sw_typeset",
+    "description": "排版成 PDF 並打開（桌面版）。回傳 PDF 路徑。",
+    "inputSchema": {
+      "type": "object",
+      "properties": {}
+    }
+  },
+  {
+    "name": "sw_info",
+    "description": "文件名稱、路徑、區塊數、公式數、是否從 5.x 開啟。",
+    "inputSchema": {
+      "type": "object",
+      "properties": {}
+    }
+  },
+  {
+    "name": "sw_compute",
+    "description": "用 SymPy 計算一條公式（不改文件）。op: evaluate（預設）、numeric、simplify、expand、factor、combine、rewrite_exp、rewrite_sincos、solve、numericsolve、ode、check、partialfractions、collect、differentiate、integrate、series、extrema、laplace、inverselaplace、fourier、determinant、inverse、transpose、eigenvalues、rank、rref、nullspace、trace、charpoly、adjugate、mean、median、variance、stddev、implicitdiff。回傳結果的 LaTeX；solve、numericsolve、ode、extrema 回傳解的清單。",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "latex": {
+          "type": "string"
+        },
+        "op": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "latex"
+      ]
+    }
+  },
+  {
+    "name": "sw_select",
+    "description": "把游標放到第 block 塊。",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "block": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "block"
+      ]
+    }
+  },
+  {
+    "name": "sw_focusEnd",
+    "description": "把游標放到文件最後。",
+    "inputSchema": {
+      "type": "object",
+      "properties": {}
+    }
+  }
+]

@@ -1,0 +1,47 @@
+# Builds the Windows installer of sw-next and puts it on the branch
+# "sw-next-build" (private repo), so it can be fetched with plain git.
+name: windows-build
+# Only when asked (CK 2026-11-18: don't build on every change): push a tag such as
+#   git tag sw-next-v0.2 && git push origin sw-next-v0.2
+on:
+  push:
+    tags: ['sw-next-v*']
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+      - run: npm ci
+      - name: Bundle the Tectonic TeX engine (used when xelatex is not installed)
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release download -R tectonic-typesetting/tectonic --pattern '*x86_64-pc-windows-msvc.zip' -D tectonic-dl
+          mkdir -p src-tauri/bin
+          unzip -o tectonic-dl/*.zip -d src-tauri/bin
+          ls -la src-tauri/bin
+      - name: Build installer
+        shell: bash
+        run: npx tauri build --config '{"bundle":{"resources":{"bin/tectonic.exe":"bin/tectonic.exe"}}}'
+      - name: Publish to branch sw-next-build
+        shell: bash
+        run: |
+          mkdir out && cp src-tauri/target/release/bundle/nsis/*.exe out/
+          cd out
+          sha256sum *.exe > SHA256SUMS.txt
+          echo "built from ${GITHUB_SHA} at $(date -u +%Y-%m-%dT%H:%MZ)" > BUILD.txt
+          git init -q -b sw-next-build
+          git -c user.name=github-actions -c user.email=actions@github.com add .
+          git -c user.name=github-actions -c user.email=actions@github.com commit -qm "Windows installer for ${GITHUB_SHA}"
+          git push -f "https://x-access-token:${{ github.token }}@github.com/${GITHUB_REPOSITORY}.git" sw-next-build

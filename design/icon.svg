@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <!-- opensw app icon, drawn for this project: a page with an integral sign -->
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#2f5d9e"/><stop offset="1" stop-color="#1d3d6b"/>
+    </linearGradient>
+  </defs>
+  <rect x="64" y="64" width="896" height="896" rx="190" fill="url(#bg)"/>
+  <path d="M300 210h330l130 130v474a40 40 0 0 1-40 40H300a40 40 0 0 1-40-40V250a40 40 0 0 1 40-40z" fill="#fff"/>
+  <path d="M630 210v130h130z" fill="#d7e2f2"/>
+  <path d="M600 330c-40-60-120-50-140 40l-70 330c-20 90-100 100-140 40" fill="none" stroke="#c00000" stroke-width="58" stroke-linecap="round"/>
+  <rect x="560" y="560" width="120" height="120" rx="14" fill="none" stroke="#2a62c9" stroke-width="22" stroke-dasharray="34 22"/>
+</svg>

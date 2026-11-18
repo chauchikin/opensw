@@ -1,0 +1,24 @@
+// A 5.x .tex opened in the editor, saved as .sci and opened again keeps its formulas
+import { chromium } from 'playwright';
+import fs from 'node:fs';
+const file = process.argv[2];
+const b = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium-1243/chrome-linux64/chrome' });
+const page = await b.newPage();
+const errs = []; page.on('pageerror', (e) => errs.push(e.message));
+await page.goto('http://localhost:4173/'); await page.waitForTimeout(600);
+const maths = () => page.evaluate(() => { const l = []; window.swEditor.state.doc.descendants((n) => { if (n.type.name.startsWith('math')) l.push(n.attrs.latex); }); return l; });
+await page.setInputFiles('#file', file);
+if (await page.isVisible('#confirm')) await page.click('#confirm-ok');
+await page.waitForTimeout(1200);
+const before = await maths();
+const b64 = await page.evaluate(() => window.swSaveSci());
+fs.writeFileSync('/tmp/roundtrip55.sci', Buffer.from(b64, 'base64'));
+await page.setInputFiles('#file', '/tmp/roundtrip55.sci');
+if (await page.isVisible('#confirm')) await page.click('#confirm-ok');
+await page.waitForTimeout(1200);
+const after = await maths();
+const diff = before.map((l, i) => [l, after[i]]).filter(([x, y]) => x !== y);
+console.log('formulas', before.length, after.length, 'changed', diff.length);
+for (const d of diff.slice(0, 5)) console.log('  ', JSON.stringify(d));
+console.log('errors', errs);
+await b.close();

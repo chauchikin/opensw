@@ -1,0 +1,232 @@
+:root {
+  --bg: #eceae6; --paper: #fff; --ink: #1d1d1f; --muted: #6b6b70; --line: #d6d3ce;
+  --accent: #2f5d8a; --accent-soft: #e6eef6; --math-bg: #f3f6fa;
+  color-scheme: light;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--ink);
+  font: 17px/1.75 "Noto Serif TC", "Source Han Serif TC", "PMingLiU", "Songti TC", Georgia, serif; }
+
+/* Scientific Word 5.5 layout: menu bar, toolbars, document, tag bar, status bar */
+html, body { height: 100%; }
+body { display: flex; flex-direction: column; overflow: hidden; }
+#menubar, #toolbar, #tagbar, #statusbar, .popup, #help { font: 13px/1.2 "Segoe UI", "Microsoft JhengHei", system-ui, sans-serif; color: #000; }
+#menubar { display: flex; background: #f0f0f0; padding: 1px 2px; flex: none; overflow-x: auto; scrollbar-width: none; }
+.menu-top { font: inherit; border: 1px solid transparent; background: none; padding: 3px 8px; cursor: default; flex: none; color: inherit; }
+.menu-top:hover, .menu-top.open { background: #cce4f7; border-color: #99c9ef; }
+
+#toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 0; padding: 2px; background: #f0f0f0;
+  border-top: 1px solid #fff; border-bottom: 1px solid #a0a0a0; flex: none; }
+.tb-group { display: flex; align-items: center; padding: 1px 4px 1px 7px; margin-right: 3px; position: relative;
+  border: 1px solid #d0d0d0; border-radius: 2px; background: linear-gradient(#fafafa, #ececec); }
+.tb-group::before { content: ""; position: absolute; left: 2px; top: 3px; bottom: 3px; width: 2px;
+  border-left: 1px dotted #888; border-right: 1px dotted #888; } /* the 5.5 drag handle */
+.tb { height: 27px; min-width: 25px; padding: 0 2px; border: 1px solid transparent; background: none; border-radius: 2px;
+  display: inline-flex; align-items: center; justify-content: center; cursor: default; font: inherit; color: #000; }
+.tb svg { display: block; width: 20px; height: 20px; }
+.tb-text { font: 15px/1 "Cambria Math", "STIX Two Math", "Times New Roman", serif; min-width: 22px; }
+.tb:hover { border-color: #7eb4ea; background: #e5f1fb; }
+.tb:active { background: #cce4f7; }
+#zoom-select { font: inherit; height: 22px; margin-left: 3px; }
+
+#scroller { flex: 1; overflow: auto; background: #fff; border-top: 1px solid #fff; }
+#page { zoom: var(--zoom, 1); padding: 14px 22px 120px; min-height: 100%; }
+
+#tagbar { display: flex; align-items: center; gap: 4px; padding: 3px 4px; background: #f0f0f0; border-top: 1px solid #a0a0a0; flex: none; overflow-x: auto; }
+#tagbar select { font: inherit; height: 22px; min-width: 9em; }
+#btn-untag { font: 700 16px/1 system-ui; color: #1a8f1a; height: 22px; width: 26px; padding: 0; border: 1px solid #a0a0a0; background: #fafafa; cursor: default; }
+#statusbar { display: flex; gap: 6px; padding: 2px 4px; background: #f0f0f0; border-top: 1px solid #d0d0d0; flex: none; font-size: 12px; }
+#status-text { flex: 1; color: #333; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#status-zoom, #status-mode { border: 1px solid #c0c0c0; border-bottom-color: #fff; border-right-color: #fff; padding: 0 8px; min-width: 4em; text-align: center; }
+#status-mode.math { color: #c00000; }
+
+.popup { position: fixed; z-index: 40; background: #f9f9f9; border: 1px solid #a0a0a0; box-shadow: 2px 2px 4px rgba(0,0,0,.25); }
+.popup[hidden] { display: none; }
+.menu-list { display: flex; flex-direction: column; padding: 2px; min-width: 190px; background: #f9f9f9; }
+.menu-list hr { border: 0; border-top: 1px solid #d7d7d7; margin: 3px 2px; }
+.menu-list button { font: inherit; display: flex; justify-content: space-between; gap: 24px; padding: 4px 10px 4px 22px; border: 1px solid transparent;
+  background: none; text-align: left; cursor: default; color: #000; position: relative; }
+.menu-list button:hover:not(:disabled) { background: #cce4f7; border-color: #99c9ef; }
+.menu-list button:disabled { color: #999; }
+.menu-list kbd { font: inherit; color: #555; }
+.submenu { display: none; position: absolute; left: 100%; top: -3px; border: 1px solid #a0a0a0; box-shadow: 2px 2px 4px rgba(0,0,0,.25);
+  max-height: 70vh; overflow-y: auto; z-index: 1; }
+.has-sub:hover > .submenu, .has-sub.sub-open > .submenu { display: flex; }
+.sym-grid { display: grid; grid-template-columns: repeat(8, 30px); gap: 1px; padding: 3px; background: #f9f9f9; }
+.sym-grid button { height: 28px; border: 1px solid #ddd; background: #fff; font: 16px/1 "Cambria Math", "STIX Two Math", "Times New Roman", serif; cursor: default; padding: 0; }
+.sym-grid button:hover { background: #cce4f7; border-color: #99c9ef; }
+.sym-grid.wide { grid-template-columns: repeat(4, 48px); }
+.sym-grid.names { grid-template-columns: repeat(5, 60px); }
+.sym-grid.names button { font: 14px/1 "Times New Roman", serif; }
+.sym-grid.big button { font-size: 20px; }
+
+#help { background: #ffffe1; border-bottom: 1px solid #a0a0a0; padding: 6px 12px; max-height: 40vh; overflow: auto; flex: none; line-height: 1.6; }
+#help table { border-collapse: collapse; margin: 4px 0; }
+#help td { padding: 1px 14px 1px 0; vertical-align: top; }
+
+.ProseMirror { outline: none; white-space: pre-wrap; word-wrap: break-word; }
+.ProseMirror p { margin: 0 0 .8em; }
+.ProseMirror h1.doc-title { text-align: center; font-size: 1.8em; margin: .2em 0 .9em; }
+.ProseMirror h2 { font-size: 1.5em; margin: 1.2em 0 .5em; }
+.ProseMirror h3 { font-size: 1.25em; margin: 1.1em 0 .4em; }
+.ProseMirror h4, .ProseMirror h5, .ProseMirror h6, .ProseMirror h7 { font-size: 1.08em; margin: 1em 0 .3em; }
+.ProseMirror ul, .ProseMirror ol { padding-left: 1.6em; margin: 0 0 .8em; }
+.ProseMirror li > p { margin-bottom: .3em; }
+.ProseMirror code { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: .9em; background: #f4f2ee; padding: 0 3px; border-radius: 3px; }
+.ProseMirror a { color: var(--accent); }
+.ProseMirror img { vertical-align: middle; max-width: 100%; }
+
+.env { margin: .6em 0 .9em; padding-left: .9em; border-left: 3px solid var(--line); }
+.env::before { content: attr(data-label) "."; font-weight: 700; margin-right: .4em; float: left; }
+.env > p:first-child { text-indent: 0; }
+.env-proof { border-left-style: dashed; }
+.env-proof::before { font-weight: 400; font-style: italic; }
+.env-proof > :last-child::after { content: "∎"; float: right; }
+.env-theorem p, .env-lemma p, .env-corollary p, .env-proposition p, .env-conjecture p { font-style: italic; }
+.env-theorem math-field, .env-lemma math-field { font-style: normal; }
+
+.tex-field { font: 12px/1.4 ui-monospace, Menlo, Consolas, monospace; color: var(--muted); background: #f1efea;
+  border: 1px dashed #c9c4bb; border-radius: 3px; padding: 0 4px; }
+
+/* formulas */
+math-field { color: #c00000; font-size: 1.05em; border: none; background: transparent; padding: 0 1px; border-radius: 3px;
+  --selection-background-color: #cfe0f3; --caret-color: var(--accent); --contains-highlight-background-color: transparent; }
+math-field::part(menu-toggle), math-field::part(virtual-keyboard-toggle) { display: none; }
+math-field::part(content) { padding: 0 1px; }
+.math-inline math-field { display: inline-block; vertical-align: -0.15em; min-width: .8em; }
+.math-inline.editing math-field, .math-display.editing math-field { background: var(--math-bg); outline: 1px solid #c6d6e8; }
+math-field:hover { background: var(--math-bg); }
+.math-display { margin: .5em 0 1em; text-align: center; }
+.math-display math-field { display: inline-block; min-width: 4em; font-size: 1.15em; padding: 4px 6px; }
+
+#export { position: fixed; inset: 0; background: rgba(0,0,0,.35); z-index: 20; display: flex; align-items: center; justify-content: center; padding: 16px; }
+#export[hidden] { display: none; }
+#export .panel { background: #fff; width: min(900px, 100%); height: min(80vh, 700px); border-radius: 10px; display: flex; flex-direction: column; overflow: hidden;
+  font: 14px system-ui, sans-serif; }
+#export .panel-head { display: flex; justify-content: space-between; align-items: center; padding: 10px 14px; border-bottom: 1px solid var(--line); gap: 8px; }
+#export .panel-head button { font: inherit; padding: 5px 12px; border: 1px solid var(--line); background: #fff; border-radius: 6px; cursor: pointer; }
+#export textarea { flex: 1; border: 0; padding: 12px 14px; font: 13px/1.5 ui-monospace, Menlo, Consolas, monospace; resize: none; outline: none; }
+
+#toast { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); background: #222; color: #fff; padding: 8px 16px; border-radius: 8px;
+  font: 14px system-ui, sans-serif; z-index: 30; }
+@media (max-width: 700px) {
+  #toolbar { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
+  .tb-group { flex: none; }
+  #page { padding: 10px 12px 120px; }
+}
+#confirm, #closeask, #guide, #matrix, #props, #dialog { position: fixed; inset: 0; background: rgba(0,0,0,.35); z-index: 25; display: flex; align-items: center; justify-content: center; padding: 16px; }
+#confirm[hidden], #closeask[hidden], #guide[hidden], #matrix[hidden], #props[hidden], #dialog[hidden] { display: none; }
+#confirm .panel, #closeask .panel, #matrix .panel, #props .panel, #dialog .panel { background: #fff; border-radius: 10px; padding: 16px 18px; max-width: 420px; font: 15px/1.6 system-ui, sans-serif; }
+#confirm p, #matrix p, #props p, #dialog p { margin: 0 0 12px; }
+.panel-actions { text-align: right; }
+.panel-actions button { font: inherit; padding: 6px 14px; border: 1px solid var(--line); background: #fff; border-radius: 6px; cursor: pointer; }
+.panel-actions button.accent { background: var(--accent); color: #fff; border-color: var(--accent); }
+#matrix input { width: 4em; font: inherit; }
+#matrix select { font: inherit; }
+#props textarea { width: min(460px, 80vw); font: 13px/1.5 ui-monospace, Consolas, monospace; margin-bottom: 10px; }
+#findbar { flex: none; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 4px 8px; background: #f0f0f0; border-bottom: 1px solid #a0a0a0;
+  font: 13px "Segoe UI", "Microsoft JhengHei", system-ui, sans-serif; }
+#findbar[hidden] { display: none; }
+#findbar input, #findbar button { font: inherit; }
+#findbar:not(.with-replace) .replace-part { display: none; }
+.env-centered { border: 0; padding: 0; text-align: center; }
+.env-centered::before { content: none; }
+.tex-field.frame { font: 13px/1.6 "Microsoft JhengHei", system-ui, sans-serif; color: #555; padding: 4px 10px; display: inline-block; }
+
+/* equation numbers, theorem numbers, markers and cross-references (src/numbering.js) */
+.math-display { position: relative; }
+.math-display[data-eqno]::after { content: attr(data-eqno); position: absolute; right: 0; top: 50%; transform: translateY(-50%);
+  color: #000; font-size: .95em; white-space: pre; }
+.env[data-num]::before { content: attr(data-label) " " attr(data-num) attr(data-title) "."; }
+.env:not([data-num])::before { content: attr(data-label) attr(data-title) "."; }
+.env.env-centered::before { content: none; }
+.marker::after { content: "◆"; color: #9a9a9a; font-size: .6em; vertical-align: super; margin: 0 1px; }
+.xref::after { content: attr(data-num); color: #1a55a8; }
+.xref { border-bottom: 1px dotted #1a55a8; cursor: default; }
+.xref.xref-missing::after { color: #c00000; }
+#dialog input, #dialog select { font: inherit; }
+
+/* tables (prosemirror-tables), floats and captions */
+.ProseMirror table.sw-table { border-collapse: collapse; margin: .4em auto; }
+.ProseMirror table.sw-table td, .ProseMirror table.sw-table th { border: 1px dashed #c8c8c8; padding: 2px 8px; vertical-align: top; min-width: 2em; }
+.ProseMirror table.sw-table.ruled-v td, .ProseMirror table.sw-table.ruled-v th { border-left: 1px solid #333; border-right: 1px solid #333; }
+.ProseMirror table.sw-table tr.ruled-top > td, .ProseMirror table.sw-table tr.ruled-top > th { border-top: 1px solid #333; }
+.ProseMirror table.sw-table.ruled-bottom tr:last-child > td, .ProseMirror table.sw-table.ruled-bottom tr:last-child > th { border-bottom: 1px solid #333; }
+.ProseMirror table.sw-table p { margin: 0; }
+.ProseMirror .selectedCell { background: #cfe0f3; }
+.float-box { margin: .8em 0; padding: 4px 0; border-top: 1px dotted #bbb; border-bottom: 1px dotted #bbb; text-align: center; }
+.float-box .caption { font-size: .95em; margin: .3em 0; }
+.float-box .caption::before { content: attr(data-num) "："; font-weight: 600; }
+
+/* pictures (src/graphics.js) */
+.ProseMirror .image { display: inline-block; vertical-align: bottom; max-width: 100%; }
+.ProseMirror .image img { max-width: 100%; vertical-align: bottom; }
+.ProseMirror .image.place-display, .ProseMirror .image.place-float { display: block; width: fit-content; margin: .6em auto; text-align: center; }
+.ProseMirror .image-missing { display: inline-flex; align-items: center; justify-content: center; max-width: 100%; box-sizing: border-box;
+  border: 1px dashed #999; background: #f6f6f6; color: #666; font: 12px "Microsoft JhengHei", system-ui, sans-serif; padding: 4px; }
+/* a floating picture: the picture on its own line, then "圖 1：" (its number, from numbering.js) and the caption */
+.ProseMirror .image.place-float { display: flex; flex-wrap: wrap; justify-content: center; align-items: baseline; }
+.ProseMirror .image.place-float > .image-pic { flex: 0 0 100%; text-align: center; }
+.ProseMirror .image.place-float[data-num]::after { content: attr(data-num) "："; order: 2; font-weight: 600; margin-top: .3em; }
+.ProseMirror .image-caption { order: 3; font-size: .95em; margin-top: .3em; }
+.ProseMirror .image.ProseMirror-selectednode { outline: 2px solid #3d6fb6; }
+
+/* footnotes and margin notes (src/noteview.js) */
+.ProseMirror .note { position: relative; cursor: pointer; }
+.ProseMirror .note-footnote::before { content: attr(data-num); vertical-align: super; font-size: .7em; color: #2a62c9; font-weight: 600; padding: 0 1px; }
+.ProseMirror .note-margin::before { content: "✎"; vertical-align: super; font-size: .75em; color: #2a62c9; }
+.ProseMirror .note.ProseMirror-selectednode { outline: none; background: #dbe6f6; }
+.ProseMirror .note-editor { position: absolute; left: -1em; top: 1.6em; z-index: 5; display: block; min-width: 18em; max-width: 30em;
+  background: #fffbe6; border: 1px solid #c9b46a; box-shadow: 0 2px 6px rgba(0,0,0,.2); padding: 4px 8px; font-size: .92em; white-space: normal; cursor: text; }
+.ProseMirror .note-editor .ProseMirror { outline: none; min-height: 1.3em; }
+
+/* citations and references (src/numbering.js gives the numbers) */
+.ProseMirror .cite-cite::before { content: attr(data-num); color: #2a62c9; }
+.ProseMirror .cite-nocite { font-size: .8em; color: #888; }
+.ProseMirror .cite.xref-missing::before { color: #c00000; }
+.ProseMirror .bibliography { margin-top: 1.2em; }
+.ProseMirror .bibliography::before { content: "參考文獻"; display: block; font-weight: 700; font-size: 1.15em; margin-bottom: .4em; }
+.ProseMirror .bib-item { padding-left: 2.6em; text-indent: -2.6em; margin: .2em 0; }
+.ProseMirror .bib-item::before { content: "[" attr(data-num) "]"; display: inline-block; width: 2.4em; text-indent: 0; }
+.ProseMirror .bibtex { margin: 1em 0; padding: 6px 10px; border: 1px dashed #999; color: #555; font-size: .95em; }
+
+/* abstract, quotations, table of contents, appendix */
+.ProseMirror .env.env-quote, .ProseMirror .env.env-quotation, .ProseMirror .env.env-verse { border: 0; padding: 0 2.5em; }
+.ProseMirror .env.env-quote::before, .ProseMirror .env.env-quotation::before, .ProseMirror .env.env-verse::before { content: none; }
+.ProseMirror .env.env-abstract { border: 0; padding: 0 2em; font-size: .95em; }
+.ProseMirror .env.env-abstract::before { content: "摘要"; float: none; display: block; text-align: center; margin: 0 0 .3em; }
+.ProseMirror .toc, .ProseMirror .appendix-mark { margin: .8em 0; padding: 4px 10px; border: 1px dashed #999; color: #555; font-size: .95em; }
+
+/* text tags: small caps, sans serif, sizes */
+.ProseMirror .m-sc { font-variant: small-caps; }
+.ProseMirror .m-sf { font-family: "Segoe UI", "Helvetica Neue", Arial, "Microsoft JhengHei", sans-serif; }
+.m-size-tiny { font-size: .5em; } .m-size-scriptsize { font-size: .7em; } .m-size-footnotesize { font-size: .8em; }
+.m-size-small { font-size: .9em; } .m-size-large { font-size: 1.2em; } .m-size-Large { font-size: 1.44em; }
+.m-size-LARGE { font-size: 1.73em; } .m-size-huge { font-size: 2.07em; } .m-size-Huge { font-size: 2.49em; }
+.ProseMirror .index-entry::before { content: "ⓘ"; font-size: .7em; vertical-align: super; color: #8a6d00; }
+.ProseMirror .note-thanks::before { content: "*"; vertical-align: super; font-size: .75em; color: #2a62c9; }
+.ProseMirror .front-field { font-size: .95em; color: #333; }
+.ProseMirror .front-field::before { content: attr(data-label) "："; color: #777; }
+.ProseMirror .subdoc { margin: .8em 0; padding: 4px 10px; border: 1px dashed #6a8fc9; color: #2a4f8a; font-size: .95em; }
+
+/* lists with their own labels, description lists, verbatim, flush left/right */
+.ProseMirror li.labelled { list-style: none; position: relative; }
+.ProseMirror li.labelled::before { content: attr(data-label); position: absolute; right: calc(100% + .5em); white-space: nowrap; }
+.ProseMirror ul.description { list-style: none; padding-left: 1.5em; }
+.ProseMirror ul.description > li.labelled::before { position: static; font-weight: 700; margin-right: .5em; float: left; }
+.ProseMirror pre.verbatim { font: 13px/1.45 ui-monospace, Consolas, "Courier New", monospace; background: #f7f7f7; border: 1px solid #e3e3e3; padding: 6px 10px; white-space: pre-wrap; }
+.ProseMirror .env.env-flushleft, .ProseMirror .env.env-flushright { border: 0; padding: 0; }
+.ProseMirror .env.env-flushleft::before, .ProseMirror .env.env-flushright::before { content: none; }
+.ProseMirror .env.env-flushright { text-align: right; }
+.ProseMirror .env.env-flushleft { text-align: left; }
+.ProseMirror .tex-field.vspace { font: 11px "Microsoft JhengHei", system-ui, sans-serif; color: #777; background: none; border: 1px dotted #bbb; }
+
+/* View menu: hide what the reader does not want to see */
+#editor.hide-markers .marker, #editor.hide-index .index-entry, #editor.hide-texfields .tex-field { display: none; }
+#editor.hide-helpers table.sw-table:not(.ruled-v) td { border-color: transparent; }
+#editor.hide-helpers .env-centered, #editor.hide-helpers .float-box { border-color: transparent; }
+table.info td { padding: 2px 10px 2px 0; } table.info td:first-child { color: #666; }
+
+#guide .guide-panel { background: #fff; border-radius: 10px; padding: 16px 22px; max-width: 640px; max-height: 85vh; overflow: auto; font: 15px/1.65 system-ui, "Microsoft JhengHei", sans-serif; }
+#guide h2 { margin: 0 0 .4em; font-size: 1.3em; } #guide h3 { margin: 1em 0 .2em; font-size: 1.05em; } #guide ul { margin: .2em 0; padding-left: 1.3em; }
+.lean-code { white-space: pre-wrap; font: 13px/1.4 Consolas, monospace; background: #f4f4f4; padding: 6px 8px; max-width: 560px; }

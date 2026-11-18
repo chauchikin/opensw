@@ -1,0 +1,9 @@
+node_modules/
+dist/
+test-out/
+src-tauri/target/
+src-tauri/gen/
+src-tauri/bin/
+public/engine/
+__pycache__/
+test/fixtures/sw6/
