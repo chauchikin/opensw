@@ -24,10 +24,10 @@ export const COMMANDS = {
   undo: ['復原上一步。', {}],
   redo: ['重做。', {}],
   open: ['開啟檔案：桌面版給 path（.sci 或 5.x 的 .tex）。', { path: 'string' }],
-  save: ['存成 .sci：桌面版給 path，不給就存回原本的檔（5.x 的 .tex 不會被覆蓋）。', { path: 'string?' }],
+  save: ['存檔（桌面版）：主要格式是 5.x 的 .tex（5.5 打得開）；path 以 .sci 結尾就存成 .sci。不給 path 就存回原本的檔（先留 .bak；沒改過的 5.x 檔不會重寫）。', { path: 'string?' }],
   typeset: ['排版成 PDF 並打開（桌面版）。回傳 PDF 路徑。', {}],
   info: ['文件名稱、路徑、區塊數、公式數、是否從 5.x 開啟。', {}],
-  compute: ['用 SymPy 計算一條公式（不改文件）。op: evaluate（預設）、numeric、simplify、expand、factor、combine、rewrite_exp、rewrite_sincos、solve、numericsolve、ode、check、partialfractions、collect、differentiate、integrate、series、extrema、laplace、inverselaplace、fourier、determinant、inverse、transpose、eigenvalues、rank、rref、nullspace、trace、charpoly、adjugate、mean、median、variance、stddev、implicitdiff。回傳結果的 LaTeX；solve、numericsolve、ode、extrema 回傳解的清單。', { latex: 'string', op: 'string?' }],
+  compute: ['用目前選的計算引擎（SymPy 或 Mathematica，見 工具 > 計算引擎）計算一條公式（不改文件）。op: evaluate（預設）、numeric、simplify、expand、factor、combine、rewrite_exp、rewrite_sincos、solve、numericsolve、ode、check、partialfractions、collect、differentiate、integrate、series、extrema、laplace、inverselaplace、fourier、determinant、inverse、transpose、eigenvalues、rank、rref、nullspace、trace、charpoly、adjugate、mean、median、variance、stddev、implicitdiff、integersolve、recursion（一行矩陣：遞迴式和起始值）、maximize、minimize、feasible、standardize、dual（單形法：一行矩陣，第一列目標函數、其餘限制式，變數都 ≥ 0）、gradient、divergence、curl、laplacian、hessian、jacobian、wronskian、potential、vectorpotential（params 是基底變數，預設 x、y、z）、byparts（params: [u]）、changevar（params: ["u=g(x)"]）、approxint（params: [方法, 區間數]，方法是 left、midpoint、right、trapezoid 或 simpson，前後加單引號）、iterate（params: [起始值, 次數]）。回傳結果的 LaTeX；solve、numericsolve、integersolve、ode、extrema、maximize、minimize 回傳解的清單。', { latex: 'string', op: 'string?', params: 'string[]?' }],
   select: ['把游標放到第 block 塊。', { block: 'number' }],
   focusEnd: ['把游標放到文件最後。', {}],
 };
@@ -140,7 +140,7 @@ export function makeApi(app) {
     open: async ({ path }) => { await app.openPath(path); return api.info(); },
     save: async ({ path } = {}) => ({ path: await app.saveTo(path) }),
     typeset: async () => ({ pdf: await app.typesetNow() }),
-    compute: ({ latex, op = 'evaluate' }) => compute(op, String(latex)),
+    compute: ({ latex, op = 'evaluate', params }) => compute(op, String(latex), Array.isArray(params) ? params.map(String) : undefined),
     info: () => ({
       name: app.meta().name || null,
       path: app.path(),

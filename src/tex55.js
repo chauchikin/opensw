@@ -24,7 +24,7 @@ const SKIP_CMDS = new Set(['bigskip', 'medskip', 'smallskip', 'noindent', 'inden
   'linebreak', 'nolinebreak', 'allowbreak', 'hfill', 'vfill', 'centering', 'raggedright', 'raggedleft', 'protect',
   'normalfont', 'rmfamily', 'sffamily', 'upshape', 'mdseries', 'selectfont', 'relax', 'maketitle']);
 const SKIP_ARG_CMDS = { vspace: 1, 'vspace*': 1, hspace: 1, 'hspace*': 1, setcounter: 2, addtocounter: 2, thispagestyle: 1, pagestyle: 1 };
-const TEXT_CHARS = { '%': '%', $: '$', '&': '&', '#': '#', _: '_', '{': '{', '}': '}', ' ': '\u00a0', // "\ ": an extra space after a sentence
+const TEXT_CHARS = { '%': '%', $: '$', '&': '&', '#': '#', _: '_', '{': '{', '}': '}', ' ': '\u00a0', '\n': '\u00a0', '\t': '\u00a0', // "\ ": an extra space after a sentence (also \ at the end of a line)
   ',': ' ', ';': ' ',
   '/': '', '-': '­', '@': '' };
 const TEXT_SYMBOLS = { ldots: '…', dots: '…', textbackslash: '\\', textless: '<', textgreater: '>', S: '§', P: '¶',
@@ -38,8 +38,9 @@ export function isSW5(bytes) {
 }
 
 export function decode55(bytes) {
-  const head = new TextDecoder('latin1').decode(bytes.slice(0, 300));
-  const cp = (head.match(/CodePage:\s*(\d+)/) || head.match(/Codepage=(\d+)/) || [])[1];
+  // "CodePage: 950" in the first line, or %TCIDATA{Codepage=1252} further down the preamble
+  const head = new TextDecoder('latin1').decode(bytes.slice(0, 8000));
+  const cp = (head.match(/CodePage:\s*(\d+)/) || head.match(/%TCIDATA\{Codepage=(\d+)\}/i) || [])[1];
   let enc = 'utf-8';
   if (!bytes.every((b) => b < 128)) {
     try { new TextDecoder('utf-8', { fatal: true }).decode(bytes); } catch (e) { enc = CODEPAGES[cp] || 'windows-1252'; }
@@ -50,7 +51,10 @@ export function decode55(bytes) {
 // TeX comments: "%" removes the rest of the line, the line break and the next line's leading spaces
 // (verbatim environments are left as they are: % is an ordinary character there)
 export function stripComments(s) {
-  const strip = (t) => t.replace(/(^|[^\\])((?:\\\\)*)%[^\n]*\n?[ \t]*/g, '$1$2');
+  // (a lookbehind, so that comment lines one after another are all removed)
+  // A comment right after a control word ends that word (5.x writes "\proof%" then
+  // "Let ..." on a later line): a space keeps them apart, as TeX ignores it there.
+  const strip = (t) => t.replace(/(?<!\\)((?:\\\\)*)%[^\n]*\n?[ \t]*/g, (m, bs, at) => (!bs && /\\[a-zA-Z]+$/.test(t.slice(Math.max(0, at - 40), at)) ? ' ' : bs));
   return s.replace(/\r\n?/g, '\n').split(/(\\begin\{verbatim\*?\}[^]*?\\end\{verbatim\*?\})/)
     .map((part, k) => (k % 2 ? part : strip(part))).join('');
 }
@@ -62,7 +66,12 @@ export function readTex55(bytes) {
 
 // LaTeX text (a whole document or just a part of one) -> { doc, meta }
 export function readLatex(text) {
-  const src = stripComments(text);
+  // a 5.x HTML field is a TCI macro (a comment): %TCIMACRO{\HTML{..}}% with an empty expansion;
+  // an Exam Builder formula is %TCIMACRO{\FORMULA{expr}{value}{operation}}% with the value as
+  // its expansion: kept as \FORMULA{..}{..}{..} in the formula (shown as the value)
+  text = text.replace(/%TCIMACRO\{((?:[^\n]|\r?\n%)*?)\}%[ \t]*\r?\n%BeginExpansion\r?\n[^]*?%EndExpansion/g,
+    (all, inner) => { const m = inner.replace(/\r?\n%/g, ''); return /^\\FORMULA\{/.test(m) ? m : all; });
+  const src = stripComments(text.replace(/%TCIMACRO\{\\HTML\{([^\n]*)\}\s*\}%[ \t]*\r?\n%BeginExpansion\r?\n[^]*?%EndExpansion[^\n]*\n?[ \t]*/g, '\\HTML{$1}'));
   const b = src.indexOf('\\begin{document}');
   const e = src.lastIndexOf('\\end{document}');
   const preamble = b >= 0 ? src.slice(0, b) : '';
@@ -96,9 +105,18 @@ const BIG_OPS = { int: 'int', iint: 'iint', iiint: 'iiint', oint: 'oint', sum: '
   bigotimes: 'bigotimes', bigsqcup: 'bigsqcup', biguplus: 'biguplus' };
 export const MATH_MACROS = {
   allowbreak: m(''),
+  // an Exam Builder formula: shows its last value (the expression is worked out when an exam is made)
+  FORMULA: m('#2', 3),
   func: m('\\operatorname{#1}', 1),
   limfunc: m('\\operatorname{#1}', 1),
   unit: m('\\,\\mathrm{#1}', 1),
+  // tcilatex: \stackunder{below}{op}; \QTR{style}{text} met in a formula; vertical space a formula cannot have
+  stackunder: m('\\underset{#1}{#2}', 2),
+  QTR: m('\\text{#2}', 2),
+  diagdown: m('\\backslash'),
+  // \TEXTsymbol{\backslash}: a symbol written in text (5.x, also inside tables in formulas)
+  TEXTsymbol: m('{#1}', 1),
+  bigskip: m(''), medskip: m(''), smallskip: m(''),
   // fractions of tcilatex: \QATOP{a}{b} (no line), \QABOVE{w}{a}{b} (line width w),
   // \QOVERD(){a}{b} (with brackets), T = text style, D = display style
   QATOP: m('\\genfrac{}{}{0pt}{}{#1}{#2}', 2),
@@ -122,7 +140,31 @@ export const MATH_MACROS = {
 // the same formula in plain LaTeX (for MathML, Markdown, computing and documents not
 // from 5.x): the 5.x macros above are replaced by what they stand for
 const PLAIN_DEFS = { ...Object.fromEntries(Object.entries(MATH_MACROS).map(([k, v]) => [k, v])), limfunc: m('\\operatorname*{#1}', 1) };
+// MathLive's empty input boxes (\placeholder[id]{value}) are not LaTeX: an empty box
+// becomes {} (as 5.5 writes it) and a filled one keeps its value
+export function dropPlaceholders(tex) {
+  if (!tex.includes('\\placeholder')) return tex;
+  let out = '';
+  let i = 0;
+  for (let k; (k = tex.indexOf('\\placeholder', i)) >= 0;) {
+    out += tex.slice(i, k);
+    let j = k + '\\placeholder'.length;
+    if (/[a-zA-Z]/.test(tex[j] || '')) { out += tex.slice(k, j); i = j; continue; }
+    while (tex[j] === ' ') j++;
+    if (tex[j] === '[') { const c = tex.indexOf(']', j); j = c < 0 ? tex.length : c + 1; }
+    while (tex[j] === ' ') j++;
+    if (tex[j] === '{') {
+      const e = Parser.groupEnd(tex, j);
+      out += '{' + dropPlaceholders(tex.slice(j + 1, e - 1)) + '}';
+      j = e;
+    } else out += '{}';
+    i = j;
+  }
+  return out + tex.slice(i);
+}
+
 export function standardTeX(tex) {
+  tex = dropPlaceholders(tex);
   let out = '';
   let i = 0;
   while (i < tex.length) {
@@ -160,9 +202,94 @@ export function cleanMath(tex) {
     .replace(/\\QATOP\{/g, '\\genfrac{}{}{0pt}{}{').replace(/\\QDATOP\{/g, '\\genfrac{}{}{0pt}{0}{')
     .replace(/\\QTATOP\{/g, '\\genfrac{}{}{0pt}{1}{')
     .replace(/\\QABOVE\{([^}]*)\}\{/g, '\\genfrac{}{}{$1}{}{')
-    .replace(/\\TEXTsymbol\{([^}]*)\}/g, '$1')
     .replace(/\s+/g, ' ')
-    .trim();
+    // trim, but keep the space of a closing "\ " (5.x ends formulas with it): without it
+    // the formula would end in "\" and "\$" would no longer close it
+    .replace(/^ /, '').replace(/(^|[^\\])((?:\\\\)*) $/, '$1$2');
+}
+
+// \name{a}{b}.. (n arguments, a single token counts as one) replaced by fn(args)
+function replaceCmd(tex, name, n, fn) {
+  const re = new RegExp(`\\\\${name}(?![a-zA-Z])`, 'g');
+  let out = '';
+  let i = 0;
+  for (let m; (m = re.exec(tex));) {
+    if (m.index < i) continue;
+    let j = m.index + m[0].length;
+    const args = [];
+    for (let k = 0; k < n; k++) {
+      while (/\s/.test(tex[j] || '')) j++;
+      if (tex[j] === '{') { const e = Parser.groupEnd(tex, j); args.push(tex.slice(j + 1, e - 1)); j = e; } else {
+        const tok = (tex.slice(j).match(/^\\([a-zA-Z]+|.)|^./s) || [''])[0];
+        args.push(tok); j += tok.length;
+      }
+    }
+    out += tex.slice(i, m.index) + fn(args);
+    i = j;
+    re.lastIndex = j;
+  }
+  return out + tex.slice(i);
+}
+
+// one tabular cell inside a formula: $..$ parts are math, the rest is text
+function cellMath(cell) {
+  let out = '';
+  let i = 0;
+  const text = (t) => { if (t.trim()) out += `\\text{${t}}`; };
+  while (i < cell.length) {
+    const k = cell.indexOf('$', i);
+    if (k < 0) { text(cell.slice(i)); break; }
+    if (k > 0 && cell[k - 1] === '\\') { text(cell.slice(i, k + 1)); i = k + 1; continue; }
+    text(cell.slice(i, k));
+    const e = Parser.mathEnd(cell, k + 1, '$');
+    out += cell.slice(k + 1, e);
+    i = e + 1;
+  }
+  return out;
+}
+
+// \begin{tabular}{spec} $a$ & b \\ ... \end{tabular} inside a formula -> an array
+function tabularsToArrays(tex) {
+  for (let guard = 0; guard < 200; guard++) {
+    const k = tex.lastIndexOf('\\begin{tabular');
+    if (k < 0) break;
+    const star = tex.startsWith('\\begin{tabular*}', k);
+    const endTag = star ? '\\end{tabular*}' : '\\end{tabular}';
+    const e = tex.indexOf(endTag, k);
+    if (e < 0) break;
+    let rest = tex.slice(k + (star ? 16 : 15), e);
+    if (star) rest = rest.replace(/^\s*\{[^}]*\}/, '');
+    rest = rest.replace(/^\s*\[[^\]]*\]/, '');
+    const { args, end } = Parser.args(rest, 0, 1);
+    const spec = (args[0] || 'l').replace(/[@!>]\{[^}]*\}|<\{[^}]*\}/g, '').replace(/[pmb]\{[^}]*\}/g, 'l');
+    const rows = splitRows(rest.slice(end)).map((row) => splitCells(takeRules(row).rest).map((c) => cellMath(c.trim())).join(' & '));
+    while (rows.length > 1 && !rows[rows.length - 1].trim()) rows.pop();
+    tex = tex.slice(0, k) + `\\begin{array}{${spec}}${rows.join(' \\\\ ')}\\end{array}` + tex.slice(e + endTag.length);
+  }
+  return tex;
+}
+
+// A formula as MathLive and MathML can show it. The stored formula keeps what 5.x
+// wrote; only what is shown changes: tables in formulas become arrays, and what
+// MathLive does not know (\newline, \dots, rules, \multicolumn, \substack, a picture)
+// is shown its nearest way. MathLive also reads \longrightarrow x as an arrow over x.
+export function mathForDisplay(tex) {
+  if (!/\\(begin\{tabular|begin\{array|hline|cline|toprule|midrule|bottomrule|newline|dots|long(left|right|leftright)arrow|multicolumn|substack|FRAME|ref|pageref|eqref|symbol)(?![a-zA-Z])/.test(tex)) return tex;
+  let t = tabularsToArrays(tex);
+  t = replaceCmd(t, 'multicolumn', 3, (a) => a[2]);
+  t = replaceCmd(t, 'substack', 1, (a) => `\\begin{smallmatrix}${a[0]}\\end{smallmatrix}`);
+  t = replaceCmd(t, 'FRAME', 8, () => '\\boxed{\\text{圖}}');
+  t = replaceCmd(t, '(?:page|eq)?ref', 1, (a) => `\\text{${a[0]}}`);
+  // \symbol{126} (a character by its number; 5.x puts the tilde over letters this way)
+  t = replaceCmd(t, 'symbol', 1, (a) => { const c = /^\d+$/.test(a[0]) ? String.fromCharCode(+a[0]) : ''; return c === '~' ? '\\sim' : /[\\{}$&#^_%]/.test(c) ? '' : `\\text{${c}}`; });
+  return t
+    .replace(/\\(hline|toprule|midrule|bottomrule)(?![a-zA-Z])\s*/g, '')
+    .replace(/\\cline\s*\{[^}]*\}\s*/g, '')
+    .replace(/\\newline(?![a-zA-Z])\s*/g, ' ')
+    .replace(/\\dots(?![a-zA-Z])/g, '\\ldots')
+    .replace(/\\(longrightarrow|longleftarrow|longleftrightarrow)(?![a-zA-Z])/g, '\\$1{}')
+    // an empty array stops MathLive
+    .replace(/(\\begin\{array\}\{[^}]*\})\s*(\\end\{array\})/g, '$1{}$2');
 }
 
 // \label, \tag, \nonumber of one formula row -> the row without them, and what they said
@@ -287,7 +414,7 @@ export class Parser {
     }
     return { args, opt, end: j };
   }
-  static cmdAt(s, i) { const m = s.slice(i).match(/^\\([a-zA-Z]+\*?|.)/); return m ? m[1] : ''; }
+  static cmdAt(s, i) { const m = s.slice(i).match(/^\\([a-zA-Z]+\*?|[^])/); return m ? m[1] : ''; }
   // \begin{name} at i -> { name, inner, end } using nesting of the same name
   static env(s, i) {
     const name = s.slice(i).match(/^\\begin\s*\{([^}]+)\}/)[1];
@@ -306,12 +433,27 @@ export class Parser {
     }
   }
   // end of math starting at i with delimiter d -> index of the closing delimiter
+  // 5.x puts tables in formulas as \begin{tabular} with $..$ cells, and text with
+  // $..$ inside braces (\text{for $x$}): a close inside those does not end the formula.
+  // If braces never balance, the first close counts (as before).
   static mathEnd(s, i, close) {
+    let depth = 0;
+    let tab = 0;
+    let first = -1;
     for (let j = i; j < s.length; j++) {
-      if (s[j] === '\\') { if (s.startsWith(close, j)) return j; j++; continue; }
-      if (s.startsWith(close, j)) return j;
+      const at = s.startsWith(close, j);
+      if (at && first < 0 && !tab) first = j;
+      if (at && !depth && !tab) return j;
+      if (s[j] === '\\') {
+        if (s.startsWith('\\begin{tabular', j)) tab++;
+        else if (s.startsWith('\\end{tabular', j) && tab) tab--;
+        j++;
+        continue;
+      }
+      if (s[j] === '{') depth++;
+      else if (s[j] === '}' && depth) depth--;
     }
-    return s.length;
+    return first >= 0 ? first : s.length;
   }
 
   // ---------- blocks ----------
@@ -327,6 +469,8 @@ export class Parser {
     while (i < s.length) {
       const c = s[i];
       if (c === '\n' && /^\n[ \t]*\n/.test(s.slice(i))) { flush(); i = s.slice(i).match(/^\n[ \t\n]*/)[0].length + i; continue; }
+      // a line break \\ (maybe \\[2pt]): not the start of a display \[ .. \]
+      if (s.startsWith('\\\\', i)) { para += '\\\\'; i += 2; continue; }
       if (s.startsWith('$$', i) || s.startsWith('\\[', i)) {
         const close = s[i] === '$' ? '$$' : '\\]';
         const end = Parser.mathEnd(s, i + 2, close);
@@ -349,7 +493,12 @@ export class Parser {
         const cmd = Parser.cmdAt(s, i);
         if (cmd === 'begin') {
           const env = Parser.env(s, i);
-          const blocks = this.environment(env);
+          let blocks = this.environment(env);
+          // a table with text before or after it in the same paragraph sits in the text line
+          if (blocks && blocks.length === 1 && blocks[0].type.name === 'table' && /^tabular/.test(env.name)
+            && (para.trim() || !/^[ \t]*(\n[ \t]*\n|\n?[ \t]*$)/.test(s.slice(env.end)))) {
+            blocks = [schema.nodes.table.create({ ...blocks[0].attrs, inline: true }, blocks[0].content)];
+          }
           if (blocks) { flush(); out.push(...blocks); if (blocks.length) this.started = true; } else para += s.slice(i, env.end);
           i = env.end;
           continue;
@@ -404,7 +553,7 @@ export class Parser {
         }
         if (name === 'maketitle') {
           flush();
-          if (this.title != null) out.push(schema.nodes.title.create({ date: this.date ?? null }, this.inline(this.title.replace(/\\\\/g, ' '))));
+          if (this.title != null) out.push(schema.nodes.title.create({ date: this.date ?? null }, this.inline(this.title)));
           if (this.author) out.push(schema.nodes.env.create({ kind: 'centered' }, [schema.nodes.paragraph.create(null, this.inline(this.author))]));
           this.started = true;
           i += cmd.length + 1;
@@ -447,7 +596,9 @@ export class Parser {
     if (name in DISPLAY_ENVS) return [displayNode(name, inner)];
     if (name === 'center' || name === 'flushleft' || name === 'flushright') {
       // 5.5 makes a document's heading as a centered line in a big font
-      const big = inner.trim().match(/^\{\\(LARGE|Large|large|huge|Huge)\s+([^]*)\}$/);
+      // (one {\huge ...} group: "{\huge A}\n\n{\Large B}" is two lines, not one heading)
+      const whole = inner.trim();
+      const big = whole.startsWith('{') && Parser.groupEnd(whole, 0) === whole.length ? whole.match(/^\{\\(LARGE|Large|large|huge|Huge)\s+([^]*)\}$/) : null;
       if (big && !this.started) return [schema.nodes.title.create({ form: big[1] }, this.inline(big[2]))];
       const inside = this.blocks(inner);
       if (!inside.length) return [];
@@ -518,7 +669,8 @@ export class Parser {
   tabular(name, inner) {
     let rest = inner;
     if (name === 'tabular*' || name === 'tabularx') rest = rest.replace(/^\s*\{[^}]*\}/, ''); // width
-    rest = rest.replace(/^\s*\[[^\]]*\]/, ''); // vertical position
+    const posM = rest.match(/^\s*\[([^\]]*)\]/); // vertical position
+    if (posM) rest = rest.slice(posM[0].length);
     const { args, end } = Parser.args(rest, 0, 1);
     const colspec = args[0] || '';
     const aligns = columnAligns(colspec);
@@ -544,7 +696,7 @@ export class Parser {
       return schema.nodes.table_row.create({ before: rules }, cells);
     });
     if (!tableRows.length) tableRows.push(schema.nodes.table_row.create(null, [schema.nodes.table_cell.create(null, [schema.nodes.paragraph.create()])]));
-    return schema.nodes.table.create({ colspec, after }, tableRows);
+    return schema.nodes.table.create({ colspec, after, pos: posM ? posM[1].trim() || null : null }, tableRows);
   }
 
   splitItems(s) {
@@ -555,7 +707,8 @@ export class Parser {
     while (i < s.length) {
       if (s.startsWith('\\begin{', i)) depth++;
       else if (s.startsWith('\\end{', i)) depth--;
-      if (s[i] === '\\' && s[i + 1] === '\\') { if (cur) cur.text += '\\\\'; i += 2; continue; }
+      // \\, \{, \} ... are not groups (a set \{-1,0\} in an item)
+      if (s[i] === '\\' && s[i + 1] && !/[a-zA-Z]/.test(s[i + 1])) { if (cur) cur.text += s.slice(i, i + 2); i += 2; continue; }
       if (s[i] === '{') { const g = Parser.groupEnd(s, i); if (cur) cur.text += s.slice(i, g); i = g; continue; }
       if (depth === 0 && s.startsWith('\\item', i) && !/[a-zA-Z]/.test(s[i + 5] || '')) {
         cur = { text: '', label: null };
@@ -611,7 +764,7 @@ export class Parser {
         const cmd = Parser.cmdAt(s, i);
         const after = i + 1 + cmd.length;
         if (cmd === '\\') { // line break, optional [length]
-          const k = s.slice(after).match(/^\*?\s*(\[[^\]]*\])?/);
+          const k = s.slice(after).match(/^\*?\s*(\[[^\]]*\])?\s*/); // TeX skips the spaces after it
           push([schema.nodes.hard_break.create()]);
           i = after + k[0].length;
           continue;
@@ -710,11 +863,14 @@ export class Parser {
           i = end;
           continue;
         }
+        if (cmd === 'HTML') { const { args, end } = Parser.args(s, after, 1); push([schema.nodes.html_field.create({ html: args[0] || '' })]); i = end; continue; }
         if (cmd === 'begin') { const env = Parser.env(s, i); push([schema.nodes.tex_field.create({ tex: s.slice(i, env.end) })]); i = env.end; continue; }
-        // anything else: keep the command and its arguments as a TeX field
-        let end = after;
+        // anything else: keep the command and its arguments as a TeX field (a control
+        // word eats the spaces after it, as in TeX)
+        let end = /^[a-zA-Z]/.test(cmd) ? after + s.slice(after).match(/^[ \t]*/)[0].length : after;
         while (s[end] === '{' || (s[end] === '[' && end === after)) end = s[end] === '{' ? Parser.groupEnd(s, end) : s.indexOf(']', end) + 1;
-        push([schema.nodes.tex_field.create({ tex: s.slice(i, end) })]);
+        // \newline{} is \newline (the {} only stops it eating a following letter; saving adds it again)
+        push([schema.nodes.tex_field.create({ tex: s.slice(i, end).replace(/[ \t]+$/, '').replace(/^(\\[a-zA-Z]+)\{\}$/, '$1') })]);
         i = end;
         continue;
       }

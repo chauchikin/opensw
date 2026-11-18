@@ -37,8 +37,9 @@ const unwrap = (s) => {
 export function frameAttrs(args, tex) {
   const [flags = '', w, h, , cap, lab, name, body = ''] = args;
   const type = special(body, 'type') || '';
-  // a picture keeps its file name; a plot keeps a snapshot made by 5.x (tempfilename)
-  const file = special(body, 'filename') || special(body, 'tempfilename') || '';
+  // a picture keeps its file name; a plot keeps a snapshot made by 5.x (tempfilename), or is
+  // named by its view file (VCamFile) when 5.x kept no snapshot
+  const file = special(body, 'filename') || special(body, 'tempfilename') || special(body, 'VCamFile') || '';
   const kind = flags.includes('f') ? 'float' : flags.includes('d') ? 'display' : 'inline';
   return {
     src: null,

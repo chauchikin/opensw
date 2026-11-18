@@ -9,7 +9,8 @@ const tools = Object.entries(COMMANDS).filter(([name]) => name !== 'help').map((
   const properties = {};
   const required = [];
   for (const [p, t] of Object.entries(params)) {
-    properties[p] = { type: TYPES[t.replace('?', '')] };
+    const base = t.replace('?', '');
+    properties[p] = base.endsWith('[]') ? { type: 'array', items: { type: TYPES[base.slice(0, -2)] } } : { type: TYPES[base] };
     if (!t.endsWith('?')) required.push(p);
   }
   return { name: 'sw_' + name, description: desc, inputSchema: { type: 'object', properties, ...(required.length ? { required } : {}) } };

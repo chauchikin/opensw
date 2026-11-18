@@ -2,13 +2,17 @@
 // (browsers draw MathML themselves), pictures inside the page, footnotes at the end.
 import { convertLatexToMathMl } from 'mathlive';
 import { computeNumbers } from './numbering.js';
-import { standardTeX } from './tex55.js';
+import { standardTeX, mathForDisplay } from './tex55.js';
 import { envLabel, PLAIN_ENVS, FRONT_LABELS } from './schema.js';
+import { _t } from './i18n.js';
 
 const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+let mathMode = 'mathml';
 const mathml = (latex, display) => {
+  // Tools > Export Settings: LaTeX for MathJax instead of MathML
+  if (mathMode === 'mathjax') return display ? `\\[${esc(mathForDisplay(standardTeX(latex)))}\\]` : `\\(${esc(mathForDisplay(standardTeX(latex)))}\\)`;
   let inner;
-  try { inner = convertLatexToMathMl(standardTeX(latex)); } catch (e) { inner = `<mtext>${esc(latex)}</mtext>`; }
+  try { inner = convertLatexToMathMl(mathForDisplay(standardTeX(latex))); } catch (e) { inner = `<mtext>${esc(latex)}</mtext>`; }
   return `<math${display ? ' display="block"' : ''}>${inner}</math>`;
 };
 const MARK_HTML = { bold: 'strong', italic: 'em', code: 'code', sup: 'sup', sub: 'sub', underline: 'u' };
@@ -16,7 +20,8 @@ const SIZE_EM = { tiny: 0.5, scriptsize: 0.7, footnotesize: 0.8, small: 0.9, lar
 const SECTION_TAG = ['h1', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6'];
 
 // pictures: path -> data: URL (given by the caller, who has the files)
-export function toHtml(doc, meta = {}, pictures = new Map()) {
+export function toHtml(doc, meta = {}, pictures = new Map(), opts = {}) {
+  mathMode = opts.math || 'mathml';
   const nums = computeNumbers(doc, meta);
   const notes = [];
   const anchors = new Set();
@@ -50,6 +55,7 @@ export function toHtml(doc, meta = {}, pictures = new Map()) {
           s = `<sup class="fn"><a id="fnref${k}" href="#fn${k}">${c.attrs.kind === 'thanks' ? '*' : k}</a></sup>`;
         }
       } else if (t === 'image') s = picture(c);
+      else if (t === 'html_field') s = c.attrs.html;
       else if (t === 'tex_field') s = /^\\(big|med|small)skip/.test(c.attrs.tex.trim()) ? '<span class="vskip"></span>' : `<code class="tex">${esc(c.attrs.tex)}</code>`;
       else s = '';
       for (const m of c.marks) {
@@ -71,10 +77,10 @@ export function toHtml(doc, meta = {}, pictures = new Map()) {
     const src = pictures.get(a.path);
     const size = (a.width ? `width:${a.width}px;` : '') + (a.height ? `height:${a.height}px;` : '');
     const img = src ? `<img src="${src}" alt="${esc(a.caption || a.path)}" style="${size}">`
-      : `<span class="missing" style="${size}">${esc(a.path || '圖片')}</span>`;
+      : `<span class="missing" style="${size}">${esc(a.path || _t('圖片'))}</span>`;
     if (a.place === 'inline') return img;
     if (a.label) anchors.add(a.label);
-    const cap = a.place === 'float' ? `<figcaption>${esc(nums.captions.get(posOf.get(c)) || '')}${a.caption ? '：' + esc(a.caption) : ''}</figcaption>` : '';
+    const cap = a.place === 'float' ? `<figcaption>${esc(nums.captions.get(posOf.get(c)) || '')}${a.caption ? _t('：') + esc(a.caption) : ''}</figcaption>` : '';
     return `<figure${a.label ? ` id="${esc(a.label)}"` : ''}>${img}${cap}</figure>`;
   }
 
@@ -103,7 +109,7 @@ export function toHtml(doc, meta = {}, pictures = new Map()) {
       case 'env': {
         const k = node.attrs.kind;
         const num = nums.envs.get(posOf.get(node));
-        const head = PLAIN_ENVS.has(k) && k !== 'proof' && k !== 'abstract' ? '' : `<span class="env-label">${esc(envLabel(k))}${num ? ' ' + esc(num) : ''}${node.attrs.title ? `（${esc(node.attrs.title)}）` : ''}.</span> `;
+        const head = PLAIN_ENVS.has(k) && k !== 'proof' && k !== 'abstract' ? '' : `<span class="env-label">${esc(envLabel(k))}${num ? ' ' + esc(num) : ''}${node.attrs.title ? _t('（{0}）', esc(node.attrs.title)) : ''}.</span> `;
         let inner = '';
         node.forEach((c) => { inner += block(c); });
         if (head) inner = inner.replace(/^<p>/, '<p>' + head);
@@ -132,7 +138,7 @@ export function toHtml(doc, meta = {}, pictures = new Map()) {
         node.forEach((c, off) => {
           if (c.type.name === 'caption') {
             c.forEach((x) => { if (x.type.name === 'marker') anchors.add(x.attrs.key); });
-            cap = `<figcaption>${esc(nums.captions.get(posOf.get(node) + 1 + off) || '')}：${inline(c)}</figcaption>`;
+            cap = `<figcaption>${_t('{0}：{1}', esc(nums.captions.get(posOf.get(node) + 1 + off) || ''), inline(c))}</figcaption>`;
           } else inner += block(c);
         });
         return `<figure>${inner}${cap}</figure>\n`;
@@ -140,10 +146,10 @@ export function toHtml(doc, meta = {}, pictures = new Map()) {
       case 'bibliography': {
         let s = '';
         node.forEach((it) => { s += `<li id="bib-${esc(it.attrs.key)}"><span class="biblabel">[${esc(nums.bib.get(it.attrs.key) || it.attrs.key)}]</span> ${inline(it)}</li>`; });
-        return `<h2>參考文獻</h2>\n<ul class="bibliography">${s}</ul>\n`;
+        return `<h2>${_t('參考文獻')}</h2>\n<ul class="bibliography">${s}</ul>\n`;
       }
-      case 'bibtex': return `<p class="note">（參考文獻來自 BibTeX：${esc(node.attrs.files)}）</p>\n`;
-      case 'front_field': return `<p class="front"><span>${esc(FRONT_LABELS[node.attrs.cmd] || node.attrs.cmd)}：</span>${inline(node)}</p>\n`;
+      case 'bibtex': return `<p class="note">${_t('（參考文獻來自 BibTeX：{0}）', esc(node.attrs.files))}</p>\n`;
+      case 'front_field': return `<p class="front"><span>${_t('{0}：', esc(FRONT_LABELS[node.attrs.cmd] || node.attrs.cmd))}</span>${inline(node)}</p>\n`;
       case 'toc': case 'appendix': case 'subdoc': return '';
       default: {
         let s = '';
@@ -166,7 +172,7 @@ export function toHtml(doc, meta = {}, pictures = new Map()) {
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="generator" content="opensw">
 <title>${title}</title>
-<style>
+${mathMode === 'mathjax' ? '<script defer src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js"></script>\n' : ''}<style>
 body { max-width: 46em; margin: 2em auto; padding: 0 1em; font: 17px/1.6 "Times New Roman", "Noto Serif TC", "PMingLiU", serif; color: #111; }
 h1.title { text-align: center; } p.date { text-align: center; }
 .display { position: relative; margin: .8em 0; text-align: center; } .eqno { position: absolute; right: 0; top: 50%; transform: translateY(-50%); }

@@ -3,6 +3,7 @@ import { schema } from './schema.js';
 import { mathmlToLatex } from './mathml2latex.js';
 import { sciMathML } from './sciwriter.js';
 import { mimeOf } from './graphics.js';
+import { _t } from './i18n.js';
 
 // Read a Scientific Word .sci file (a zip with main.xhtml) into an editor document.
 
@@ -24,10 +25,10 @@ const opensw = (el) => { try { return JSON.parse(el.getAttribute('data-opensw') 
 export async function readSci(data) {
   const zip = await JSZip.loadAsync(data);
   const file = zip.file('main.xhtml') || zip.file(/\.xhtml$/)[0];
-  if (!file) throw new Error('這個 .sci 裡找不到 main.xhtml');
+  if (!file) throw new Error(_t('這個 .sci 裡找不到 main.xhtml'));
   const xml = await file.async('string');
   const dom = new DOMParser().parseFromString(xml, 'application/xml');
-  if (dom.querySelector('parsererror')) throw new Error('main.xhtml 格式錯誤');
+  if (dom.querySelector('parsererror')) throw new Error(_t('main.xhtml 格式錯誤'));
 
   // pictures inside the zip -> blob URLs
   const images = {};
@@ -82,7 +83,9 @@ const norm = (s) => s.replace(/\sxmlns(:\w+)?="[^"]*"/g, '').replace(/>\s+</g, '
   .replace(/&#x([0-9a-f]+);/gi, (m, h) => String.fromCodePoint(parseInt(h, 16)))
   .replace(/&#(\d+);/g, (m, d) => String.fromCodePoint(+d))
   // spacing inside tags (MathLive may write two spaces before an attribute)
-  .replace(/<([^>]*)>/g, (m, t) => '<' + t.replace(/\s+/g, ' ').replace(/\s*\/$/, '/').trim() + '>').trim();
+  .replace(/<([^>]*)>/g, (m, t) => '<' + t.replace(/\s+/g, ' ').replace(/\s*\/$/, '/').trim() + '>')
+  // an empty element: <mtd></mtd> (writer) is <mtd/> (XMLSerializer)
+  .replace(/<([a-zA-Z][\w:.-]*)((?: [^>]*)?)><\/\1>/g, '<$1$2/>').trim();
 function mathLatex(mathEl) {
   const sem = Array.from(mathEl.children).find((c) => c.localName === 'semantics');
   const ann = sem && Array.from(sem.children).find((c) => c.localName === 'annotation' && /tex/i.test(c.getAttribute('encoding') || ''));
@@ -298,7 +301,7 @@ class Reader {
       if (cells.length) rows.push(schema.nodes.table_row.create({ before: tr.getAttribute('data-opensw') || '' }, cells));
     }
     if (!rows.length) rows.push(schema.nodes.table_row.create(null, [schema.nodes.table_cell.create(null, [schema.nodes.paragraph.create()])]));
-    return schema.nodes.table.create({ colspec: extra.colspec ?? null, after: extra.after ?? '' }, rows);
+    return schema.nodes.table.create({ colspec: extra.colspec ?? null, after: extra.after ?? '', pos: extra.pos ?? null, inline: !!extra.inline }, rows);
   }
 
   inlineOf(el, marks = []) {
@@ -362,6 +365,7 @@ class Reader {
       return;
     }
     if (t === 'texb') { arr.push(schema.nodes.tex_field.create({ tex: node.textContent.trim() })); return; }
+    if (t === 'htmlfield') { arr.push(schema.nodes.html_field.create({ html: node.textContent.trim() })); return; }
     if (t === 'texlogo') { arr.push(schema.text(node.getAttribute('name') === 'latex' ? 'LaTeX' : 'TeX', mk(marks))); return; }
     if (t === 'br' && node.getAttribute('type') === '_moz') return; // SW 6's cursor placeholder
     if (t === 'msibr' || t === 'br') {

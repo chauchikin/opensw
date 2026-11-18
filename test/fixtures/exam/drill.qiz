@@ -1,0 +1,212 @@
+%2multibyte Version: 5.50.0.2960 CodePage: 950
+\documentclass{article}
+\usepackage{amsmath}
+%TCIDATA{OutputFilter=LATEX.DLL}
+%TCIDATA{Version=5.50.0.2960}
+\input{tcilatex}
+\begin{document}
+
+\section{Exam}
+
+\subsection{Comment}
+
+An exam template written for opensw's tests.
+
+\section{Setup}
+
+Questions:number
+
+Seed:12345
+
+$s:=\{2,3,5,7,11\}$
+
+$p:=\func{rand}(s)$
+
+$q:=\func{rand}(s)$
+
+Condition: $(p\neq q)\wedge p<q$
+
+\section{Text}
+
+\textbf{Drill.} Numbers this time: $%
+%TCIMACRO{\FORMULA{p}{p}{evaluate}}%
+%BeginExpansion
+p%
+%EndExpansion
+$ and $%
+%TCIMACRO{\FORMULA{q}{q}{evaluate}}%
+%BeginExpansion
+q%
+%EndExpansion
+$.
+
+\section{Question}
+
+\subsection{Setup}
+
+Choices:permute
+
+$a:=\func{rand}(2,9)$
+
+$b:=\func{rand}(2,9)$
+
+Condition: $(a\neq b)$
+
+\subsection{Statement}
+
+What is $%
+%TCIMACRO{\FORMULA{a}{a}{evaluate}}%
+%BeginExpansion
+a%
+%EndExpansion
++%
+%TCIMACRO{\FORMULA{b}{b}{evaluate}}%
+%BeginExpansion
+b%
+%EndExpansion
+$?
+
+\subsection{Response}
+
+\begin{itemize}
+\item $%
+%TCIMACRO{\FORMULA{a+b}{a+b}{evaluate}}%
+%BeginExpansion
+a+b%
+%EndExpansion
+$\correctchoice{}
+
+\item $%
+%TCIMACRO{\FORMULA{a+b+1}{a+b+1}{evaluate}}%
+%BeginExpansion
+a+b+1%
+%EndExpansion
+$
+
+\item $%
+%TCIMACRO{\FORMULA{ab}{ab}{evaluate}}%
+%BeginExpansion
+ab%
+%EndExpansion
+$
+\end{itemize}
+
+\begin{description}
+\item[fixed] None of these
+\end{description}
+
+\subsection{Solution}
+
+Add them: the sum is $%
+%TCIMACRO{\FORMULA{a+b}{a+b}{evaluate}}%
+%BeginExpansion
+a+b%
+%EndExpansion
+$.
+
+\section{Question}
+
+\subsection{Setup}
+
+$c:=\func{rand}(1,5)$
+
+$d=c^{2}$
+
+\subsection{Statement}
+
+Expand $%
+%TCIMACRO{\FORMULA{(x+c)^{2}}{(x+c)^{2}}{evaluate}}%
+%BeginExpansion
+(x+c)^{2}%
+%EndExpansion
+$ and give $d$.
+
+\subsection{Substatement}
+
+The expansion:
+
+\subsection{Response}
+
+\begin{enumerate}
+\item $%
+%TCIMACRO{\FORMULA{(x+c)^{2}}{x^{2}+2cx+c^{2}}{expand}}%
+%BeginExpansion
+x^{2}+2cx+c^{2}%
+%EndExpansion
+$\correctchoice{}
+
+\item $%
+%TCIMACRO{\FORMULA{x^{2}+c^{2}}{x^{2}+c^{2}}{evaluate}}%
+%BeginExpansion
+x^{2}+c^{2}%
+%EndExpansion
+$
+\end{enumerate}
+
+\subsection{Substatement}
+
+The value of $d$:
+
+\subsection{Response}
+
+InputField
+
+\subsection{Answer}
+
+$d=%
+%TCIMACRO{\FORMULA{d}{d}{evaluate}}%
+%BeginExpansion
+d%
+%EndExpansion
+$
+
+\subsection{Variant}
+
+\subsection{Setup}
+
+$m:=\func{rand}(\{4,6,8\})$
+
+\subsection{Statement}
+
+What is half of $%
+%TCIMACRO{\FORMULA{m}{m}{evaluate}}%
+%BeginExpansion
+m%
+%EndExpansion
+$?
+
+\subsection{Response}
+
+\begin{itemize}
+\item $%
+%TCIMACRO{\FORMULA{m/2}{m/2}{evaluate}}%
+%BeginExpansion
+m/2%
+%EndExpansion
+$\correctchoice{}
+
+\item $%
+%TCIMACRO{\FORMULA{2m}{2m}{evaluate}}%
+%BeginExpansion
+2m%
+%EndExpansion
+$
+\end{itemize}
+
+\section{Part}
+
+\subsection{Setup}
+
+Questions:no number
+
+\section{Question}
+
+\subsection{Statement}
+
+Write a sentence about primes.
+
+\subsection{Response}
+
+InputField
+
+\end{document}

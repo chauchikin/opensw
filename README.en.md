@@ -10,15 +10,30 @@ opensw aims at one thing: open 5.5 files, edit them, typeset them, and work the 
 ## What it does
 
 - Opens Scientific Word 5.x `.tex` files and 6.x `.sci` files
-- Saves `.sci`, and can save back to a 5.x-format `.tex` for 5.5 (Chinese in Big5)
+- 5.x `.tex` is the main format: saves back to the file it opened (keeping a `.bak`; Chinese in Big5), typesets an unchanged document from its own text, and can also save `.sci`
 - Text and formulas on the same line; menus and keyboard shortcuts as in 5.5
-- A Compute menu run by SymPy: simplify, solve, calculus, matrices, ODEs, statistics
+- A Compute menu run by SymPy: simplify, solve, calculus, matrices, ODEs, statistics; with Mathematica installed, Tools > Computation Engine can switch it to Mathematica (desktop app)
 - Tables, pictures, footnotes, citations, index entries, cross-references, numbered equations
-- 5.5 plots are drawn again from the settings stored in the file
-- Typesets to PDF (XeLaTeX, Chinese included); exports LaTeX, HTML and Markdown
+- 5.5 plots are drawn again from the settings stored in the file (all the 2D and 3D kinds)
+- Exam Builder: exams and answer keys made from a 5.5 exam template (.qiz)
+- Fragments, Open Location, Document Manager (pack into a .zip, open 5.5's wrapped .rap)
+- A manual for every menu: Help > Manual (source in `src/helpdoc.js`)
+- Typesets to PDF (XeLaTeX, Chinese included; the Windows version bundles Tectonic and the usual TeX files, so it works offline); exports LaTeX, HTML and Markdown
+- Interface in English and Traditional Chinese (Tools > User Setup); to add a language, see the top of `src/i18n.js`
 - The desktop app has an MCP server, so AI tools can read, edit, compute and typeset
 
 A 5.x command it does not know is kept as a TeX field, so nothing is lost on saving or export.
+
+## Download
+
+Windows 10 and 11: download from this repository's Releases page.
+
+- `opensw_<version>_x64-setup.exe`: the installer. It installs into your own user folder and needs no administrator rights.
+- `opensw_<version>_x64-portable.zip`: the portable version. Unzip it and run `opensw.exe`; it can live on a USB stick.
+
+The installer is not signed, so the first time Windows may say "Windows protected your PC". Click "More info", then "Run anyway".
+
+There are no installers for macOS and Linux; you can build it yourself as described under "Running it".
 
 ## Running it
 
@@ -29,18 +44,20 @@ npx vite build        # web version in dist/
 npx tauri build       # desktop app (needs Rust)
 ```
 
-Tests are in `test/` and run with Playwright's Chromium, for example:
+Tests are in `test/` and run with Playwright's Chromium. Build, start the preview, then run all of them or a few:
 
 ```
+npx vite build
 npx vite preview --port 4173 &
-node test/tables.mjs
+npm test              # all
+npm test tables       # only test/tables.mjs
 ```
 
 ## License
 
 MIT, see [LICENSE](LICENSE).
 
-Components keep their own licenses: ProseMirror, MathLive, CortexJS Compute Engine (MIT), SymPy, mpmath (BSD), Pyodide (MPL-2.0), Tauri (MIT/Apache-2.0), Tectonic (MIT).
+Components keep their own licenses: ProseMirror, MathLive, CortexJS Compute Engine (MIT), SymPy, mpmath (BSD), Pyodide (MPL-2.0), Tauri (MIT/Apache-2.0), Tectonic (MIT). The full texts are in [THIRD-PARTY-NOTICES.txt](THIRD-PARTY-NOTICES.txt), which also ships with the installer. Regenerate it with `node scripts/licenses.mjs` after changing dependencies.
 
 ## Acknowledgments
 

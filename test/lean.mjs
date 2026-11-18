@@ -50,7 +50,7 @@ if (existsSync(lake) && existsSync(project)) {
 const b = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium-1243/chrome-linux64/chrome' });
 const page = await b.newPage();
 const errs = []; page.on('pageerror', (e) => errs.push(e.message));
-await page.goto('http://localhost:4173/'); await page.waitForTimeout(600);
+await page.goto('http://localhost:4173/?lang=zh-TW'); await page.waitForTimeout(600);
 await page.evaluate(() => window.sw.call('set', { latex: 'So $\\frac{1}{2}+\\frac{1}{3}=\\frac{5}{6}$.' }));
 await page.evaluate(() => document.querySelectorAll('.math-inline')[0]._mathView.enter(false));
 await page.click('.menu-top:has-text("計算")');

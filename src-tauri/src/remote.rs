@@ -27,7 +27,7 @@ pub fn control_file() -> Option<PathBuf> {
     } else {
         PathBuf::from(std::env::var_os("HOME")?).join(".local/share")
     };
-    Some(base.join("com.ckwinlose.swnext").join("control.json"))
+    Some(base.join(crate::IDENTIFIER).join("control.json"))
 }
 
 #[derive(Default)]
@@ -104,7 +104,11 @@ fn handle(app: &AppHandle, stream: TcpStream, token: &str) -> Result<(), String>
     }
     let req: serde_json::Value = serde_json::from_str(&body).map_err(|e| e.to_string())?;
     let reply = run_in_page(app, &req["cmd"], &req["args"]);
-    respond(&mut out, 200, &reply)
+    respond(&mut out, 200, &reply)?;
+    // end the connection now: the caller reads to the end, and a program the command started
+    // (the Mathematica kernel keeps running) may hold a copy of this socket, which would
+    // otherwise keep the connection open as long as that program runs
+    out.shutdown(std::net::Shutdown::Both).map_err(|e| e.to_string())
 }
 
 fn run_in_page(app: &AppHandle, cmd: &serde_json::Value, args: &serde_json::Value) -> String {

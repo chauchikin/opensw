@@ -4,8 +4,8 @@
 fn main() {
     // `opensw --mcp`: MCP server for AI apps (stdin/stdout), no window
     if std::env::args().any(|a| a == "--mcp") {
-        sw_next_lib::mcp::run();
+        opensw_lib::mcp::run();
     } else {
-        sw_next_lib::run();
+        opensw_lib::run();
     }
 }

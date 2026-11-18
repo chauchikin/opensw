@@ -20,7 +20,7 @@ check(plot.view.x.join() === '-1,3' && plot.view.y.join() === '-2,2' && plot.axe
 const b = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium-1243/chrome-linux64/chrome' });
 const page = await b.newPage({ viewport: { width: 1024, height: 900 } });
 const errs = []; page.on('pageerror', (e) => errs.push(e.message));
-await page.goto('http://localhost:4173/'); await page.waitForTimeout(600);
+await page.goto('http://localhost:4173/?lang=zh-TW'); await page.waitForTimeout(600);
 const open = async (file) => {
   await page.setInputFiles('#file', file);
   if (await page.isVisible('#confirm')) await page.click('#confirm-ok');
@@ -49,8 +49,8 @@ fs.rmSync('/tmp/plot55', { recursive: true, force: true }); fs.mkdirSync('/tmp/p
 fs.writeFileSync('/tmp/plot55/plot55.tex', tex);
 const png = await page.evaluate(() => Array.from(window.swPictures.assets.get('PLOT0002.wmf')));
 fs.writeFileSync('/tmp/plot55/PLOT0002.wmf.png', Buffer.from(png));
-for (const f of fs.readdirSync('/home/claude/tex55/swmacros')) fs.copyFileSync('/home/claude/tex55/swmacros/' + f, '/tmp/plot55/' + f);
-fs.copyFileSync('/home/claude/tex55/tcilatex.tex', '/tmp/plot55/tcilatex.tex');
+for (const f of fs.readdirSync('src-tauri/tex55')) fs.copyFileSync('src-tauri/tex55/' + f, '/tmp/plot55/' + f);
+fs.copyFileSync('src-tauri/tex55/tcilatex.tex', '/tmp/plot55/tcilatex.tex');
 try { execSync('xelatex -interaction=nonstopmode plot55.tex', { cwd: '/tmp/plot55', stdio: 'ignore' }); } catch (e) { /* checked below */ }
 const n = fs.existsSync('/tmp/plot55/plot55.pdf') ? execSync('pdfimages -list plot55.pdf', { cwd: '/tmp/plot55' }).toString().split('\n').filter((l) => /^\s*\d+\s+\d+\s+image\b/.test(l)).length : -1;
 check(n === 1, 'typeset with xelatex: plot in the PDF');

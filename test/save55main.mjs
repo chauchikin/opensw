@@ -1,0 +1,73 @@
+// 5.x .tex is the main format (desktop app, with a stand-in for its shell):
+// an opened .tex is saved back to itself (old file kept as .bak), an unchanged one is
+// not written at all and is typeset from its own text; once edited, the editor's text
+// is used; a .sci path still gives a .sci.  node test/save55main.mjs
+import { chromium } from 'playwright';
+import fs from 'node:fs';
+const original = fs.readFileSync('test/fixtures/real55.tex');
+const b = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium-1243/chrome-linux64/chrome' });
+const page = await b.newPage();
+const errs = []; page.on('pageerror', (e) => errs.push(e.message));
+await page.addInitScript((b64) => {
+  const files = new Map([['C:\\Teacher\\Ch1.tex', Array.from(atob(b64), (c) => c.charCodeAt(0))]]);
+  window.shell = { writes: [], typeset: [] };
+  window.__TAURI_INTERNALS__ = {
+    transformCallback: () => 0,
+    invoke: async (cmd, args) => {
+      if (cmd === 'read_file') { if (files.has(args.path)) return files.get(args.path); throw new Error('no such file'); }
+      if (cmd === 'write_file') { window.shell.writes.push({ path: args.path, data: args.data }); files.set(args.path, args.data); return null; }
+      if (cmd === 'typeset') { window.shell.typeset.push(args.tex); return 'C:\\cache\\doc.pdf'; }
+      return null;
+    },
+  };
+}, original.toString('base64'));
+await page.goto('http://localhost:4173/?lang=zh-TW'); await page.waitForTimeout(800);
+let fails = 0;
+const check = (name, ok, detail) => { if (!ok) fails++; console.log(ok ? 'ok  ' : 'FAIL', name, ok ? '' : JSON.stringify(detail ?? '').slice(0, 300)); };
+const call = (cmd, args) => page.evaluate(([c, a]) => window.sw.call(c, a), [cmd, args]);
+const shell = () => page.evaluate(() => window.shell);
+
+let r = await call('open', { path: 'C:\\Teacher\\Ch1.tex' });
+check('opens the .tex', r.ok, r);
+await page.waitForTimeout(1500);
+r = await call('save');
+let s = await shell();
+check('unchanged: saving leaves the file alone', r.ok && s.writes.length === 0, { r, s: s.writes.map((w) => w.path) });
+
+r = await call('typeset');
+s = await shell();
+const t1 = s.typeset.at(-1) || '';
+const origText = original.toString('latin1').replace(/\r\n?/g, '\n');
+const origBody = origText.slice(origText.indexOf('\\begin{document}'));
+check('unchanged: typeset from its own text', r.ok && t1.endsWith(origBody) && t1.includes('%TCIDATA{Codepage=950}'), t1.slice(-300));
+check('…with this TeX\'s paper size added', /\\pdfpagewidth=\\paperwidth/.test(t1));
+
+r = await call('setFormula', { n: 0, latex: 'x^{3}+4x^{2}-11=0' });
+r = await call('typeset');
+s = await shell();
+const t2 = s.typeset.at(-1) || '';
+check('edited: typeset from the editor', t2.includes('x^{3}+4x^{2}-11=0') && !t2.includes('%TCIDATA{Version'), t2.slice(0, 200));
+
+r = await call('save');
+s = await shell();
+const paths = s.writes.map((w) => w.path);
+check('edited: old file kept as .bak, then the .tex written back', r.ok && r.result.path === 'C:\\Teacher\\Ch1.tex' && paths[0] === 'C:\\Teacher\\Ch1.bak' && paths[1] === 'C:\\Teacher\\Ch1.tex', paths);
+const saved = Buffer.from(s.writes[1]?.data || []).toString('latin1');
+check('the file written is a 5.x .tex with the change', saved.includes('x^{3}+4x^{2}-11=0') && saved.includes('%TCIDATA{OutputFilter=LATEX.DLL}'), saved.slice(0, 200));
+check('the .bak is the old file', Buffer.from(s.writes[0]?.data || []).equals(original));
+
+r = await call('save');
+s = await shell();
+check('saved again without changes: nothing written', s.writes.length === 2, s.writes.map((w) => w.path));
+r = await call('typeset');
+s = await shell();
+check('after saving: typeset from the saved text', (s.typeset.at(-1) || '').includes('x^{3}+4x^{2}-11=0') && s.typeset.at(-1).includes('%TCIDATA{Version'), (s.typeset.at(-1) || '').slice(0, 200));
+
+r = await call('save', { path: 'C:\\Teacher\\copy.sci' });
+s = await shell();
+const sci = Buffer.from(s.writes.at(-1)?.data || []);
+check('a .sci path still gives a .sci (a zip)', r.ok && s.writes.at(-1).path === 'C:\\Teacher\\copy.sci' && sci[0] === 0x50 && sci[1] === 0x4b, r);
+
+check('no page errors', !errs.length, errs);
+await b.close();
+process.exit(fails ? 1 : 0);

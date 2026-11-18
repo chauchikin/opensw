@@ -1,4 +1,4 @@
-import { standardTeX } from './tex55.js';
+import { standardTeX, mathForDisplay } from './tex55.js';
 import JSZip from 'jszip';
 import { convertLatexToMathMl } from 'mathlive';
 import { splitMathAlphaString } from './mathalpha.js';
@@ -46,7 +46,7 @@ function xmlEntities(s) {
 // XML-safe characters, and 𝔹-style letters written as <mi mathvariant="double-struck">B</mi>.
 export function sciMathML(latex) {
   let inner;
-  try { inner = xmlEntities(convertLatexToMathMl(standardTeX(latex))); } catch (e) { return ''; }
+  try { inner = xmlEntities(convertLatexToMathMl(mathForDisplay(standardTeX(latex)))); } catch (e) { return ''; }
   return inner.replace(/<mi>([^<]+)<\/mi>/g, (m, text) => {
     const r = splitMathAlphaString(text);
     return r ? `<mi mathvariant="${r[0]}">${r[1]}</mi>` : m;
@@ -91,6 +91,7 @@ function inline(node) {
     if (child.isText) s = esc(child.text);
     else if (t === 'math_inline') s = mathml(child.attrs.latex, false);
     else if (t === 'tex_field') s = `<texb enc="1" name="TeX field">${cdata(child.attrs.tex)}</texb>`;
+    else if (t === 'html_field') s = `<htmlfield name="HTML field">${cdata(child.attrs.html)}</htmlfield>`;
     else if (t === 'hard_break') s = '<msibr/>';
     else if (t === 'marker') s = `<a name="${escAttr(child.attrs.key)}" key="${escAttr(child.attrs.key)}" id="${escAttr(child.attrs.key)}"/>`;
     else if (t === 'ref') s = `<xref key="${escAttr(child.attrs.key)}" href="${escAttr(child.attrs.key)}" reftype="${child.attrs.kind === 'pageref' ? 'page' : 'obj'}"${child.attrs.kind === 'eqref' ? ' data-opensw="eqref"' : ''}/>`;
@@ -210,7 +211,7 @@ function block(node) {
 // A table; the LaTeX column spec and rules go in data-opensw
 function tableXML(node) {
   const a = node.attrs;
-  const extra = a.colspec || a.after ? ` data-opensw="${escAttr(JSON.stringify({ colspec: a.colspec, after: a.after }))}"` : '';
+  const extra = a.colspec || a.after || a.pos || a.inline ? ` data-opensw="${escAttr(JSON.stringify({ colspec: a.colspec, after: a.after, ...(a.pos ? { pos: a.pos } : {}), ...(a.inline ? { inline: true } : {}) }))}"` : '';
   let rows = '';
   node.forEach((row) => {
     let cells = '';

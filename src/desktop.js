@@ -2,14 +2,23 @@
 // desktop app (Tauri). In a browser none of this is loaded.
 import { invoke } from '@tauri-apps/api/core';
 import { open, save } from '@tauri-apps/plugin-dialog';
+import { _t } from './i18n.js';
 
 export const isDesktop = '__TAURI_INTERNALS__' in window;
+
+// Tools > Computation Engine > Mathematica: one Compute-menu operation by the Wolfram kernel
+// (src-tauri/src/wolfram.rs). json: the MathJSON text -> the answer object (see opensw_compute.wl)
+const toBase64 = (text) => { let s = ''; for (const b of new TextEncoder().encode(text)) s += String.fromCharCode(b); return btoa(s); };
+const fromBase64 = (b64) => new TextDecoder().decode(Uint8Array.from(atob(b64), (c) => c.charCodeAt(0)));
+export async function wolframCompute(kernel, op, json) {
+  return JSON.parse(fromBase64(await invoke('wolfram_compute', { kernel: kernel || null, op, data: toBase64(json) })));
+}
 
 const SCI = [{ name: 'Scientific Word', extensions: ['sci'] }];
 
 // -> { path, bytes } or null when the user cancels
 export async function pickAndRead() {
-  const path = await open({ multiple: false, filters: [{ name: 'Scientific Word（.sci、5.x 的 .tex）', extensions: ['sci', 'tex'] }, ...SCI] });
+  const path = await open({ multiple: false, filters: [{ name: _t('Scientific Word（.sci、5.x 的 .tex、考卷範本 .qiz）'), extensions: ['sci', 'tex', 'qiz'] }, ...SCI] });
   if (!path) return null;
   return { path, bytes: new Uint8Array(await invoke('read_file', { path })) };
 }
@@ -24,6 +33,11 @@ export async function writeBytes(bytes, path, defaultName, filters = SCI) {
   if (!target) return null;
   await invoke('write_file', { path: target, data: Array.from(bytes) });
   return target;
+}
+
+// File > Open Location: the bytes at a web address (fetched by the desktop shell)
+export async function fetchUrl(url) {
+  return new Uint8Array(await invoke('fetch_url', { url }));
 }
 
 // the document the app was started with (a double-clicked .sci), or null

@@ -1,0 +1,20 @@
+% A Chinese Scientific Word 5.x document as opensw typesets it: 5.x preamble, then xeCJK
+\documentclass[10pt,thmsa]{article}
+\usepackage{amsfonts}
+\usepackage{amssymb}
+\usepackage{amsmath}
+\usepackage{graphicx}
+\usepackage{sw20jart}
+\input{tcilatex}
+\ifdefined\XeTeXversion\pdfpagewidth=\paperwidth \pdfpageheight=\paperheight\fi
+\usepackage{xeCJK}
+\ifdefined\IfFontExistsTF
+\IfFontExistsTF{Noto Serif CJK TC}{\setCJKmainfont{Noto Serif CJK TC}}{%
+  \IfFontExistsTF{PMingLiU}{\setCJKmainfont{PMingLiU}}{\setCJKmainfont{Microsoft JhengHei}}}
+\else\setCJKmainfont{PMingLiU}\fi
+\begin{document}
+\title{講義}\author{作者}\maketitle
+中文 $x$。
+\input{common}
+\input{fonts}
+\end{document}

@@ -1,8 +1,8 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "opensw",
-  "version": "0.1.0",
-  "identifier": "com.ckwinlose.swnext",
+  "version": "0.5.0",
+  "identifier": "org.opensw.editor",
   "build": {
     "frontendDist": "../dist",
     "devUrl": "http://localhost:5173",
@@ -30,6 +30,7 @@
   },
   "bundle": {
     "active": true,
+    "publisher": "opensw contributors",
     "targets": [
       "nsis"
     ],
@@ -42,7 +43,9 @@
     ],
     "shortDescription": "opensw：照 Scientific Word 5.5 重做的開源數學編輯器",
     "resources": {
-      "tex55/": "tex55/"
+      "tex55/": "tex55/",
+      "../LICENSE": "LICENSE.txt",
+      "../THIRD-PARTY-NOTICES.txt": "THIRD-PARTY-NOTICES.txt"
     },
     "fileAssociations": [
       {

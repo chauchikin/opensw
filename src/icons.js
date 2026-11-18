@@ -11,6 +11,8 @@ export const ICONS = {
   new: svg(page),
   open: svg('<path d="M2 6h6l1.5 1.5h7.5v9h-15z" fill="#f2c94c" stroke="#9a7a1c"/><path d="M2 16.5l2.5-6.5h14l-2.5 6.5z" fill="#f8dc7a" stroke="#9a7a1c"/>'),
   save: svg('<rect x="2.5" y="2.5" width="15" height="15" rx="1" fill="#3d6fb6" stroke="#22426e"/><rect x="5.5" y="2.5" width="9" height="5.5" fill="#e9eef6" stroke="#22426e"/><rect x="11" y="3.5" width="2" height="3.5" fill="#22426e"/><rect x="5" y="11" width="10" height="6.5" fill="#fff" stroke="#22426e"/>'),
+  // Save Fragment: a page with a corner folded and a down arrow into it
+  save_fragment: svg('<path d="M4 2.5h8l4 4v11h-12z" fill="#fff" stroke="#333"/><path d="M12 2.5v4h4" fill="none" stroke="#333"/><path d="M10 7v7M7 11l3 3 3-3" fill="none" stroke="#1a5fb4" stroke-width="1.5"/>'),
   print: svg('<rect x="5.5" y="2.5" width="9" height="5" fill="#fff" stroke="#555"/><rect x="2.5" y="7.5" width="15" height="7" rx="1" fill="#bfbfbf" stroke="#555"/><rect x="5.5" y="12" width="9" height="5.5" fill="#fff" stroke="#555"/><circle cx="15" cy="10" r=".8" fill="#2e8b2e"/>'),
   exporttex: svg(`${page}<text x="10" y="15" font-size="6.5" font-family="serif" text-anchor="middle" fill="#22426e" font-weight="bold">TeX</text>`),
   cut: svg('<circle cx="6" cy="15" r="2.5" fill="none" stroke="#333" stroke-width="1.3"/><circle cx="14" cy="15" r="2.5" fill="none" stroke="#333" stroke-width="1.3"/><path d="M7.5 13l6-10.5M12.5 13l-6-10.5" stroke="#555" stroke-width="1.3"/>'),

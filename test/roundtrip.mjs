@@ -7,7 +7,7 @@ const browser = await chromium.launch({ executablePath: '/opt/pw-browsers/chromi
 const page = await browser.newPage();
 const errors = [];
 page.on('pageerror', (e) => errors.push(e.message));
-await page.goto('http://localhost:5192/');
+await page.goto('http://localhost:5192/?lang=zh-TW');
 await page.waitForTimeout(1000);
 async function openSample(v) {
   if (v.endsWith('.sci')) { // Scientific Word 6 files used as test input (not shipped with opensw)
@@ -73,7 +73,7 @@ await browser.close(); srv.kill();
   const srv2 = spawn('python3', ['test/csp_server.py', '5191'], { stdio: 'ignore' });
   await new Promise((r) => setTimeout(r, 800));
   const p2 = await b2.newPage();
-  await p2.goto('http://localhost:5191/');
+  await p2.goto('http://localhost:5191/?lang=zh-TW');
   await p2.waitForTimeout(800);
   await p2.setInputFiles('#file', 'test-out/rt-edited.sci');
   if (await p2.isVisible('#confirm')) await p2.click('#confirm-ok');

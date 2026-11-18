@@ -1,0 +1,36 @@
+% The body every warm-up document typesets: fonts, sizes, math, lists, tables, notes.
+\section{Text}
+Roman \textbf{bold} \textit{italic} \textsl{slanted} \textsc{Small Caps} \textsf{sans \textbf{bold}}
+\texttt{typewriter} \emph{emphasized \textbf{bold}} \underline{underline} --- ``quotes'' \S\ \dag\ \P\ \copyright\ \pounds.
+{\tiny tiny} {\scriptsize script} {\footnotesize footnote} {\small small} {\normalsize normal}
+{\large large} {\Large Large} {\LARGE LARGE} {\huge huge} {\Huge Huge}
+{\bfseries\Large Big bold} {\itshape\small small italic} {\sffamily\itshape sans italic} {\ttfamily\bfseries tt bold}
+\footnote{A footnote with $x^2$.}\marginpar{margin}
+
+\subsection{Math}
+$\alpha\beta\gamma\Gamma\Delta\varepsilon\vartheta\varphi\omega\Omega \sum_{k=1}^n k^2=\frac{n(n+1)(2n+1)}{6}$,
+$\int_0^\infty e^{-x^2}\,dx=\frac{\sqrt\pi}{2}$, $\oint \iint \iiint \prod \bigcup \bigcap \bigoplus \bigotimes$,
+$\mathbb{R}\mathbb{N}\mathbb{Z}\mathbb{C}\mathfrak{g}\mathcal{L}\mathbf{v}\mathrm{d}\mathit{x}\mathsf{A}\mathtt{t}$,
+$\leq\geq\neq\approx\equiv\sim\subseteq\supset\in\notin\forall\exists\nabla\partial\infty\to\mapsto\Rightarrow\Leftrightarrow
+\lfloor x\rfloor\lceil y\rceil\langle u,v\rangle\|w\|\hat a\tilde b\bar c\vec d\dot e\ddot f\widehat{gh}\overline{ij}$,
+$\varnothing\complement\nexists\lesssim\gtrsim\curvearrowright\square\blacksquare\triangleq\circledR\checkmark$.
+\[ \left( \begin{array}{cc} a & b \\ c & d \end{array} \right)
+   \begin{pmatrix} 1 & 2 \\ 3 & 4 \end{pmatrix} \begin{bmatrix} x \end{bmatrix} \begin{vmatrix} p \end{vmatrix}
+   \binom{n}{k} \sqrt[3]{x} \lim_{x\to 0}\frac{\sin x}{x} \Bigg( \bigg[ \Big\{ \big| \]
+\begin{equation} f(x)=\begin{cases} 1 & x>0\\ 0 & x\le 0\end{cases} \label{eq:f} \end{equation}
+\begin{align} a &= b + c \\ d &= e \tag{*} \end{align}
+\begin{eqnarray} x &=& y \nonumber \\ z &=& w \end{eqnarray}
+\begin{gather} u=v \end{gather}
+\begin{multline} p+q \\ =r \end{multline}
+See (\ref{eq:f}), \eqref{eq:f}, page \pageref{eq:f}; $x_{\scriptscriptstyle 1}^{\scriptstyle 2}$, $\displaystyle\sum$, $\textstyle\int$.
+
+\subsection{Lists and tables}
+\begin{itemize}\item one \begin{enumerate}\item two \begin{description}\item[three] four\end{description}\end{enumerate}\end{itemize}
+\begin{tabular}{|l|c|r|p{3cm}|}\hline a & b & c & d \\ \hline \multicolumn{2}{|c|}{merged} & e & f \\ \hline\end{tabular}
+\begin{table}[ht]\centering\begin{tabular}{cc} 1 & 2 \end{tabular}\caption{A table}\end{table}
+\begin{figure}[ht]\centering\fbox{\rule{1cm}{1cm}}\caption{A figure}\end{figure}
+\begin{quote} quote \end{quote} \begin{quotation} quotation \end{quotation} \begin{verse} verse \end{verse}
+\begin{center} centered \end{center} \begin{flushleft} left \end{flushleft} \begin{flushright} right \end{flushright}
+\begin{verbatim} verbatim \end{verbatim} \verb|verb|
+\begin{thebibliography}{9}\bibitem{k} A. Author, \emph{A Book}, 2020.\end{thebibliography}
+Cite \cite{k}.

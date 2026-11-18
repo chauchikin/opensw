@@ -1,10 +1,14 @@
 // Sample documents written for opensw (File > Samples). Plain LaTeX, read like any
-// Scientific Word 5.x / LaTeX document.
+// Scientific Word 5.x / LaTeX document. Other languages: src/locales/sample.<language>.tex.
+import { _t, LANG } from './i18n.js';
+
+const TRANSLATED = import.meta.env
+  ? import.meta.glob('./locales/sample.*.tex', { query: '?raw', import: 'default', eager: true }) : {};
 export const SAMPLES = [
   {
     id: 'math-sample',
-    label: '數學範例（定理、矩陣、計算）',
-    latex: String.raw`
+    label: _t('數學範例（定理、矩陣、計算）'),
+    latex: TRANSLATED[`./locales/sample.${LANG}.tex`] || String.raw`
 \begin{center}{\Large 數學範例}\end{center}
 
 \section{函數與極限}

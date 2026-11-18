@@ -7,13 +7,13 @@
 
 Claude 桌面版（claude_desktop_config.json）：
 ```json
-{ "mcpServers": { "scientific-word-next": {
+{ "mcpServers": { "opensw": {
     "command": "C:\\Users\\<使用者>\\AppData\\Local\\opensw\\opensw.exe",
     "args": ["--mcp"] } } }
 ```
 Codex（~/.codex/config.toml）：
 ```toml
-[mcp_servers.scientific-word-next]
+[mcp_servers.opensw]
 command = 'C:\Users\<使用者>\AppData\Local\opensw\opensw.exe'
 args = ["--mcp"]
 ```

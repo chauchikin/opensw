@@ -29,7 +29,14 @@ body { display: flex; flex-direction: column; overflow: hidden; }
 .tb:active { background: #cce4f7; }
 #zoom-select { font: inherit; height: 22px; margin-left: 3px; }
 
+#workarea { flex: 1; display: flex; min-height: 0; }
 #scroller { flex: 1; overflow: auto; background: #fff; border-top: 1px solid #fff; }
+/* toolbars docked on the right, one above another (5.5 docks some toolbars at the side) */
+#toolbar-right { flex: none; display: flex; flex-direction: column; gap: 3px; padding: 2px; background: #f0f0f0; border-left: 1px solid #a0a0a0; overflow-y: auto; }
+#toolbar-right .tb-group { flex-direction: column; padding: 7px 1px 1px; margin: 0; }
+#toolbar-right .tb-group::before { left: 3px; right: 3px; top: 2px; bottom: auto; width: auto; height: 2px; border: 0; border-top: 1px dotted #888; border-bottom: 1px dotted #888; }
+#toolbar-right .tb-text { font: 12px/1 "Segoe UI", "Microsoft JhengHei", system-ui, sans-serif; min-width: 30px; }
+#toolbar-right[hidden], .tb-group[hidden] { display: none; }
 #page { zoom: var(--zoom, 1); padding: 14px 22px 120px; min-height: 100%; }
 
 #tagbar { display: flex; align-items: center; gap: 4px; padding: 3px 4px; background: #f0f0f0; border-top: 1px solid #a0a0a0; flex: none; overflow-x: auto; }
@@ -89,7 +96,7 @@ body { display: flex; flex-direction: column; overflow: hidden; }
   border: 1px dashed #c9c4bb; border-radius: 3px; padding: 0 4px; }
 
 /* formulas */
-math-field { color: #c00000; font-size: 1.05em; border: none; background: transparent; padding: 0 1px; border-radius: 3px;
+math-field { color: var(--math-color, #c00000); font-size: 1.05em; border: none; background: transparent; padding: 0 1px; border-radius: 3px;
   --selection-background-color: #cfe0f3; --caret-color: var(--accent); --contains-highlight-background-color: transparent; }
 math-field::part(menu-toggle), math-field::part(virtual-keyboard-toggle) { display: none; }
 math-field::part(content) { padding: 0 1px; }
@@ -98,6 +105,9 @@ math-field::part(content) { padding: 0 1px; }
 math-field:hover { background: var(--math-bg); }
 .math-display { margin: .5em 0 1em; text-align: center; }
 .math-display math-field { display: inline-block; min-width: 4em; font-size: 1.15em; padding: 4px 6px; }
+/* a formula of a big document before it becomes editable (mathview.js) */
+.math-static { color: var(--math-color, #c00000); font-size: 1.05em; padding: 0 1px; cursor: text; }
+.math-display .math-static { display: inline-block; font-size: 1.15em; padding: 4px 6px; }
 
 #export { position: fixed; inset: 0; background: rgba(0,0,0,.35); z-index: 20; display: flex; align-items: center; justify-content: center; padding: 16px; }
 #export[hidden] { display: none; }
@@ -110,6 +120,7 @@ math-field:hover { background: var(--math-bg); }
 #toast { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); background: #222; color: #fff; padding: 8px 16px; border-radius: 8px;
   font: 14px system-ui, sans-serif; z-index: 30; }
 @media (max-width: 700px) {
+  #toolbar-right { display: none; }
   #toolbar { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
   .tb-group { flex: none; }
   #page { padding: 10px 12px 120px; }
@@ -131,6 +142,7 @@ math-field:hover { background: var(--math-bg); }
 #findbar:not(.with-replace) .replace-part { display: none; }
 .env-centered { border: 0; padding: 0; text-align: center; }
 .env-centered::before { content: none; }
+.html-field::before { content: 'HTML '; font-weight: bold; }
 .tex-field.frame { font: 13px/1.6 "Microsoft JhengHei", system-ui, sans-serif; color: #555; padding: 4px 10px; display: inline-block; }
 
 /* equation numbers, theorem numbers, markers and cross-references (src/numbering.js) */

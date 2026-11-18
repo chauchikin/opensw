@@ -1,0 +1,314 @@
+[
+ {
+  "op": "evaluate",
+  "latex": "\\int_0^1 x^2\\,dx",
+  "json": "[\"Integrate\",[\"Function\",[\"Block\",[\"Power\",\"x\",2]],\"x\"],[\"Limits\",\"x\",0,1]]",
+  "expect": "\\frac{1}{3}"
+ },
+ {
+  "op": "evaluate",
+  "latex": "\\sum_{k=1}^{10} k",
+  "json": "[\"Sum\",\"k\",[\"Limits\",\"k\",1,10]]",
+  "expect": "55"
+ },
+ {
+  "op": "evaluate",
+  "latex": "\\frac{d}{dx}\\sin x",
+  "json": "[\"D\",[\"Sin\",\"x\"],\"x\"]",
+  "expect": "\\cos(x)"
+ },
+ {
+  "op": "evaluate",
+  "latex": "\\lim_{x\\to0}\\frac{\\sin x}{x}",
+  "json": "[\"Limit\",[\"Function\",[\"Block\",[\"Divide\",[\"Sin\",\"x\"],\"x\"]],\"x\"],0]",
+  "expect": "1"
+ },
+ {
+  "op": "numeric",
+  "latex": "\\sqrt{2}",
+  "json": "[\"Sqrt\",2]",
+  "expect": "1.414213562"
+ },
+ {
+  "op": "simplify",
+  "latex": "\\sin^2 x+\\cos^2 x",
+  "json": "[\"Add\",[\"Power\",[\"Sin\",\"x\"],2],[\"Power\",[\"Cos\",\"x\"],2]]",
+  "expect": "1"
+ },
+ {
+  "op": "expand",
+  "latex": "(x+1)^3",
+  "json": "[\"Power\",[\"Add\",\"x\",1],3]",
+  "expect": "x^3+3x^2+3x+1"
+ },
+ {
+  "op": "factor",
+  "latex": "x^2+2x+1",
+  "json": "[\"Add\",[\"Power\",\"x\",2],[\"Multiply\",2,\"x\"],1]",
+  "expect": "(x+1)^2"
+ },
+ {
+  "op": "factor",
+  "latex": "360",
+  "json": "360",
+  "expect": "2^{3}\\cdot3^{2}\\cdot5"
+ },
+ {
+  "op": "solve",
+  "latex": "x^2-3x+2=0",
+  "json": "[\"Equal\",[\"Add\",[\"Power\",\"x\",2],[\"Multiply\",-3,\"x\"],2],0]",
+  "expect": "x=1"
+ },
+ {
+  "op": "check",
+  "latex": "(x+1)^2=x^2+2x+1",
+  "json": "[\"Equal\",[\"Power\",[\"Add\",\"x\",1],2],[\"Add\",[\"Power\",\"x\",2],[\"Multiply\",2,\"x\"],1]]",
+  "expect": true
+ },
+ {
+  "op": "check",
+  "latex": "x+1=x",
+  "json": "[\"Equal\",[\"Add\",\"x\",1],\"x\"]",
+  "expect": false
+ },
+ {
+  "op": "determinant",
+  "latex": "\\begin{pmatrix}1&2\\\\3&4\\end{pmatrix}",
+  "json": "[\"Matrix\",[\"List\",[\"List\",1,2],[\"List\",3,4]]]",
+  "expect": "-2"
+ },
+ {
+  "op": "inverse",
+  "latex": "\\begin{pmatrix}1&2\\\\3&4\\end{pmatrix}",
+  "json": "[\"Matrix\",[\"List\",[\"List\",1,2],[\"List\",3,4]]]",
+  "expect": "\\begin{pmatrix}-2&1\\\\\\frac{3}{2}&-\\frac{1}{2}\\end{pmatrix}"
+ },
+ {
+  "op": "eigenvalues",
+  "latex": "\\begin{pmatrix}2&0\\\\0&3\\end{pmatrix}",
+  "json": "[\"Matrix\",[\"List\",[\"List\",2,0],[\"List\",0,3]]]",
+  "expect": "\\left\\{3,2\\right\\}"
+ },
+ {
+  "op": "rank",
+  "latex": "\\begin{pmatrix}1&2\\\\2&4\\end{pmatrix}",
+  "json": "[\"Matrix\",[\"List\",[\"List\",1,2],[\"List\",2,4]]]",
+  "expect": "1"
+ },
+ {
+  "op": "charpoly",
+  "latex": "\\begin{pmatrix}1&2\\\\3&4\\end{pmatrix}",
+  "json": "[\"Matrix\",[\"List\",[\"List\",1,2],[\"List\",3,4]]]",
+  "expect": "X^2-5X-2"
+ },
+ {
+  "op": "partialfractions",
+  "latex": "\\frac{1}{x^2-1}",
+  "json": "[\"Divide\",1,[\"Add\",[\"Power\",\"x\",2],-1]]",
+  "expect": "\\frac{1}{2(x-1)}"
+ },
+ {
+  "op": "series",
+  "latex": "e^x",
+  "json": "[\"Power\",\"ExponentialE\",\"x\"]",
+  "expect": "O"
+ },
+ {
+  "op": "differentiate",
+  "latex": "x^3",
+  "json": "[\"Power\",\"x\",3]",
+  "expect": "3x^2"
+ },
+ {
+  "op": "integrate",
+  "latex": "\\frac{1}{1+x^2}",
+  "json": "[\"Divide\",1,[\"Add\",[\"Power\",\"x\",2],1]]",
+  "expect": "\\tan^{-1}(x)"
+ },
+ {
+  "op": "laplace",
+  "latex": "t^2",
+  "json": "[\"Power\",\"t\",2]",
+  "expect": "\\frac{2}{s^3}"
+ },
+ {
+  "op": "ode",
+  "latex": "y''+y=0",
+  "json": "[\"Equal\",[\"Add\",\"y\",[\"Prime\",\"y\",2]],0]",
+  "expect": "c_1\\cos(x)"
+ },
+ {
+  "op": "extrema",
+  "latex": "x^2-2x",
+  "json": "[\"Add\",[\"Power\",\"x\",2],[\"Multiply\",-2,\"x\"]]",
+  "expect": "x=1"
+ },
+ {
+  "op": "numericsolve",
+  "latex": "x^2-2=0",
+  "json": "[\"Equal\",[\"Add\",[\"Power\",\"x\",2],-2],0]",
+  "expect": "1.414213562"
+ },
+ {
+  "op": "mean",
+  "latex": "\\begin{pmatrix}1&2&3&4\\end{pmatrix}",
+  "json": "[\"Matrix\",[\"List\",[\"List\",1,2,3,4]]]",
+  "expect": "\\frac{5}{2}"
+ },
+ {
+  "op": "gradient",
+  "latex": "x^2y",
+  "json": "{\"expr\":[\"Multiply\",\"y\",[\"Power\",\"x\",2]],\"params\":[\"x\",\"y\"]}",
+  "expect": "\\begin{pmatrix}2xy\\\\x^2\\end{pmatrix}"
+ },
+ {
+  "op": "curl",
+  "latex": "\\begin{pmatrix}-y\\\\x\\\\0\\end{pmatrix}",
+  "json": "{\"expr\":[\"Matrix\",[\"List\",[\"List\",[\"Negate\",\"y\"]],[\"List\",\"x\"],[\"List\",0]]],\"params\":[\"x\",\"y\",\"z\"]}",
+  "expect": "2"
+ },
+ {
+  "op": "define",
+  "latex": "a=3",
+  "json": "[\"Equal\",\"a\",3]",
+  "expect": "a=3"
+ },
+ {
+  "op": "evaluate",
+  "latex": "a^2+1",
+  "json": "[\"Add\",[\"Power\",\"a\",2],1]",
+  "expect": "10"
+ },
+ {
+  "op": "define",
+  "latex": "f(x)=x^2+1",
+  "json": "[\"Equal\",[\"f\",\"x\"],[\"Add\",[\"Power\",\"x\",2],1]]",
+  "expect": "f(x)=x^2+1"
+ },
+ {
+  "op": "evaluate",
+  "latex": "f(2)",
+  "json": "[\"f\",2]",
+  "expect": "5"
+ },
+ {
+  "op": "cleardefs",
+  "latex": "0",
+  "json": "0",
+  "expect": null
+ },
+ {
+  "op": "evaluate",
+  "latex": "a+1",
+  "json": "[\"Add\",\"a\",1]",
+  "expect": "a+1"
+ },
+ {
+  "op": "solve",
+  "latex": "\\alpha^2=4",
+  "json": "[\"Equal\",[\"Power\",\"alpha\",2],4]",
+  "expect": "\\alpha=2"
+ },
+ {
+  "op": "evaluate",
+  "latex": "N+D",
+  "json": "[\"Add\",\"D\",\"N\"]",
+  "expect": "D+N"
+ },
+ {
+  "op": "byparts",
+  "latex": "\\int x e^x dx",
+  "json": "{\"expr\":[\"Integrate\",[\"Function\",[\"Block\",[\"Multiply\",\"x\",[\"Power\",\"ExponentialE\",\"x\"]]],\"x\"],[\"Limits\",\"x\",\"Nothing\",\"Nothing\"]],\"params\":[\"x\"]}",
+  "expect": "-\\inte^x"
+ },
+ {
+  "op": "showdefs",
+  "latex": "0",
+  "json": "0",
+  "expect": null
+ },
+ {
+  "op": "check",
+  "latex": "x+1",
+  "json": "[\"Add\",\"x\",1]",
+  "expect": "error:要有等號"
+ },
+ {
+  "op": "integersolve",
+  "latex": "3x+5y=1",
+  "json": "[\"Equal\",[\"Add\",[\"Multiply\",3,\"x\"],[\"Multiply\",5,\"y\"]],1]",
+  "expect": "x=2+5c_1"
+ },
+ {
+  "op": "minimize",
+  "latex": "\\begin{pmatrix}x+y\\\\x+2y\\geq 2\\\\3x+y\\geq 3\\end{pmatrix}",
+  "json": "[\"Matrix\",[\"List\",[\"List\",[\"Add\",\"x\",\"y\"]],[\"List\",[\"LessEqual\",2,[\"Add\",\"x\",[\"Multiply\",2,\"y\"]]]],[\"List\",[\"LessEqual\",3,[\"Add\",[\"Multiply\",3,\"x\"],\"y\"]]]]]",
+  "expect": "\\text{最小值}=\\frac{7}{5}"
+ },
+ {
+  "op": "standardize",
+  "latex": "\\begin{pmatrix}3x+2y\\\\x+y\\leq 4\\\\x+3y\\geq 6\\end{pmatrix}",
+  "json": "[\"Matrix\",[\"List\",[\"List\",[\"Add\",[\"Multiply\",3,\"x\"],[\"Multiply\",2,\"y\"]]],[\"List\",[\"LessEqual\",[\"Add\",\"x\",\"y\"],4]],[\"List\",[\"LessEqual\",6,[\"Add\",\"x\",[\"Multiply\",3,\"y\"]]]]]]",
+  "expect": "\\leq-6"
+ },
+ {
+  "op": "vectorpotential",
+  "latex": "\\begin{pmatrix}0\\\\0\\\\1\\end{pmatrix}",
+  "json": "{\"expr\":[\"Matrix\",[\"List\",[\"List\",0],[\"List\",0],[\"List\",1]]],\"params\":[\"x\",\"y\",\"z\"]}",
+  "expect": "\\begin{pmatrix}-y\\\\0\\\\0\\end{pmatrix}"
+ },
+ {
+  "op": "changevar",
+  "latex": "\\int_0^1 \\sqrt{1-x^2}\\,dx",
+  "json": "{\"expr\":[\"Integrate\",[\"Function\",[\"Block\",[\"Sqrt\",[\"Add\",[\"Negate\",[\"Power\",\"x\",2]],1]]],\"x\"],[\"Limits\",\"x\",0,1]],\"params\":[[\"Equal\",\"x\",[\"Sin\",\"u\"]]]}",
+  "expect": "\\int_0^{\\frac{\\pi}{2}}"
+ },
+ {
+  "op": "combine",
+  "latex": "\\ln x+\\ln y",
+  "json": "[\"Add\",[\"Ln\",\"x\"],[\"Ln\",\"y\"]]",
+  "expect": "\\log(xy)"
+ },
+ {
+  "op": "rewrite_exp",
+  "latex": "\\sin x",
+  "json": "[\"Sin\",\"x\"]",
+  "expect": "e^{-ix}"
+ },
+ {
+  "op": "inverselaplace",
+  "latex": "\\frac{1}{s^2}",
+  "json": "[\"Power\",\"s\",-2]",
+  "expect": "t"
+ },
+ {
+  "op": "fourier",
+  "latex": "e^{-x^2}",
+  "json": "[\"Power\",\"ExponentialE\",[\"Negate\",[\"Power\",\"x\",2]]]",
+  "expect": "\\sqrt{\\pi}"
+ },
+ {
+  "op": "nullspace",
+  "latex": "\\begin{pmatrix}1&2\\\\2&4\\end{pmatrix}",
+  "json": "[\"Matrix\",[\"List\",[\"List\",1,2],[\"List\",2,4]]]",
+  "expect": "\\begin{pmatrix}-2\\\\1\\end{pmatrix}"
+ },
+ {
+  "op": "hessian",
+  "latex": "x^2y",
+  "json": "{\"expr\":[\"Multiply\",\"y\",[\"Power\",\"x\",2]],\"params\":[\"x\",\"y\"]}",
+  "expect": "\\begin{pmatrix}2y&2x\\\\2x&0\\end{pmatrix}"
+ },
+ {
+  "op": "approxint",
+  "latex": "\\int_0^1 x^2\\,dx",
+  "json": "{\"expr\":[\"Integrate\",[\"Function\",[\"Block\",[\"Power\",\"x\",2]],\"x\"],[\"Limits\",\"x\",0,1]],\"params\":[\"'trapezoid'\",4]}",
+  "expect": "0.34375"
+ },
+ {
+  "op": "iterate",
+  "latex": "\\cos x",
+  "json": "{\"expr\":[\"Cos\",\"x\"],\"params\":[0,2]}",
+  "expect": "\\cos(1)"
+ }
+]

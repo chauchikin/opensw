@@ -10,8 +10,9 @@ import {
 import { convertLatexToMathMl } from 'mathlive';
 import { TableMap } from 'prosemirror-tables';
 import { computeNumbers } from './numbering.js';
-import { standardTeX } from './tex55.js';
+import { standardTeX, mathForDisplay } from './tex55.js';
 import { envLabel, PLAIN_ENVS, FRONT_LABELS } from './schema.js';
+import { _t } from './i18n.js';
 
 // ---------- formulas ----------
 const SUM_OPS = new Set(['∑']);
@@ -19,13 +20,14 @@ const INT_OPS = new Set(['∫', '∬', '∭', '∮']);
 
 function mathmlElement(latex) {
   let ml;
-  try { ml = convertLatexToMathMl(standardTeX(latex)); } catch (e) { return null; }
+  try { ml = convertLatexToMathMl(mathForDisplay(standardTeX(latex))); } catch (e) { return null; }
   const doc = new DOMParser().parseFromString(`<math>${ml}</math>`, 'text/html');
   return doc.querySelector('math');
 }
 
 // the text of a token element (mi, mn, mo, mtext)
-const tokenText = (el) => el.textContent.replace(/⁡|⁢|⁣/g, ''); // invisible operators
+// (a missing element, as in an msub with one child from an odd formula, is empty)
+const tokenText = (el) => (el ? el.textContent.replace(/⁡|⁢|⁣/g, '') : ''); // invisible operators
 
 // MathML element -> list of docx math components
 function omml(el) {
@@ -157,7 +159,7 @@ export async function toDocx(doc, meta = {}, pictures = new Map()) {
     const a = c.attrs;
     const bytes = pictures.get(a.path);
     const type = bytes && imageType(bytes);
-    if (!type) return new TextRun({ text: `[${(a.path || '圖片').split('/').pop()}]`, color: '666666' });
+    if (!type) return new TextRun({ text: `[${(a.path || _t('圖片')).split('/').pop()}]`, color: '666666' });
     return new ImageRun({ type, data: bytes, transformation: { width: Math.round(a.width || 300), height: Math.round(a.height || 200) } });
   }
 
@@ -180,7 +182,7 @@ export async function toDocx(doc, meta = {}, pictures = new Map()) {
         // a floating picture's caption
         node.forEach((im) => {
           if (im.type.name === 'image' && im.attrs.place === 'float') {
-            out.push(para([new TextRun({ text: `${nums.captions.get(posOf.get(im)) || ''}${im.attrs.caption ? '：' + im.attrs.caption : ''}`, italics: true })], { alignment: AlignmentType.CENTER }));
+            out.push(para([new TextRun({ text: `${nums.captions.get(posOf.get(im)) || ''}${im.attrs.caption ? _t('：') + im.attrs.caption : ''}`, italics: true })], { alignment: AlignmentType.CENTER }));
           }
         });
         return out;
@@ -200,7 +202,7 @@ export async function toDocx(doc, meta = {}, pictures = new Map()) {
         const plain = PLAIN_ENVS.has(k) && k !== 'proof' && k !== 'abstract';
         if (!plain && inner.length) {
           const num = nums.envs.get(posOf.get(node));
-          const label = `${envLabel(k)}${num ? ' ' + num : ''}${node.attrs.title ? `（${node.attrs.title}）` : ''}. `;
+          const label = `${envLabel(k)}${num ? ' ' + num : ''}${node.attrs.title ? _t('（{0}）', node.attrs.title) : ''}. `;
           // the label goes in front of the first paragraph
           const first = node.firstChild?.type.name === 'paragraph' ? node.firstChild : null;
           if (first) inner[0] = para([new TextRun({ text: label, bold: k !== 'proof', italics: k === 'proof' }), ...runs(first)]);
@@ -230,18 +232,18 @@ export async function toDocx(doc, meta = {}, pictures = new Map()) {
         const out = [];
         node.forEach((c, off) => {
           if (c.type.name === 'caption') {
-            out.push(para([new TextRun({ text: `${nums.captions.get(posOf.get(node) + 1 + off) || ''}：`, italics: true }), ...runs(c, { italics: true })], { alignment: AlignmentType.CENTER }));
+            out.push(para([new TextRun({ text: _t('{0}：', nums.captions.get(posOf.get(node) + 1 + off) || ''), italics: true }), ...runs(c, { italics: true })], { alignment: AlignmentType.CENTER }));
           } else out.push(...block(c, { ...ctx, center: true }));
         });
         return out;
       }
       case 'bibliography': {
-        const out = [para([new TextRun('參考文獻')], { heading: HeadingLevel.HEADING_1 })];
+        const out = [para([new TextRun(_t('參考文獻'))], { heading: HeadingLevel.HEADING_1 })];
         node.forEach((it) => out.push(para([new TextRun(`[${nums.bib.get(it.attrs.key) || it.attrs.key}] `), ...runs(it)])));
         return out;
       }
-      case 'front_field': return [para([new TextRun({ text: (FRONT_LABELS[node.attrs.cmd] || node.attrs.cmd) + '：', color: '666666' }), ...runs(node)])];
-      case 'bibtex': return [para([new TextRun({ text: `（參考文獻來自 BibTeX：${node.attrs.files}）`, color: '666666' })])];
+      case 'front_field': return [para([new TextRun({ text: (FRONT_LABELS[node.attrs.cmd] || node.attrs.cmd) + _t('：'), color: '666666' }), ...runs(node)])];
+      case 'bibtex': return [para([new TextRun({ text: _t('（參考文獻來自 BibTeX：{0}）', node.attrs.files), color: '666666' })])];
       case 'toc': case 'appendix': case 'subdoc': return [];
       default: return blocks(node, ctx);
     }

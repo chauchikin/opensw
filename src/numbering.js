@@ -5,6 +5,7 @@ import { Plugin } from 'prosemirror-state';
 import { Decoration, DecorationSet } from 'prosemirror-view';
 
 import { PLAIN_ENVS as UNNUMBERED_ENVS } from './schema.js';
+import { _t } from './i18n.js';
 
 // "\\" at the top level of a formula (not inside braces or a nested environment)
 export function splitRows(latex) {
@@ -84,14 +85,14 @@ export function computeNumbers(doc, meta) {
       const env = node.attrs.env === 'figure' ? 'figure' : 'table';
       floats[env]++;
       const num = prefix() + floats[env];
-      node.forEach((c, off) => { if (c.type.name === 'caption') captions.set(pos + 1 + off, (env === 'figure' ? '圖 ' : '表 ') + num); });
+      node.forEach((c, off) => { if (c.type.name === 'caption') captions.set(pos + 1 + off, (env === 'figure' ? _t('圖 ') : _t('表 ')) + num); });
       return inside(node, pos, num);
     }
     if (t === 'image' && node.attrs.place === 'float') { // a 5.x floating frame with caption
       const env = node.attrs.floattype === 'table' ? 'table' : 'figure';
       floats[env]++;
       const num = prefix() + floats[env];
-      captions.set(pos, (env === 'figure' ? '圖 ' : '表 ') + num);
+      captions.set(pos, (env === 'figure' ? _t('圖 ') : _t('表 ')) + num);
       if (node.attrs.label && !keys.has(node.attrs.label)) keys.set(node.attrs.label, num);
       return undefined;
     }
@@ -174,7 +175,7 @@ export function numberingPlugin(getMeta) {
       const num = keys.get(n.attrs.key);
       let text = num == null ? '??' : num;
       if (n.attrs.kind === 'eqref' && num != null) text = `(${num})`;
-      if (n.attrs.kind === 'pageref') text = '頁碼';
+      if (n.attrs.kind === 'pageref') text = _t('頁碼');
       decos.push(Decoration.node(pos, pos + n.nodeSize, { 'data-num': text, class: num == null && n.attrs.kind !== 'pageref' ? 'xref-missing' : '' }));
     });
     return DecorationSet.create(doc, decos);

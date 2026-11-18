@@ -24,7 +24,7 @@ async function openSample(v) {
   if (await page.isVisible('#confirm')) await page.click('#confirm-ok');
   await page.waitForTimeout(300);
 }
-await page.goto('http://localhost:5199/');
+await page.goto('http://localhost:5199/?lang=zh-TW');
 await page.waitForTimeout(1500);
 await page.screenshot({ path: out('1-demo.png'), fullPage: true });
 

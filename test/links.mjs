@@ -5,7 +5,7 @@ import { execSync } from 'node:child_process';
 const b = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium-1243/chrome-linux64/chrome' });
 const page = await b.newPage({ viewport: { width: 1024, height: 900 } });
 const errs = []; page.on('pageerror', (e) => errs.push(e.message));
-await page.goto('http://localhost:4173/'); await page.waitForTimeout(600);
+await page.goto('http://localhost:4173/?lang=zh-TW'); await page.waitForTimeout(600);
 let fails = 0;
 const check = (ok, what) => { console.log(ok ? 'ok  ' : 'FAIL', what); if (!ok) fails++; };
 const open = async (file) => {
@@ -36,8 +36,8 @@ check(JSON.stringify(await links()) === JSON.stringify([['section one', '#one', 
 const tex55 = await exportTex();
 check(tex55.includes('\\hyperref{section one}{Section }{ above}{one}'), '5.x link written back as it was');
 fs.writeFileSync('/tmp/links/l55.tex', tex55);
-for (const f of fs.readdirSync('/home/claude/tex55/swmacros')) fs.copyFileSync('/home/claude/tex55/swmacros/' + f, '/tmp/links/' + f);
-fs.copyFileSync('/home/claude/tex55/tcilatex.tex', '/tmp/links/tcilatex.tex');
+for (const f of fs.readdirSync('src-tauri/tex55')) fs.copyFileSync('src-tauri/tex55/' + f, '/tmp/links/' + f);
+fs.copyFileSync('src-tauri/tex55/tcilatex.tex', '/tmp/links/tcilatex.tex');
 try { execSync('xelatex -interaction=nonstopmode l55.tex; xelatex -interaction=nonstopmode l55.tex', { cwd: '/tmp/links', stdio: 'ignore' }); } catch (e) { /* below */ }
 check(/See Section 1 above please/.test(fs.existsSync('/tmp/links/l55.pdf') ? execSync('pdftotext /tmp/links/l55.pdf -').toString() : ''), '5.x link typesets as "Section 1 above"');
 before = await docJSON();

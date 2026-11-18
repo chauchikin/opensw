@@ -1,7 +1,7 @@
 # SW6 `.sci` / `main.xhtml` tag reference and LaTeX export behaviour
 
 This file is a reference for building "opensw", an editor that reads and writes Scientific Word 6 files.
-Source: private repo `ckwinlose/scientific-word`, default branch, read through the GitHub REST API (blob reads only).
+Source: the Scientific Word source code published by MacKichan Software (github.com/ScientificWord/mozilla).
 Snapshot date: 2026-11-18.
 
 ## 0. How to read this file

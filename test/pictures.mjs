@@ -1,5 +1,5 @@
 // Pictures (A3): 5.x \FRAME, \includegraphics, .sci pictures; import, properties, export.
-// node test/pictures.mjs  (needs `npx vite preview --port 4173`, xelatex, and /home/claude/tex55/tcilatex.tex)
+// node test/pictures.mjs  (needs `npx vite preview --port 4173`, xelatex, and src-tauri/tex55/tcilatex.tex)
 import { chromium } from 'playwright';
 import fs from 'node:fs';
 import { execSync } from 'node:child_process';
@@ -7,7 +7,7 @@ const FIX = 'test/fixtures/pictures/';
 const b = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium-1243/chrome-linux64/chrome' });
 const page = await b.newPage({ viewport: { width: 1024, height: 900 } });
 const errs = []; page.on('pageerror', (e) => errs.push(e.message));
-await page.goto('http://localhost:4173/'); await page.waitForTimeout(600);
+await page.goto('http://localhost:4173/?lang=zh-TW'); await page.waitForTimeout(600);
 let fails = 0;
 const check = (ok, what) => { console.log(ok ? 'ok  ' : 'FAIL', what); if (!ok) fails++; };
 const open = async (file) => {
@@ -43,8 +43,8 @@ check(tex.includes(im[2].frame), 'plot frame unchanged');
 fs.rmSync('/tmp/pic55', { recursive: true, force: true }); fs.mkdirSync('/tmp/pic55');
 fs.writeFileSync('/tmp/pic55/frame55.tex', tex);
 fs.copyFileSync(FIX + 'graphics/dot.png', '/tmp/pic55/dot.png');
-for (const f of fs.readdirSync('/home/claude/tex55/swmacros')) fs.copyFileSync('/home/claude/tex55/swmacros/' + f, '/tmp/pic55/' + f);
-fs.copyFileSync('/home/claude/tex55/tcilatex.tex', '/tmp/pic55/tcilatex.tex');
+for (const f of fs.readdirSync('src-tauri/tex55')) fs.copyFileSync('src-tauri/tex55/' + f, '/tmp/pic55/' + f);
+fs.copyFileSync('src-tauri/tex55/tcilatex.tex', '/tmp/pic55/tcilatex.tex');
 try { execSync('xelatex -interaction=nonstopmode frame55.tex && xelatex -interaction=nonstopmode frame55.tex', { cwd: '/tmp/pic55', stdio: 'ignore' }); } catch (e) { /* checked below */ }
 const imgs = fs.existsSync('/tmp/pic55/frame55.pdf') ? execSync('pdfimages -list frame55.pdf', { cwd: '/tmp/pic55' }).toString().trim().split('\n').length - 2 : -1;
 const pdfText = fs.existsSync('/tmp/pic55/frame55.pdf') ? execSync('pdftotext frame55.pdf -', { cwd: '/tmp/pic55' }).toString() : '';

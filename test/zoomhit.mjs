@@ -5,7 +5,7 @@ await new Promise((r) => setTimeout(r, 800));
 const browser = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium-1243/chrome-linux64/chrome' });
 for (const z of [1, 2]) {
   const page = await browser.newPage({ viewport: { width: 1300, height: 900 } });
-  await page.goto('http://localhost:5189/');
+  await page.goto('http://localhost:5189/?lang=zh-TW');
   await page.waitForTimeout(800);
   await page.selectOption('#zoom-select', String(z));
   // click just inside the right edge and just inside the left edge

@@ -3,6 +3,7 @@
 
 pub mod mcp;
 mod remote;
+mod wolfram;
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -92,7 +93,8 @@ async fn typeset(app: tauri::AppHandle, tex: String, name: String, files: Option
 
     // Running a TeX engine takes seconds: keep it off the UI thread.
     let tectonic = bundled_tectonic(&app);
-    let pdf = tauri::async_runtime::spawn_blocking(move || run_engine(&dir, &stem, tectonic.as_deref()))
+    let tex_cache = bundled_tex_cache(&app);
+    let pdf = tauri::async_runtime::spawn_blocking(move || run_engine(&dir, &stem, tectonic.as_deref(), tex_cache.as_deref()))
         .await
         .map_err(|e| e.to_string())??;
 
@@ -100,6 +102,30 @@ async fn typeset(app: tauri::AppHandle, tex: String, name: String, files: Option
         .open_path(pdf.to_string_lossy(), None::<&str>)
         .map_err(|e| format!("PDF 已產生（{}），但打不開：{e}", pdf.display()))?;
     Ok(pdf.to_string_lossy().into_owned())
+}
+
+/// File > Open Location: the bytes at a web address. curl (part of Windows 10 and later,
+/// macOS and Linux) fetches it, so a site's cross-origin rules do not stop the page.
+#[tauri::command]
+async fn fetch_url(url: String) -> Result<Vec<u8>, String> {
+    if !(url.starts_with("http://") || url.starts_with("https://")) {
+        return Err("網址要以 http:// 或 https:// 開頭".into());
+    }
+    let mut cmd = Command::new("curl");
+    cmd.args(["-fsSL", "--max-time", "60", "--", &url]);
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        cmd.creation_flags(0x0800_0000); // CREATE_NO_WINDOW
+    }
+    let out = tauri::async_runtime::spawn_blocking(move || cmd.output())
+        .await
+        .map_err(|e| e.to_string())?
+        .map_err(|e| format!("執行不了 curl：{e}"))?;
+    if !out.status.success() {
+        return Err(format!("下載失敗：{}", String::from_utf8_lossy(&out.stderr).trim()));
+    }
+    Ok(out.stdout)
 }
 
 /// Compute > Check with Lean: checks a Lean 4 file in the Lean project the user chose
@@ -133,6 +159,15 @@ async fn lean_check(app: tauri::AppHandle, project: String, code: String) -> Res
         .map_err(|e| format!("Lean 執行失敗：{e}"))?;
     let text = String::from_utf8_lossy(&out.stdout).into_owned() + &String::from_utf8_lossy(&out.stderr);
     Ok((out.status.success(), text))
+}
+
+/// Tools > Computation Engine > Mathematica: one computation by the Wolfram kernel
+/// (wolfram.rs). data and the answer are base64 (the MathJSON text / the JSON answer).
+#[tauri::command]
+async fn wolfram_compute(kernel: Option<String>, op: String, data: String) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || wolfram::compute(kernel.as_deref(), &op, &data))
+        .await
+        .map_err(|e| e.to_string())?
 }
 
 /// lake from elan: $ELAN_HOME, ~/.elan, or an elan folder next to the project or above it
@@ -184,14 +219,35 @@ fn bundled_tectonic(app: &tauri::AppHandle) -> Option<PathBuf> {
     path.exists().then_some(path)
 }
 
-fn run_engine(dir: &Path, stem: &str, tectonic: Option<&Path>) -> Result<PathBuf, String> {
+/// The TeX files Tectonic needs for opensw's documents, put in at build time
+/// (src-tauri/texwarm): typesetting works without the internet.
+fn bundled_tex_cache(app: &tauri::AppHandle) -> Option<PathBuf> {
+    let path = app.path().resource_dir().ok()?.join("texcache");
+    path.is_dir().then_some(path)
+}
+
+/// A command for a console program (xelatex, Tectonic...) that opens no console window on Windows.
+fn hidden(program: impl AsRef<std::ffi::OsStr>) -> Command {
+    #[cfg_attr(not(windows), allow(unused_mut))]
+    let mut cmd = Command::new(program);
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        cmd.creation_flags(0x0800_0000); // CREATE_NO_WINDOW
+    }
+    cmd
+}
+
+fn run_engine(dir: &Path, stem: &str, tectonic: Option<&Path>, tex_cache: Option<&Path>) -> Result<PathBuf, String> {
     let tex_file = format!("{stem}.tex");
     let pdf = dir.join(format!("{stem}.pdf"));
     let _ = std::fs::remove_file(&pdf);
 
     let xelatex = || {
-        Command::new("xelatex")
-            .args(["-interaction=nonstopmode", "-halt-on-error", &tex_file])
+        hidden("xelatex")
+            // like Scientific Word 5.5: an error is reported in the log but the PDF still
+            // comes out (teachers' 5.5 files often carry an old harmless error)
+            .args(["-interaction=nonstopmode", &tex_file])
             .current_dir(dir)
             .output()
     };
@@ -201,11 +257,14 @@ fn run_engine(dir: &Path, stem: &str, tectonic: Option<&Path>) -> Result<PathBuf
             let Some(tectonic) = tectonic else {
                 return Err("找不到排版程式（xelatex 或內附的 Tectonic）。".to_string());
             };
-            // First use downloads the needed LaTeX packages (internet), later runs use the cache.
-            Command::new(tectonic)
-                .args(["--keep-logs", &tex_file])
-                .current_dir(dir)
-                .output()
+            // The bundled cache has what opensw's documents need; anything else is downloaded
+            // (internet) the first time and kept in the same cache.
+            let mut cmd = hidden(tectonic);
+            cmd.args(["--keep-logs", "-Z", "continue-on-errors", &tex_file]).current_dir(dir);
+            if let Some(cache) = tex_cache {
+                cmd.env("TECTONIC_CACHE_DIR", cache);
+            }
+            cmd.output()
                 .map_err(|e| format!("Tectonic 執行失敗：{e}"))?
         }
     };
@@ -234,11 +293,11 @@ fn finish_xelatex(
     let mut tools_ran = false;
     if aux.contains("\\bibdata") {
         // a missing bibtex leaves the citations as [?]; the PDF still comes out
-        tools_ran |= Command::new("bibtex").arg(stem).current_dir(dir).output().is_ok();
+        tools_ran |= hidden("bibtex").arg(stem).current_dir(dir).output().is_ok();
     }
     let idx = dir.join(format!("{stem}.idx"));
     if idx.exists() {
-        tools_ran |= Command::new("makeindex").arg(format!("{stem}.idx")).current_dir(dir).output().is_ok();
+        tools_ran |= hidden("makeindex").arg(format!("{stem}.idx")).current_dir(dir).output().is_ok();
     }
     let mut last = first;
     for _ in 0..2 {
@@ -257,7 +316,38 @@ fn finish_xelatex(
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
+/// The app's identifier (tauri.conf.json): the name of its folders in AppData.
+pub const IDENTIFIER: &str = "org.opensw.editor";
+/// The identifier up to 0.5.0. Its folders hold the settings, fragments and last document
+/// (the page's storage), so the first start under the new name moves them over.
+const OLD_IDENTIFIER: &str = "com.ckwinlose.swnext";
+
+fn move_old_folders() {
+    for var in ["APPDATA", "LOCALAPPDATA"] {
+        let Some(base) = std::env::var_os(var).map(PathBuf::from) else { continue };
+        let (old, new) = (base.join(OLD_IDENTIFIER), base.join(IDENTIFIER));
+        if old.is_dir() && !new.exists() && std::fs::rename(&old, &new).is_err() {
+            copy_folder(&old, &new); // in use: copy instead, the old one stays
+        }
+    }
+}
+
+/// Copies what it can: a file still locked by an old process is left out, the rest still comes.
+fn copy_folder(from: &Path, to: &Path) {
+    let _ = std::fs::create_dir_all(to);
+    let Ok(entries) = std::fs::read_dir(from) else { return };
+    for entry in entries.flatten() {
+        let target = to.join(entry.file_name());
+        if entry.file_type().is_ok_and(|t| t.is_dir()) {
+            copy_folder(&entry.path(), &target);
+        } else {
+            let _ = std::fs::copy(entry.path(), target);
+        }
+    }
+}
+
 pub fn run() {
+    move_old_folders();
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
@@ -268,12 +358,13 @@ pub fn run() {
             }
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![read_file, write_file, typeset, startup_path, lean_check, remote::api_reply, remote::api_ready])
+        .invoke_handler(tauri::generate_handler![read_file, write_file, typeset, startup_path, lean_check, fetch_url, wolfram_compute, remote::api_reply, remote::api_ready])
         .build(tauri::generate_context!())
         .unwrap_or_else(|e| panic!("opensw could not start: {e}"))
         .run(|_, event| {
             if let tauri::RunEvent::Exit = event {
                 remote::stop();
+                wolfram::stop();
             }
         });
 }
@@ -294,7 +385,7 @@ mod tests {
 
     #[test]
     fn copy_macro_files_should_copy_every_file() {
-        let base = std::env::temp_dir().join(format!("swnext-test-{}", std::process::id()));
+        let base = std::env::temp_dir().join(format!("opensw-test-{}", std::process::id()));
         let (from, to) = (base.join("from"), base.join("to"));
         std::fs::create_dir_all(&from).unwrap();
         std::fs::create_dir_all(&to).unwrap();
@@ -324,7 +415,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::write(dir.join("r.tex"), "\\documentclass{article}\\begin{document}\\section{A}\\label{a}See \\ref{a}.\\end{document}\n").unwrap();
-        let pdf = run_engine(&dir, "r", None).expect("typeset");
+        let pdf = run_engine(&dir, "r", None, None).expect("typeset");
         let text = std::process::Command::new("pdftotext").arg(&pdf).arg("-").output().unwrap();
         assert!(String::from_utf8_lossy(&text.stdout).contains("See 1."));
     }

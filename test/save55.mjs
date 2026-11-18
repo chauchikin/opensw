@@ -9,7 +9,7 @@ const extra = process.argv.slice(2);
 const b = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium-1243/chrome-linux64/chrome' });
 const page = await b.newPage({ viewport: { width: 1024, height: 900 } });
 const errs = []; page.on('pageerror', (e) => errs.push(e.message));
-await page.goto('http://localhost:4173/'); await page.waitForTimeout(600);
+await page.goto('http://localhost:4173/?lang=zh-TW'); await page.waitForTimeout(600);
 let fails = 0;
 const check = (ok, what) => { console.log(ok ? 'ok  ' : 'FAIL', what); if (!ok) fails++; };
 const open = async (file) => {
@@ -20,9 +20,9 @@ const open = async (file) => {
 // the document without what opening adds on its own (picture memory)
 const docJSON = () => page.evaluate(() => JSON.stringify(window.swEditor.state.doc.toJSON()).replace(/"src":"blob:[^"]*"/g, '"src":null'));
 fs.rmSync('/tmp/save55', { recursive: true, force: true }); fs.mkdirSync('/tmp/save55');
-for (const f of fs.readdirSync('/home/claude/tex55/swmacros')) fs.copyFileSync('/home/claude/tex55/swmacros/' + f, '/tmp/save55/' + f);
-fs.copyFileSync('/home/claude/tex55/tcilatex.tex', '/tmp/save55/tcilatex.tex');
-for (const f of fs.existsSync('/home/claude/tex55/fb') ? fs.readdirSync('/home/claude/tex55/fb') : []) if (!fs.existsSync('/tmp/save55/' + f)) fs.copyFileSync('/home/claude/tex55/fb/' + f, '/tmp/save55/' + f);
+for (const f of fs.readdirSync('src-tauri/tex55')) fs.copyFileSync('src-tauri/tex55/' + f, '/tmp/save55/' + f);
+fs.copyFileSync('src-tauri/tex55/tcilatex.tex', '/tmp/save55/tcilatex.tex');
+for (const f of fs.existsSync('src-tauri/tex55/fb') ? fs.readdirSync('src-tauri/tex55/fb') : []) if (!fs.existsSync('/tmp/save55/' + f)) fs.copyFileSync('src-tauri/tex55/fb/' + f, '/tmp/save55/' + f);
 
 const files = ['test/fixtures/big5.tex', 'test/fixtures/pictures/frame55.tex', 'test/fixtures/links55.tex', 'test/fixtures/paras.tex', 'test/fixtures/cites.tex', 'test/fixtures/misc.tex', ...extra];
 for (const f of files) {
@@ -36,7 +36,8 @@ for (const f of files) {
   check(await docJSON() === before, `${name}: opens again as the same document`);
   // the preamble written by 5.x comes back as it was (comments included)
   const orig = fs.readFileSync(f, 'latin1').replace(/\r\n?/g, '\n');
-  const saved = bytes.toString('latin1').replace(/\r\n?/g, '\n');
+  // (a file that needs a code page it did not name gets 5.5's first line saying which)
+  const saved = bytes.toString('latin1').replace(/\r\n?/g, '\n').replace(/^%2multibyte Version: [\d.]+ CodePage: \d+\n(?!%2multibyte)/, (m) => (orig.startsWith('%2multibyte') ? m : ''));
   const pre = (s) => s.slice(0, s.indexOf('\\begin{document}')).trimEnd();
   check(saved.startsWith(pre(orig)), `${name}: preamble kept`);
   if (/\\input\{tcilatex\}/.test(saved) && bytes.every((x) => x < 128)) { // xelatex reads UTF-8; 5.x reads its code page

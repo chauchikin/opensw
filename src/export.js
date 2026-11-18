@@ -1,16 +1,28 @@
 import { envLabel, PLAIN_ENVS } from './schema.js';
-import { standardTeX, columnAligns, Parser as Parser55 } from './tex55.js';
+import { standardTeX, dropPlaceholders, columnAligns, stripComments, Parser as Parser55 } from './tex55.js';
 import { frameAttrs, includeAttrs } from './graphics.js';
 import { TableMap } from 'prosemirror-tables';
 import { splitRows } from './numbering.js';
+import { _t } from './i18n.js';
 
 // ---------- LaTeX ----------
 const SECTION_CMD = ['part', 'chapter', 'section', 'subsection', 'subsubsection', 'paragraph', 'subparagraph'];
 const ESC = { '\\': '\\textbackslash{}', '{': '\\{', '}': '\\}', '#': '\\#', $: '\\$', '%': '\\%', '&': '\\&',
   _: '\\_', '~': '\\textasciitilde{}', '^': '\\textasciicircum{}' };
 // special spaces and the soft hyphen typed with 5.x's keys come back as their TeX commands
-const SPACES_TEX = { '\u00a0': '~', '\u2009': '\\,', '\u2005': '\\;', '\u00ad': '\\-' };
-const escTex = (s) => s.replace(/[\\{}#$%&_~^]/g, (c) => ESC[c]).replace(/[\u00a0\u2009\u2005\u00ad]/g, (c) => SPACES_TEX[c]);
+const SPACES_TEX = { '\u00a0': '~', '\u2009': '\\,', '\u2005': '\\;', '\u00ad': '\\-',
+  // dashes and quotes typed the TeX way (-- --- `` '') are read as these characters: write them back the same way,
+  // so a 5.x file keeps plain ASCII there and needs no code page for them
+  '\u2013': '--', '\u2014': '---', '\u201c': '``', '\u201d': "''" };
+const escTex = (s) => s.replace(/[\\{}#$%&_~^]/g, (c) => ESC[c]).replace(/[\u00a0\u2009\u2005\u00ad\u2013\u2014\u201c\u201d]/g, (c) => SPACES_TEX[c]);
+
+// The Chinese font: the first of these the computer has. An older TeX (MiKTeX 2.9, for example)
+// has no \IfFontExistsTF; it gets PMingLiU, which Windows has.
+const CJK_FONT = `\\ifdefined\\IfFontExistsTF
+\\IfFontExistsTF{Noto Serif CJK TC}{\\setCJKmainfont{Noto Serif CJK TC}}{%
+  \\IfFontExistsTF{PMingLiU}{\\setCJKmainfont{PMingLiU}}{\\setCJKmainfont{Microsoft JhengHei}}}
+\\else\\setCJKmainfont{PMingLiU}\\fi
+`;
 
 // packages from the .sci preamble that a normal TeX installation has
 const SAFE_PACKAGES = new Set(['amsfonts', 'xcolor', 'ragged2e', 'tabulary', 'bm', 'url', 'longtable', 'multicol',
@@ -104,8 +116,9 @@ function inlineTex(node) {
   node.forEach((child) => {
     let s;
     if (child.isText) s = escTex(child.text);
-    else if (child.type.name === 'math_inline') s = '$' + (doc55 ? child.attrs.latex : standardTeX(child.attrs.latex)) + '$';
+    else if (child.type.name === 'math_inline') s = '$' + (doc55 ? formula55(child.attrs.latex) : standardTeX(child.attrs.latex)) + '$';
     else if (child.type.name === 'tex_field') s = child.attrs.tex + (/\\[a-zA-Z]+$/.test(child.attrs.tex) ? '{}' : '');
+    else if (child.type.name === 'html_field') s = doc55 ? `%TCIMACRO{\\HTML{${child.attrs.html}}}%\n%BeginExpansion\n%EndExpansion\n` : ''; // TeX does not use it
     else if (child.type.name === 'hard_break') s = '\\\\\n';
     else if (child.type.name === 'marker') s = `\\label{${child.attrs.key}}`;
     else if (child.type.name === 'ref') s = `\\${child.attrs.kind}{${child.attrs.key}}`;
@@ -126,6 +139,34 @@ function inlineTex(node) {
 }
 
 // set while exporting a Scientific Word 5.x document (see toLatex)
+// 5.x writes an Exam Builder formula \FORMULA{expr}{value}{operation} as a TCI macro
+// (a comment 5.x reads) with the value as its expansion
+export function formula55(latex) {
+  latex = dropPlaceholders(latex);
+  if (!latex.includes('\\FORMULA{')) return latex;
+  let out = '';
+  let i = 0;
+  for (let k; (k = latex.indexOf('\\FORMULA{', i)) >= 0;) {
+    const args = [];
+    let j = k + '\\FORMULA'.length;
+    for (let n = 0; n < 3 && latex[j] === '{'; n++) {
+      let depth = 0;
+      const start = j;
+      for (; j < latex.length; j++) {
+        if (latex[j] === '\\') { j++; continue; }
+        if (latex[j] === '{') depth++;
+        else if (latex[j] === '}' && --depth === 0) break;
+      }
+      args.push(latex.slice(start + 1, j));
+      j++;
+    }
+    if (args.length < 3) { out += latex.slice(i, j); i = j; continue; }
+    out += latex.slice(i, k) + `%\n%TCIMACRO{${latex.slice(k, j)}}%\n%BeginExpansion\n${args[1]}%\n%EndExpansion\n`;
+    i = j;
+  }
+  return out + latex.slice(i);
+}
+
 let doc55 = null;
 
 // \tag / \label / \nonumber for one numbered row
@@ -135,7 +176,7 @@ const rowMarksTex = (r, envNumbers) => (r.tag != null ? `\\tag{${r.tag}}` : '') 
 // A displayed formula with its numbering: \[..\], equation, or its own multi-row environment
 function displayTex(node) {
   const a = node.attrs;
-  const tex = (x) => (doc55 ? x : standardTeX(x));
+  const tex = (x) => (doc55 ? formula55(x) : standardTeX(x));
   const m = a.latex.match(/^\s*\\begin\{(aligned|gathered|array|alignedat)\}(\{[^}]*\})?([^]*)\\end\{\1\}\s*$/);
   if (a.env && m) {
     const env = a.env;
@@ -190,7 +231,7 @@ function tableTex(node) {
     }
     lines.push((row.attrs.before ? row.attrs.before + '\n' : '') + cells.join(' & ') + ' \\\\');
   });
-  return `\\begin{tabular}{${spec}}\n${lines.join('\n')}${node.attrs.after ? '\n' + node.attrs.after : ''}\n\\end{tabular}`;
+  return `\\begin{tabular}${node.attrs.pos ? `[${node.attrs.pos}]` : ''}{${spec}}\n${lines.join('\n')}${node.attrs.after ? '\n' + node.attrs.after : ''}\n\\end{tabular}`;
 }
 
 // A table or figure environment; the label goes after \caption
@@ -220,7 +261,7 @@ function blockTex(node, envs) {
     case 'paragraph': return inlineTex(node) + '\n\n';
     case 'title':
       if (node.attrs.form) return `\\begin{center}\n{\\${node.attrs.form} ${inlineTex(node)}}\n\\end{center}\n\n`;
-      if (doc55) return `\\title{${inlineTex(node)}}\n${doc55.author55 != null ? `\\author{${doc55.author55}}\n` : ''}\\maketitle\n\n`;
+      if (doc55) return `\\title{${inlineTex(node)}}\n${doc55.author55 != null ? `\\author{${doc55.author55}}\n` : ''}${node.attrs.date != null ? `\\date{${node.attrs.date}}\n` : ''}\\maketitle\n\n`;
       return `\\title{${inlineTex(node)}}\n\\date{${node.attrs.date ?? ''}}\n\\maketitle\n\n`;
     case 'heading': return `\\${SECTION_CMD[node.attrs.level] || 'section'}${node.attrs.nonum ? '*' : ''}{${inlineTex(node)}}\n\n`;
     case 'math_display': return displayTex(node) + '\n\n';
@@ -261,7 +302,13 @@ function childrenTex(node, envs) {
     // 5.x: a display formula sits inside its paragraph; text right after it continues
     // that paragraph (no indent), as in the original
     if (doc55 && prev && ((prev.type.name === 'paragraph' && c.type.name === 'math_display')
-      || (prev.type.name === 'math_display' && c.type.name === 'paragraph'))) s = s.replace(/\n+$/, '\n');
+      || (prev.type.name === 'math_display' && c.type.name === 'paragraph')
+      // and displays one after another stay in one paragraph (a blank line between
+      // them would add an empty line of space)
+      || (prev.type.name === 'math_display' && c.type.name === 'math_display')
+      // a table that sat in the text line goes back there
+      || (prev.type.name === 'table' && prev.attrs.inline && c.type.name === 'paragraph')
+      || (c.type.name === 'table' && c.attrs.inline && prev.type.name === 'paragraph'))) s = s.replace(/\n+$/, '\n');
     s += blockTex(c, envs);
     prev = c;
   });
@@ -298,11 +345,9 @@ export function toLatex(doc, meta = {}, opts = {}) {
 \\usepackage{amsmath,amssymb,amsthm}
 \\usepackage{graphicx}
 \\usepackage{xeCJK}
-\\IfFontExistsTF{Noto Serif CJK TC}{\\setCJKmainfont{Noto Serif CJK TC}}{%
-  \\IfFontExistsTF{PMingLiU}{\\setCJKmainfont{PMingLiU}}{\\setCJKmainfont{Microsoft JhengHei}}}
-${pkgs.map((p) => `\\usepackage{${p}}`).join('\n')}
+${CJK_FONT}${pkgs.map((p) => `\\usepackage{${p}}`).join('\n')}
 ${indexSetup}\\usepackage{hyperref}
-\\renewcommand{\\proofname}{證明}
+\\renewcommand{\\proofname}{${envLabel('proof')}}
 ${pre}
 ${theorems}
 ${provide}
@@ -335,9 +380,10 @@ function inlineMd(node) {
     else if (child.type.name === 'math_inline') s = '$' + standardTeX(child.attrs.latex) + '$';
     else if (child.type.name === 'ref') s = `[→${child.attrs.key}]`;
     else if (child.type.name === 'tex_field') s = '`' + child.attrs.tex + '`';
+    else if (child.type.name === 'html_field') s = child.attrs.html;
     else if (child.type.name === 'hard_break') s = '  \n';
     else if (child.type.name === 'image') s = `![${child.attrs.caption || ''}](${child.attrs.path})`;
-    else if (child.type.name === 'note') s = `^[${child.attrs.kind === 'margin' ? '邊註：' : ''}${inlineMd(child)}]`;
+    else if (child.type.name === 'note') s = `^[${child.attrs.kind === 'margin' ? _t('邊註：') : ''}${inlineMd(child)}]`;
     else if (child.type.name === 'cite') s = child.attrs.kind === 'nocite' ? '' : `[${child.attrs.keys.split(',').map((k) => '@' + k).join('; ')}${child.attrs.note ? ', ' + child.attrs.note : ''}]`;
     else s = '';
     for (const m of child.marks) {
@@ -366,11 +412,11 @@ function blockMd(node, indent = '') {
     case 'caption': return indent + '*' + inlineMd(node) + '*\n\n';
     case 'verbatim': return '```\n' + node.textContent + '\n```\n\n';
     case 'bibliography': {
-      let s = '## 參考文獻\n\n';
+      let s = _t('## 參考文獻\n\n');
       node.forEach((it) => { s += `- [${it.attrs.key}] ${inlineMd(it)}\n`; });
       return s + '\n';
     }
-    case 'bibtex': return `（參考文獻來自 BibTeX：${node.attrs.files}）\n\n`;
+    case 'bibtex': return _t('（參考文獻來自 BibTeX：{0}）\n\n', node.attrs.files);
     case 'env': {
       let inner = '';
       node.forEach((c) => { inner += blockMd(c); });
@@ -394,6 +440,41 @@ function blockMd(node, indent = '') {
   }
 }
 
+// The 5.x file as it was opened, ready for this TeX: a document nobody changed is
+// typeset from its own text, so the pages come out as 5.5 makes them. Only what this
+// TeX needs is added: the paper size, Chinese fonts, and the picture inside each \FRAME
+// (tcilatex leaves only a \special for 5.x's own TeX). opts.files as for toLatex.
+export function originalTex55(text, opts = {}) {
+  texFiles = opts.files || new Map();
+  const s = text.replace(/\r\n?/g, '\n');
+  const b = s.indexOf('\\begin{document}');
+  if (b < 0) return null;
+  const pre = s.slice(0, b);
+  let body = '';
+  let graphicx = false;
+  let i = b;
+  for (let k; (k = s.indexOf('\\FRAME', i)) >= 0;) {
+    const lineStart = s.lastIndexOf('\n', k) + 1;
+    const commented = /(^|[^\\])(\\\\)*%/.test(s.slice(lineStart, k));
+    if (commented || /[a-zA-Z]/.test(s[k + 6] || '')) { body += s.slice(i, k + 6); i = k + 6; continue; }
+    const { args, end } = Parser55.args(s, k + 6, 8);
+    let frame = s.slice(k, end);
+    // (5.x breaks long \FRAMEs with "%" line ends: the sizes are read without them)
+    const a = frameAttrs(args.map((x) => stripComments(x)), stripComments(frame));
+    if (texFiles.has(a.path)) {
+      graphicx = true;
+      frame = frame.replace(/\}\s*$/, `\\raisebox{-${a.texh || '0pt'}}{${graphicTex(a)}}}`);
+    }
+    body += s.slice(i, k) + frame;
+    i = end;
+  }
+  body += s.slice(i);
+  const cjk = /[\u3000-\u9fff\uf900-\ufaff\uff00-\uffef]/.test(stripComments(body))
+    ? `\\usepackage{xeCJK}\n${CJK_FONT}` : '';
+  const gfx = graphicx && !/\\usepackage(\[[^\]]*\])?\{[^}]*\bgraphicx\b/.test(pre) ? '\\usepackage{graphicx}\n' : '';
+  return `${pre.trimEnd()}\n${gfx}\\ifdefined\\XeTeXversion\\pdfpagewidth=\\paperwidth \\pdfpageheight=\\paperheight\\fi\n${cjk}\n${body}`;
+}
+
 // A Scientific Word 5.x document keeps its own preamble, which loads SW's macro
 // files (tcilatex.tex and its style); the desktop app has those files.
 function toLatex55(doc, meta, opts = {}) {
@@ -401,7 +482,7 @@ function toLatex55(doc, meta, opts = {}) {
     hyperref: /\\usepackage(\[[^\]]*\])?\{[^}]*\bhyperref\b/.test(meta.preamble55) };
   // the author line shown under the title is \author, not a separate block
   doc.forEach((n, off, i) => {
-    if (n.type.name === 'title' && !n.attrs.form && meta.author55 != null) {
+    if (n.type.name === 'title' && !n.attrs.form && meta.author55) { // an empty \author{} has no block
       const next = i + 1 < doc.childCount ? doc.child(i + 1) : null;
       if (next && next.type.name === 'env' && next.attrs.kind === 'centered') doc55.skip = next;
     }
@@ -411,10 +492,13 @@ function toLatex55(doc, meta, opts = {}) {
   let body;
   let graphicx = false;
   try { body = childrenTex(doc, envs); graphicx = doc55.graphicx; } finally { doc55 = null; }
+  // only where the document's style has not made it already: 5.x's thmsa option (sw20*
+  // styles) defines theorem, remark, definition, example ... itself
   const theorems = [...envs].filter((k) => !new RegExp('\\\\newtheorem\\s*\\{' + k + '\\}').test(meta.preamble55))
-    .map((k) => `\\newtheorem{${k}}{${envLabel(k)}}`).join('\n');
-  const cjk = /[\u3000-\u9fff\uf900-\ufaff\uff00-\uffef]/.test(doc.textContent)
-    ? `\\usepackage{xeCJK}\n\\IfFontExistsTF{Noto Serif CJK TC}{\\setCJKmainfont{Noto Serif CJK TC}}{%\n  \\IfFontExistsTF{PMingLiU}{\\setCJKmainfont{PMingLiU}}{\\setCJKmainfont{Microsoft JhengHei}}}\n` : '';
+    .map((k) => `\\expandafter\\ifx\\csname ${k}\\endcsname\\relax\\newtheorem{${k}}{${envLabel(k)}}\\fi`).join('\n');
+  // Chinese anywhere in the text, formulas included ($\mathsf{李}$)
+  const cjk = /[\u3000-\u9fff\uf900-\ufaff\uff00-\uffef]/.test(body)
+    ? `\\usepackage{xeCJK}\n${CJK_FONT}` : '';
   // XeTeX would use its own default paper; use the document's (letter for most 5.x documents)
   const pkgs = tablePackages(body, meta.preamble55);
   if (graphicx && !/\\usepackage(\[[^\]]*\])?\{[^}]*\bgraphicx\b/.test(meta.preamble55)) pkgs.push('graphicx');

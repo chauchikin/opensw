@@ -4,7 +4,7 @@ const srv = spawn('python3', ['test/csp_server.py', '5190'], { stdio: 'ignore' }
 await new Promise((r) => setTimeout(r, 800));
 const browser = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium-1243/chrome-linux64/chrome' });
 const page = await browser.newPage({ viewport: { width: 1100, height: 800 } });
-await page.goto('http://localhost:5190/');
+await page.goto('http://localhost:5190/?lang=zh-TW');
 await page.waitForTimeout(1000);
 const w = () => page.evaluate(() => Math.round(document.querySelector('#page').getBoundingClientRect().width));
 console.log('100%:', await w());

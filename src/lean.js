@@ -1,3 +1,4 @@
+import { _t } from './i18n.js';
 // Compute > Check with Lean: an equation of the document (a = b, with numbers and
 // variables) becomes a Lean 4 theorem over the real numbers, which the desktop app
 // gives to the Lean installed on the computer (with Mathlib). Lean either proves it
@@ -17,11 +18,11 @@ function term(j, vars, nonzero) {
     if (j === 'Pi') return 'Real.pi';
     if (j === 'ExponentialE') return 'Real.exp 1';
     if (j === 'Half') return '(1/2 : ℝ)';
-    throw new Unsupported(`不認得的符號 ${j}`);
+    throw new Unsupported(_t('不認得的符號 {0}', j));
   }
   if (!Array.isArray(j)) {
     if (j && typeof j === 'object' && 'num' in j) return String(j.num);
-    throw new Unsupported('不認得的寫法');
+    throw new Unsupported(_t('不認得的寫法'));
   }
   const [h, ...a] = j;
   const t = (x) => term(x, vars, nonzero);
@@ -37,12 +38,12 @@ function term(j, vars, nonzero) {
     const e = Array.isArray(a[1]) && a[1][0] === 'Negate' && Number.isInteger(a[1][1]) ? -a[1][1] : a[1];
     if (Number.isInteger(e) && e >= 0) return `(${t(a[0])} ^ ${e})`;
     if (Number.isInteger(e) && e < 0) return t(['Divide', 1, ['Power', a[0], -e]]);
-    throw new Unsupported('只認得整數次方');
+    throw new Unsupported(_t('只認得整數次方'));
   }
   if (h === 'Square') return `(${t(a[0])} ^ 2)`;
   if (h === 'Sqrt') return `(Real.sqrt ${t(a[0])})`;
   if (h === 'Delimiter') return t(a[0]);
-  throw new Unsupported(`還不能檢查 ${h}`);
+  throw new Unsupported(_t('還不能檢查 {0}', h));
 }
 
 // a denominator x·(y+1)² is nonzero when x ≠ 0 and y+1 ≠ 0: one hypothesis per factor
@@ -56,7 +57,7 @@ function nonzeroFactors(j, t, nonzero) {
 
 // a formula "a = b" (or "a = b = c": every pair) -> { code, statement } or throws
 export function leanTheorem(mathjson, latex) {
-  if (!Array.isArray(mathjson) || mathjson[0] !== 'Equal' || mathjson.length < 3) throw new Unsupported('要寫成等式 a = b');
+  if (!Array.isArray(mathjson) || mathjson[0] !== 'Equal' || mathjson.length < 3) throw new Unsupported(_t('要寫成等式 a = b'));
   const vars = new Set(), nonzero = new Set();
   const sides = mathjson.slice(1).map((x) => term(x, vars, nonzero));
   // every side is a real number (otherwise Lean would read 1/2 as a natural number, 0)
@@ -84,11 +85,11 @@ export function leanTheorem(mathjson, latex) {
 // Lean's output -> { ok, message }: proved, with only the standard axioms
 export function leanVerdict(output, exitOk) {
   const errors = output.split('\n').filter((l) => /error/.test(l));
-  if (!exitOk || errors.length) return { ok: false, message: 'Lean 沒有證出來：可能不成立，或自動證明的方法不夠用。' };
+  if (!exitOk || errors.length) return { ok: false, message: _t('Lean 沒有證出來：可能不成立，或自動證明的方法不夠用。') };
   const axioms = (output.match(/depends on axioms: \[([^\]]*)\]/) || [, ''])[1].split(',').map((s) => s.trim()).filter(Boolean);
   const extra = axioms.filter((a) => !['propext', 'Classical.choice', 'Quot.sound'].includes(a));
-  if (extra.length) return { ok: false, message: '用到了不標準的公理：' + extra.join('、') };
-  return { ok: true, message: 'Lean 4 檢查通過' };
+  if (extra.length) return { ok: false, message: _t('用到了不標準的公理：') + extra.join(_t('、')) };
+  return { ok: true, message: _t('Lean 4 檢查通過') };
 }
 
 export { Unsupported };

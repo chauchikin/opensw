@@ -1,0 +1,27 @@
+% The packages the 5.x macro files in tex55/ load
+\documentclass[fleqn]{article}
+\usepackage{amsmath}
+\usepackage{ulem}
+\usepackage{indentfirst}
+\usepackage{setspace}
+\usepackage{ifthen}
+\usepackage{geometry}
+\usepackage{fancyhdr}
+\usepackage{amsfonts}
+\usepackage{amscd}
+\usepackage{eurosym}
+\IfFileExists{amstex.sty}{}{}
+\IfFileExists{mitpress.sty}{}{}
+\IfFileExists{fancyheadings.sty}{}{}
+\IfFileExists{refman.sty}{}{}
+\IfFileExists{doublespace.sty}{}{}
+\IfFileExists{fleqn.sty}{}{}
+\IfFileExists{spie.sty}{}{}
+\input{tcilatex}
+\input{type1}
+\begin{document}
+\boldmath $\alpha\leq\sum\mathcal{A}\mathbb{R}$ \unboldmath \euro{} 5
+\uline{underlined} \uwave{wave} \sout{struck}
+\input{common}
+\input{fonts}
+\end{document}

@@ -1,0 +1,48 @@
+% What opensw's LaTeX export writes (src/export.js), with every package it may add
+\documentclass{report}
+\usepackage{amsmath,amssymb,amsthm}
+\usepackage{graphicx}
+\usepackage{xeCJK}
+\ifdefined\IfFontExistsTF
+\IfFontExistsTF{Noto Serif CJK TC}{\setCJKmainfont{Noto Serif CJK TC}}{%
+  \IfFontExistsTF{PMingLiU}{\setCJKmainfont{PMingLiU}}{\setCJKmainfont{Microsoft JhengHei}}}
+\else\setCJKmainfont{PMingLiU}\fi
+\usepackage{amsfonts}
+\usepackage{xcolor}
+\usepackage{ragged2e}
+\usepackage{tabulary}
+\usepackage{bm}
+\usepackage{url}
+\usepackage{longtable}
+\usepackage{multicol}
+\usepackage{enumitem}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{wrapfig}
+\usepackage{boxedminipage}
+\usepackage{fancyhdr}
+\usepackage{geometry}
+\usepackage{setspace}
+\usepackage{float}
+\usepackage{multirow}
+\usepackage{makeidx}
+\makeindex
+\usepackage{hyperref}
+\renewcommand{\proofname}{證明}
+\newtheorem{theorem}{定理}
+\newtheorem{lemma}{Lemma}
+\begin{document}
+\title{標題 Title}\author{作者}\date{\today}\maketitle
+\tableofcontents \listoffigures \listoftables
+中文段落，數學 $x^2$。\textbf{粗體中文} \emph{強調}。\index{entry}
+\begin{theorem}定理 $a=b$.\end{theorem}\begin{proof}證明。\end{proof}
+\textcolor{red}{red} \textcolor[HTML]{1A4FA0}{blue} \url{https://example.org} \href{https://example.org}{link} $\bm{x}$
+\begin{multicols}{2} a \columnbreak b \end{multicols}
+\begin{tabular}{lr}\toprule a & \multirow{2}{*}{b}\\ \midrule c & \\ \bottomrule\end{tabular}
+\begin{longtable}{ll} a & b \end{longtable}
+\begin{tabulary}{\linewidth}{LC} a & b \end{tabulary}
+\begin{boxedminipage}{3cm} box \end{boxedminipage}
+\input{common}
+\input{fonts}
+\printindex
+\end{document}

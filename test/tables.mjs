@@ -5,7 +5,7 @@ import fs from 'node:fs';
 const b = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium-1243/chrome-linux64/chrome' });
 const page = await b.newPage({ viewport: { width: 1024, height: 900 } });
 const errs = []; page.on('pageerror', (e) => errs.push(e.message));
-await page.goto('http://localhost:4173/'); await page.waitForTimeout(600);
+await page.goto('http://localhost:4173/?lang=zh-TW'); await page.waitForTimeout(600);
 let fails = 0;
 const check = (ok, what) => { console.log(ok ? 'ok  ' : 'FAIL', what); if (!ok) fails++; };
 const open = async (file) => {
@@ -85,7 +85,6 @@ await page.keyboard.type('My table');
 const tex2 = await page.evaluate(async () => { document.querySelector('#btn-latex').click(); await new Promise((r) => setTimeout(r, 300)); return document.querySelector('#export-text').value; });
 await page.click('#export-close');
 const tab = tex2.match(/\\begin\{table\}[^]*?\\end\{table\}/)?.[0] || '';
-fs.writeFileSync('/tmp/t2/newtable.tex', tex2);
 check(/\\begin\{tabular\}\{\|c\|c\|c\|\}/.test(tab) && /\\multicolumn\{2\}\{\|c\|\}\{a b\}/.test(tab) && (tab.match(/\\hline/g) || []).length === 4 && /\\caption\{My table\}/.test(tab), 'exported with lines, merged cell and caption');
 
 check(!errs.length, 'no page errors ' + errs);

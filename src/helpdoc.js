@@ -1,0 +1,192 @@
+// Help > Manual: opensw's own manual, written for opensw (not 5.5's help files). It opens as a
+// document, so it can be read, searched (Edit > Find), printed or exported like any other.
+// Other languages: src/locales/manual.<language>.tex.
+import { LANG } from './i18n.js';
+
+const TRANSLATED = import.meta.env
+  ? import.meta.glob('./locales/manual.*.tex', { query: '?raw', import: 'default', eager: true }) : {};
+
+export const MANUAL = TRANSLATED[`./locales/manual.${LANG}.tex`] || String.raw`\title{opensw 說明文件}
+\maketitle
+
+\section{開始}
+
+opensw 是照 Scientific Word 5.5 重做的數學編輯器。選單、快捷鍵、檔案格式盡量跟 5.5 一樣。
+
+\begin{itemize}
+\item 桌面版（Windows）能做全部的事：開檔存檔、排版 PDF、計算、AI 控制。
+\item 網頁版可以打字和計算，但不能直接讀寫電腦上的檔案，也不能排版。
+\item 按 F1 看快捷鍵表。這份說明可以用 編輯 \TEXTsymbol{>} 尋找（Ctrl+Q）找字。
+\end{itemize}
+
+\section{檔案}
+
+\subsection{開檔和存檔}
+
+\begin{itemize}
+\item 開啟：6.x 的 .sci、5.x 的 .tex、考卷範本 .qiz 都可以。
+\item 儲存：主要格式是 5.x 的 .tex（5.5 打得開，中文用 Big5）。打開的 .tex 會存回原檔，存之前留一份 .bak；沒改過就不重寫。從 .sci 打開的文件照樣存成 .sci。
+\item 另存成 .sci：6.x 的格式，給需要的人。
+\item 覆蓋舊檔前會留一份 .bak（工具 \TEXTsymbol{>} 使用者設定 可以關掉）。
+\item 開啟網址：網址結尾是 .tex 或 .sci 就在這裡開；其他網址用瀏覽器開。網址後面加「 as .tex」可以把沒有 .tex 結尾的檔當文件開。
+\item 最近的檔案（桌面版）、範例、文件資訊（字數、公式數、圖片數）。
+\end{itemize}
+
+\subsection{片段}
+
+片段是存起來的一小段文字和公式，隨時可以插進文件。跟 5.5 的 .frg 檔一樣，內容是 5.x 的 LaTeX。
+
+\begin{itemize}
+\item 存成片段：先選取內容，再取名字。
+\item 匯入片段：從清單挑一個插到游標的地方。也可以從 5.5 的 Frags 資料夾加入 .frg 檔。
+\item 工具列的「片段…」清單一樣可以插入。內建幾個物理常數。
+\item 片段存在這台電腦，所有文件共用。
+\end{itemize}
+
+\subsection{匯入和匯出}
+
+\begin{itemize}
+\item 匯入圖片：PNG、JPG、GIF、SVG 等。
+\item 匯出 LaTeX、HTML、Word（.docx）、給 AI 讀的 Markdown。
+\item 匯出 Word 時公式會變成 Word 的方程式，有編號的公式編號靠右。
+\end{itemize}
+
+\subsection{版面設定、預覽、排版}
+
+\begin{itemize}
+\item 版面設定：邊界、頁首、頁尾、頁碼。只用在「預覽」，不影響排版 PDF（跟 5.5 一樣）。
+\item 預覽（不排版）：照畫面的樣子分頁，送到系統的列印預覽，可以直接印或存 PDF。
+\item 排版 PDF（Ctrl+P，桌面版）：用 LaTeX 排成 PDF。5.x 的文件會用 5.x 的巨集排，看起來跟 5.5 排的一樣。
+\end{itemize}
+
+\section{編輯}
+
+\begin{itemize}
+\item 復原、重做、剪下、複製、貼上、全選。
+\item 選擇性貼上：當純文字、當 LaTeX（節標題、公式照 LaTeX 讀）、或當一條公式。
+\item 複製成圖片：游標在公式裡就複製那條公式；選取圖片就複製那張圖。解析度在 工具 \TEXTsymbol{>} 匯出設定。
+\item 屬性（Ctrl+F5）：公式改 TeX、表格改對齊和格線、圖片改大小和標題、繪圖改公式和範圍。
+\item 表格：插入或刪除列和欄、合併和分割儲存格。在表格裡按 Tab 跳下一格。
+\item 尋找（Ctrl+Q）、取代（Ctrl+W）：文字和公式裡都找。
+\end{itemize}
+
+\section{插入}
+
+\begin{itemize}
+\item 數學（Ctrl+M 或打 \$）開始一條公式；獨立公式 Ctrl+D。
+\item 分數 Ctrl+F、根號 Ctrl+R、上標 Ctrl+H、下標 Ctrl+L。
+\item 運算子、括號、矩陣、函數名稱、二項式、裝飾（帽子、橫線、箭頭）。
+\item 表格、表格標題。
+\item 標記和交叉引用：先在要引用的地方放標記，再插入交叉引用。
+\item 註解：註腳、邊註。點小數字可以改內容。
+\item 引用文獻、索引項目、超連結。
+\item TeX 欄位：直接寫 LaTeX，畫面顯示灰底，排版時照用。
+\item HTML 欄位：只在匯出 HTML 時用。
+\item 考卷公式：產生考卷時才算的公式（見「考卷產生器」）。
+\item 間距、單位名稱。
+\end{itemize}
+
+\section{檢視、前往、標籤}
+
+\begin{itemize}
+\item 檢視：放大縮小；顯示或隱藏標記、索引項目、輔助線、TeX 欄位；工具列（每一列都可以開關，有「重設」）。
+\item 前往：上一節、下一節、標記、連結（游標在連結上）、上一個位置、下一個位置。
+\item 標籤：F2 到 F12 套用標籤（標籤 \TEXTsymbol{>} 功能鍵 可以自己改）；項目標籤（清單、定理類）、段落標籤（節、小節）、文字標籤（粗體、強調、字級）。
+\item 標籤 \TEXTsymbol{>} 外觀：改每個標籤在畫面上的字型、大小、顏色，不影響排版。
+\end{itemize}
+
+\section{計算}
+
+游標放在公式裡，從計算選單選一個動作。結果接在公式後面。計算用的是 SymPy，第一次要載入幾秒；桌面版在 工具 > 計算引擎 可以改用這台電腦裝的 Mathematica。
+
+\begin{itemize}
+\item 計算（Ctrl+E）、數值計算、化簡、因式分解、展開、合併、改寫。
+\item 解：精確、數值、整數、遞迴。解常微分方程：精確。
+\item 多項式：部分分式、依變數整理。
+\item 微積分：微分、不定積分、分部積分、換變數、近似積分、畫近似積分圖、冪級數、求極值、迭代、隱函數微分。
+\item 向量微積分：梯度、散度、旋度、拉普拉斯、黑塞矩陣、雅可比矩陣、朗斯基行列式、位勢、向量位勢。基底變數預設是 $x,y,z$。
+\item 單形法：最大化、最小化、可行性、標準化、對偶。打成一行矩陣，第一列是目標函數，其他列是限制式，變數都當成 $\geq 0$。
+\item 統計、拉氏轉換、傅立葉轉換、矩陣（行列式、反矩陣、特徵值、秩、零空間⋯⋯）。
+\item 定義：例如 $f(x)=x^{2}$ 選「新定義」，之後的計算都會用到。
+\item 用 Lean 檢查：把等式交給 Lean 4 證明（要先在 工具 \TEXTsymbol{>} Lean 設定 選 Lean 專案資料夾）。
+\end{itemize}
+
+\subsection{繪圖}
+
+游標放在公式裡，選 計算 \TEXTsymbol{>} 繪圖 2D 或 繪圖 3D。圖畫好後選取它按 Ctrl+F5 可以改公式、範圍、格線數。5.5 檔裡的繪圖會照原本的設定重新畫。
+
+\begin{itemize}
+\item 2D 直角座標：$y=f(x)$。屬性裡可以改成對數或雙對數刻度。
+\item 2D 極座標：$r=f(\theta)$，或 $(r,\theta)$ 兩個分量。
+\item 2D 隱函數：等式，例如 $x^{2}+y^{2}=4$。
+\item 2D 參數式：$(x(t),y(t))$。
+\item 2D 保角：複數函數，例如 $\frac{z-1}{z+1}$，畫出方格被函數帶到哪裡。
+\item 2D 梯度：$f(x,y)$ 的梯度箭頭。2D 向量場：$[P,Q]$。
+\item 2D 不等式：例如 $x+y^{2}<5$，塗滿成立的區域。
+\item 2D 常微分方程：把方程和起始值打成一行矩陣，例如 $y'=\sin (xy)$ 和 $y(0)=3$，用數值方法畫解。可以是方程組。
+\item 近似積分圖：計算 \TEXTsymbol{>} 微積分 \TEXTsymbol{>} 畫近似積分圖，選左端點、中點、右端點、上和、下和或梯形。
+\item 3D 直角座標：$z=f(x,y)$，或參數曲面 $(x(s,t),y(s,t),z(s,t))$。
+\item 3D 柱座標：$r=f(\theta ,z)$；球座標：$\rho =f(\theta ,\varphi )$。也可以寫三個分量。
+\item 3D 隱函數：等式，例如 $x^{2}+y^{2}+z^{2}=9$。
+\item 3D 管狀：沿著曲線 $(x(t),y(t),z(t))$ 的管子，屬性裡可以改半徑。
+\item 3D 梯度、3D 向量場 $[P,Q,R]$。
+\end{itemize}
+
+\section{排版}
+
+\begin{itemize}
+\item 排版 PDF（桌面版）：電腦有裝 XeLaTeX 就用它，沒有就用內附的 Tectonic。常用的 TeX 檔已經附在程式裡，沒有網路也能排；用到其他套件時，第一次要上網下載。中文可以排。
+\item 導言：排版用的 LaTeX 前言（\TEXTsymbol{\backslash}usepackage 等）。
+\item 選項：文件類別、字級、紙張、套件。
+\end{itemize}
+
+\section{工具}
+
+\subsection{考卷產生器}
+
+把目前的文件當範本，產生好幾份數字不一樣的考卷和答案。範本是 5.5 的考卷格式（.qiz），用節標題當關鍵字：
+
+\begin{itemize}
+\item Exam（或 Quiz、Test）：表示這是考卷範本。Comment：只是註記，不會出現在考卷。
+\item Text：原樣放進考卷的文字。Part：分成幾個部分，各有自己的設定。
+\item Setup：設定。例如 $a:=\func{rand}(1,9)$（只算一次）、$b=1/a$（每次用到重算）、「Condition: $(a\neq b)$」（不成立就重抽）、「Questions: number, permute」（題目編號、打亂）、「Choices: permute」（選項打亂）、「Seed: 123」（固定亂數）。
+\item 亂數：$\func{rand}()$、$\func{rand}(n)$ 是 0 到 $n-1$、$\func{rand}(n,m)$ 是 $n$ 到 $m$、$\func{rand}(\{2,3,5\})$ 從集合挑一個、$\func{randmat}(3,3,1,(1,9))$ 隨機矩陣（第三個數：1 任意、2 對稱、3 反對稱、4 行列式為 1）。
+\item Question：一題。Statement：題目。Substatement：小題。Response：選項清單或填空（寫 InputField）。正確的選項後面放 \TEXTsymbol{\backslash}correctchoice（TeX 欄位）。標籤是 fixed 的選項固定放最後。
+\item Answer、Solution：只放在答案裡。Variant：同一題的另一種問法，產生時隨機挑一種。
+\item 題目裡要代數字的地方用 插入 \TEXTsymbol{>} 考卷公式，例如 $a+b$，產生考卷時才算。
+\end{itemize}
+
+產生的考卷開成新的文件，範本還在 視窗 選單。沒做：線上作答和評分、成績資料庫。
+
+\subsection{其他工具}
+
+\begin{itemize}
+\item 拼字檢查：英文，用瀏覽器內建的。
+\item 文件管理：列出文件用到的圖片和子文件、有沒有找到；打包成 .zip（.sci、5.x .tex、圖片一起）給別人；開啟 .zip 或 5.5 的 .rap 包裝檔。
+\item 自動替換：在公式裡打一串字母（例如 sum10）就換成一個公式。可以整個關掉。
+\item 使用者設定：矩陣和表格預設大小、開程式時開哪份文件、存檔留 .bak、公式顏色、介面語言。
+\item 匯出設定：HTML 的公式用 MathML 或 MathJax；複製成圖片的解析度。
+\item 計算引擎：選 SymPy 或 Mathematica（桌面版、電腦要有裝），並看版本。Lean 設定：Lean 專案資料夾。
+\end{itemize}
+
+\section{視窗}
+
+可以同時開好幾份文件。視窗選單切換，Ctrl+F6 或 Ctrl+Tab 換下一份。
+
+\section{5.5 的檔案}
+
+\begin{itemize}
+\item 公式、定理、清單、表格、圖片、繪圖、註腳、引用、索引、子文件、考卷公式都會讀進來。
+\item 不認得的 5.x 指令會原樣留成灰底的 TeX 欄位，存檔和匯出都不會掉。
+\item 圖片要跟 .tex 放在一起（或 graphics 資料夾）。網頁版讀不到電腦上的圖片，用桌面版，或用 文件管理 開打包檔。
+\item 存回 5.x 的 .tex 時，5.5 打得開。
+\end{itemize}
+
+\section{讓 AI 幫忙}
+
+桌面版有 MCP：Claude、Codex 這類 AI 可以讀文件、改文件、計算、排版。設定方法在原始碼的 docs/AI.md。
+
+\section{關於}
+
+opensw 用 MIT 授權。程式是重新寫的，沒有用 Scientific Word 的程式碼、圖示或說明檔。Scientific Word 是 MacKichan Software 的商標，opensw 跟他們沒有關係。
+`;

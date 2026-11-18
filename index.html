@@ -20,12 +20,12 @@
 <div id="guide" hidden>
   <div class="panel guide-panel">
     <h2>opensw 使用說明</h2>
-    <p>這是一個照 Scientific Word 5.5 重做的數學編輯器。<br>畫面、選單、快捷鍵盡量跟 5.5 一樣，5.5 的 .tex 和 6.x 的 .sci 都打得開。</p>
+    <p>這是一個照 Scientific Word 5.5 重做的數學編輯器。<br>畫面、選單、快捷鍵盡量跟 5.5 一樣，5.5 的 .tex 和 6.x 的 .sci 都打得開。<br>每個選單的完整說明：說明 &gt; 完整說明文件。</p>
     <h3>開檔和存檔</h3>
     <ul>
       <li>檔案 &gt; 開啟：.sci（6.x）和 .tex（5.x）都可以。</li>
-      <li>存檔存成 .sci。要給 5.5 開的話，用「另存成 5.x 的 .tex」，中文會用 Big5 存。</li>
-      <li>5.x 的 .tex 不會被蓋掉，存檔一定是另存。</li>
+      <li>以 5.x 的 .tex 為主：打開的 .tex 存回原檔，中文用 Big5 存，5.5 打得開。新文件存成 .tex。</li>
+      <li>要存成 6.x 的 .sci，用「檔案 &gt; 另存成 .sci」。</li>
       <li>桌面版存檔前會把舊檔留一份 .bak。</li>
     </ul>
     <h3>打字和公式</h3>
@@ -60,7 +60,7 @@
   </div>
 </div>
 
-<main id="scroller"><div id="page"><div id="editor"></div></div></main>
+<div id="workarea"><main id="scroller"><div id="page"><div id="editor"></div></div></main><aside id="toolbar-right"></aside></div>
 
 <footer id="tagbar">
   <button id="btn-untag" title="移除項目標籤（回到上一層）">⇐</button>
@@ -70,7 +70,7 @@
 </footer>
 <div id="statusbar"><span id="status-text">要說明請按 F1</span><span id="status-zoom"></span><span id="status-mode">文字</span></div>
 
-<input id="file" type="file" accept=".sci,.tex" hidden>
+<input id="file" type="file" accept=".sci,.tex,.qiz" hidden>
 <div id="popup" class="popup" hidden></div>
 
 <div id="export" hidden>

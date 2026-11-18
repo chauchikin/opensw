@@ -4,6 +4,7 @@ test-out/
 src-tauri/target/
 src-tauri/gen/
 src-tauri/bin/
+src-tauri/texcache/
 public/engine/
 __pycache__/
 test/fixtures/sw6/

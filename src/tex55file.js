@@ -48,3 +48,16 @@ export function codepageFor(meta, text) {
   if (/[\u3000-\u9fff\uf900-\ufaff\uff00-\uffef]/.test(text)) return 950;
   return /[^\x00-\x7f]/.test(text) ? 1252 : null;
 }
+
+// the bytes of a 5.x file: in its code page, and saying which one when the preamble
+// does not (an old file that had only ASCII, given Chinese or accents since), so it
+// opens again the same: multibyte pages in the first line as 5.5 writes them,
+// others as %TCIDATA{Codepage=..}
+export function encodeFile55(text, meta) {
+  const cp = codepageFor(meta, text);
+  if (cp && !/CodePage:\s*\d+|%TCIDATA\{Codepage=\d+\}/i.test(text.slice(0, Math.max(0, text.indexOf('\\begin{document}')) || 8000))) {
+    if (cp !== 1252) text = `%2multibyte Version: 5.50.0.2960 CodePage: ${cp}\n` + text;
+    else text = text.replace(/\\begin\{document\}/, `%TCIDATA{Codepage=${cp}}\n\n$&`);
+  }
+  return encode55(text, cp);
+}

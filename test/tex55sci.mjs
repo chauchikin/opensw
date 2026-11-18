@@ -1,11 +1,11 @@
 // A 5.x .tex opened in the editor, saved as .sci and opened again keeps its formulas
 import { chromium } from 'playwright';
 import fs from 'node:fs';
-const file = process.argv[2];
+const file = process.argv[2] || 'test/fixtures/real55.tex';
 const b = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium-1243/chrome-linux64/chrome' });
 const page = await b.newPage();
 const errs = []; page.on('pageerror', (e) => errs.push(e.message));
-await page.goto('http://localhost:4173/'); await page.waitForTimeout(600);
+await page.goto('http://localhost:4173/?lang=zh-TW'); await page.waitForTimeout(600);
 const maths = () => page.evaluate(() => { const l = []; window.swEditor.state.doc.descendants((n) => { if (n.type.name.startsWith('math')) l.push(n.attrs.latex); }); return l; });
 await page.setInputFiles('#file', file);
 if (await page.isVisible('#confirm')) await page.click('#confirm-ok');
