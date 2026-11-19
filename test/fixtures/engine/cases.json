@@ -1948,7 +1948,8 @@
   "latex": "x^{2}+y^{2}=25",
   "json": "[\"Equal\",[\"Add\",[\"Power\",\"x\",2],[\"Power\",\"y\",2]],25]",
   "expect": [
-   "-\\frac{x}{y}"
+   "yy^{\\prime}=0",
+   "y^{\\prime}y=0"
   ]
  },
  {

@@ -32,7 +32,7 @@ opensw 想做的事很簡單：5.5 的檔案打得開、改得動、排得出來
 Windows 10、11：到 [Releases 頁面](https://github.com/chauchikin/opensw/releases) 下載。
 
 - `opensw_<版本>_x64-setup.exe`：安裝檔，裝在自己的使用者資料夾，不用管理員權限。
-- `opensw_<版本>_x64-portable.zip`：免安裝版，解開後執行 `opensw.exe`，可以放在隨身碟。
+- `opensw_<版本>_x64-portable.zip`：免安裝版，要先解開（在檔案上按右鍵，選「解壓縮全部」；直接在壓縮檔裡點 opensw.exe 不能用），再執行資料夾裡的 `opensw.exe`，可以放在隨身碟。
 
 安裝檔沒有數位簽章，第一次執行時 Windows 可能會顯示「Windows 已保護您的電腦」。按「其他資訊」，再按「仍要執行」。
 

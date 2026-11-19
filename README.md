@@ -31,7 +31,7 @@ A 5.x command it does not know is kept as a TeX field, so nothing is lost on sav
 Windows 10 and 11: download from the [Releases page](https://github.com/chauchikin/opensw/releases).
 
 - `opensw_<version>_x64-setup.exe`: the installer. It installs into your own user folder and needs no administrator rights.
-- `opensw_<version>_x64-portable.zip`: the portable version. Unzip it and run `opensw.exe`; it can live on a USB stick.
+- `opensw_<version>_x64-portable.zip`: the portable version. Unzip it first (right-click it, then Extract All; opensw.exe does not run from inside the zip), then run `opensw.exe` in the folder; it can live on a USB stick.
 
 The installer is not signed, so the first time Windows may say "Windows protected your PC". Click "More info", then "Run anyway".
 

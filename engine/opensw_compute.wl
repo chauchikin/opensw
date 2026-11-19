@@ -1175,9 +1175,12 @@ inIvl[v_, ivl[a_, b_, oa_, ob_]] := NumberQ[v] && Im[v] == 0 && If[oa, v > a, v 
 integerSolve[e_] := Module[{eqs = asEquation /@ Flatten[{e}], vs}, vs = userVariables[eqs];
   ruleSolutions[Solve[eqs, vs, Integers] /. ConditionalExpression[v_, _] :> v]];
 
-implicitDiff[e_] := Module[{q = asEquation[e], f, x = var["x"], y = var["y"]}, f = q[[1]] - q[[2]];
-  If[FreeQ[f, y], unsupported["Needs an expression in x and y"]];
-  Simplify[-D[f, x] / D[f, y]]];
+(* 5.5's Implicit Differentiation: both sides differentiated in x, y a function of x, the derivative
+   written y' (5.5's help: x y + sin x = y gives cos x + y + x y' = y') *)
+implicitDiff[e_] := Module[{q = asEquation[e], x = var["x"], y = var["y"], side},
+  If[FreeQ[q[[1]] - q[[2]], y], unsupported["Needs an expression in x and y"]];
+  side = Expand[D[# /. y -> y[x], x]] /. {Derivative[1][y][x] -> opensw$yPrime, y[x] -> y} &;
+  StringReplace[texEq[side[q[[1]]], side[q[[2]]]], tex[opensw$yPrime] -> "y^{\\prime }"]];
 
 (* the unknown of an ODE is a function the user wrote, y(x) *)
 solveODE[e_] := Module[{q = asEquation[e], fs, fx},
@@ -1643,8 +1646,7 @@ operations = <|
   "mean" -> (Mean[numbers[#]] &),
   "median" -> (Median[numbers[#]] &),
   "variance" -> (With[{x = numbers[#]}, If[Length[x] > 1, Variance[x], 0]] &),
-  "stddev" -> (With[{x = numbers[#]}, If[Length[x] > 1, StandardDeviation[x], 0]] &),
-  "implicitdiff" -> implicitDiff
+  "stddev" -> (With[{x = numbers[#]}, If[Length[x] > 1, StandardDeviation[x], 0]] &)
 |>;
 (* operations done entry by entry on a matrix *)
 elementwise = {"simplify", "factor", "partialfractions", "collect"};
@@ -1712,6 +1714,7 @@ compute[op_String, j_] := Switch[op,
   "integersolve", solutions[integerSolve[expr[j]]],
   "ode", solutions[solveODE[expr[odeForm[j]]]],
   "check", <|"kind" -> "boolean", "value" -> check[inSI[expr[j]]]|>,
+  "implicitdiff", <|"kind" -> "solutions", "label" -> ", Derivative: ", "solutions" -> {implicitDiff[expr[j]]}|>,
   "byparts", With[{x = withParams[j]}, value[byParts[x[[1]], First[x[[2]]]]]],
   "changevar", With[{x = withParams[j]}, value[changeVariable[x[[1]], First[x[[2]]]]]],
   "approxint", With[{x = withParams[j]}, value[approxIntegral[x[[1]], x[[2, 1]], x[[2, 2]]]]],

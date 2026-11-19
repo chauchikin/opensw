@@ -1796,13 +1796,15 @@ def median(xs):
 
 
 def implicit_derivative(e):
-    """dy/dx from F(x, y) = 0 (or F = G)."""
+    """5.5's Implicit Differentiation: both sides of F(x, y) = G (or F = 0) differentiated in x, y a
+    function of x, the derivative written y' (5.5's help: x y + sin x = y gives cos x + y + x y' = y')."""
     eq = e if isinstance(e, sp.Equality) else sp.Eq(e, 0)
-    f = eq.lhs - eq.rhs
     x, y = variable("x"), variable("y")
-    if y not in f.free_symbols:
+    if y not in (eq.lhs - eq.rhs).free_symbols:
         raise Unsupported("Needs an expression in x and y")
-    return sp.simplify(sp.idiff(f, y, x))
+    fy, dy = sp.Function("y")(x), sp.Symbol("y^{\\prime }")
+    side = lambda u: sp.expand(u.subs(y, fy).diff(x)).subs(sp.Derivative(fy, x), dy).subs(fy, y)
+    return f"{tex(side(eq.lhs))}={tex(side(eq.rhs))}"
 
 
 def laplace(e):
@@ -2235,7 +2237,6 @@ OPERATIONS = {
     "median": lambda e: median(numbers(e)),
     "variance": lambda e: sp.nsimplify(variance(numbers(e))),
     "stddev": lambda e: sp.sqrt(sp.nsimplify(variance(numbers(e)))),
-    "implicitdiff": implicit_derivative,
 }
 
 
@@ -2982,6 +2983,8 @@ def compute(op, mathjson_text):
             ps = j.get("params", [])
             words = [p.strip("'") for p in ps if isinstance(p, str) and p[:1] == "'"]
             return json.dumps(with_options(op, apply_definitions(build(j["expr"])), [build(p) for p in ps if not (isinstance(p, str) and p[:1] == "'")], words))
+        if op == "implicitdiff":  # 5.5 writes the differentiated equation after "Derivative:"
+            return json.dumps({"kind": "solutions", "label": ", Derivative: ", "solutions": [implicit_derivative(apply_definitions(build(j)))]})
         if op in PARAM_OPS or op in LIST_OPS:
             return json.dumps(compute_more(op, j["expr"], j.get("params", [])) if isinstance(j, dict) else compute_more(op, j, []))
         if op in ("solve", "numericsolve", "integersolve") and isinstance(j, list) and j[:1] == ["Tuple"]:

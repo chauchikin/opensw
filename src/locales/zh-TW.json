@@ -148,7 +148,7 @@
   "Arrange four congruent triangles into a square and compare the areas.": "把四個全等三角形排成正方形，比較面積即得。",
   "Matrices too: ": "矩陣也可以：",
   ", determinant ": "，行列式 ",
-  "File > Samples opens Scientific Word .sci files; File > Export turns the document into LaTeX, or Markdown for AI. The shortcuts are those of Scientific Word 5.5; press F1 to see them all.": "「檔案 > 範例」可以打開 Scientific Word 的 .sci 檔；「檔案 > 匯出」可以轉成 LaTeX 或給 AI 讀的 Markdown。快捷鍵跟 Scientific Word 5.5 一樣，按 F1 看全部。",
+  "File > Samples has demo problems to try the Compute menu on; File > Export turns the document into LaTeX, or Markdown for AI. The shortcuts are those of Scientific Word 5.5; press F1 to see them all.": "「檔案 > 範例」有示範題，可以照著試計算選單；「檔案 > 匯出」可以轉成 LaTeX 或給 AI 讀的 Markdown。快捷鍵跟 Scientific Word 5.5 一樣，按 F1 看全部。",
   "Figure ": "圖 ",
   "Table ": "表 ",
   "page": "頁碼",
@@ -1084,5 +1084,6 @@
   "The first row is the objective, the other rows the constraints; all variables are at least 0.": "第一列是目標函數，其他列是限制條件；所有變數都大於或等於 0。",
   "Plots": "繪圖",
   "A plot is made below the formula; double-click it to change its settings.": "圖會畫在公式下面；按兩下圖可以改設定。",
-  "Answer:": "答案："
+  "Answer:": "答案：",
+  ", Derivative: ": "，導數："
 }

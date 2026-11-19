@@ -74,7 +74,7 @@ jobs:
         run: |
           cd src-tauri/target/release/bundle/nsis && sha256sum *.exe ../../../../../portable/*.zip | sed 's#[^ ]*/##' > SHA256SUMS.txt
           gh release create "$GITHUB_REF_NAME" -R "$GITHUB_REPOSITORY" --title "opensw ${GITHUB_REF_NAME#v}" \
-            --notes "Windows: \`opensw_${GITHUB_REF_NAME#v}_x64-setup.exe\` is the installer, \`opensw_${GITHUB_REF_NAME#v}_x64-portable.zip\` the portable version. Windows：安裝檔和免安裝版。" \
+            --notes "Windows: \`opensw_${GITHUB_REF_NAME#v}_x64-setup.exe\` is the installer, \`opensw_${GITHUB_REF_NAME#v}_x64-portable.zip\` the portable version (right-click it and choose Extract All first). Windows：安裝檔和免安裝版（免安裝版要先按右鍵「解壓縮全部」）。" \
             *.exe ../../../../../portable/*.zip SHA256SUMS.txt
       - name: Publish to branch sw-next-build
         if: "!startsWith(github.ref, 'refs/tags/')"

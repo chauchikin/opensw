@@ -45,7 +45,8 @@ const cases = [
   ['combine', '\\sin^2 x+\\cos^2 x', (x) => x.latex === '1'],
   ['mean', '\\begin{pmatrix}1&2&3&4\\end{pmatrix}', (x) => x.latex === '\\frac{5}{2}'],
   ['stddev', '\\begin{pmatrix}1&2&3&4\\end{pmatrix}', (x) => x.latex === '\\frac{1}{3} \\sqrt{15}'],
-  ['implicitdiff', 'x^2+y^2=1', (x) => x.latex.replace(/\s/g, '') === '-\\frac{x}{y}'],
+  // as 5.5: the differentiated equation, after "Derivative:"
+  ['implicitdiff', 'x^2+y^2=1', (x) => /Derivative|導數/.test(x.label) && x.solutions[0].replace(/\s/g, '') === '2x+2yy^{\\prime}=0'],
 ];
 for (const [op, latex, ok] of cases) {
   r = await call('compute', { latex, op });

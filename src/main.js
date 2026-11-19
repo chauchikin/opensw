@@ -972,6 +972,6 @@ function demoDoc() {
     schema.nodes.math_display.create({ latex: 'a^2+b^2=c^2' }),
     schema.nodes.env.create({ kind: 'proof' }, [p(t(_t('Arrange four congruent triangles into a square and compare the areas.')))]),
     p(t(_t('Matrices too: ')), m('A=\\begin{pmatrix}1 & 2\\\\ 3 & 4\\end{pmatrix}'), t(_t(', determinant ')), m('\\det A=-2'), t(_t('.'))),
-    p(t(_t('File > Samples opens Scientific Word .sci files; File > Export turns the document into LaTeX, or Markdown for AI. The shortcuts are those of Scientific Word 5.5; press F1 to see them all.'))),
+    p(t(_t('File > Samples has demo problems to try the Compute menu on; File > Export turns the document into LaTeX, or Markdown for AI. The shortcuts are those of Scientific Word 5.5; press F1 to see them all.'))),
   ]);
 }
