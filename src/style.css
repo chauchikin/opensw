@@ -31,6 +31,35 @@ body { display: flex; flex-direction: column; overflow: hidden; }
 
 #workarea { flex: 1; display: flex; min-height: 0; }
 #scroller { flex: 1; overflow: auto; background: #fff; border-top: 1px solid #fff; }
+/* View > Changes (review.js) */
+#rv-main { flex: 1; display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+#rv-main > [hidden] { display: none !important; }
+#rv-left { flex: 1; display: flex; flex-direction: column; min-width: 0; border-right: 3px double #a0a0a0; background: #fafafa; }
+#rv-left[hidden] { display: none; }
+#rv-original { flex: 1; overflow: auto; padding: 14px 22px 120px; zoom: var(--zoom, 1); }
+#rv-original .ProseMirror { outline: none; }
+.rv-head { flex: none; padding: 3px 8px; font: 12px "Segoe UI", "Microsoft JhengHei", system-ui, sans-serif; background: #e8e8e8; border-bottom: 1px solid #c0c0c0; }
+#rv-tabs { flex: none; display: flex; gap: 2px; padding: 3px 4px 0; background: #e8e8e8; border-bottom: 1px solid #a0a0a0; }
+#rv-tabs button { font: 12px "Segoe UI", "Microsoft JhengHei", system-ui, sans-serif; padding: 3px 10px; border: 1px solid #b0b0b0; border-bottom: 0; background: #f4f4f4; border-radius: 3px 3px 0 0; }
+#rv-tabs button.on { background: #fff; font-weight: 600; }
+#rv-source { flex: 1; overflow: auto; margin: 0; padding: 10px 14px; background: #fff; font: 13px/1.45 Consolas, "Courier New", monospace; white-space: pre-wrap; word-break: break-word; user-select: text; }
+#rv-source mark.rv-written { background: #fff1b8; }
+#rv-list { flex: 1; overflow: auto; padding: 8px 14px; background: #fff; font: 13px "Segoe UI", "Microsoft JhengHei", system-ui, sans-serif; }
+#rv-list h3 { font-size: 13px; margin: 12px 0 4px; }
+#rv-list .rv-item { padding: 4px 6px; border-bottom: 1px solid #eee; cursor: pointer; }
+#rv-list .rv-item:hover { background: #f4f8ff; }
+#rv-list .rv-actions { float: right; }
+#rv-list .rv-text { color: #555; }
+#rv-list .rv-none { color: #777; margin: 2px 0; }
+#rv-list .rv-bad { color: #c00; font-weight: 600; }
+#rv-list .rv-unknown { color: #a07000; font-weight: 600; }
+.rv-dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 3px; }
+.rv-dot.rv-ai { background: #8a5cf6; } .rv-dot.rv-user { background: #e0a800; }
+/* changed blocks: purple for an AI's changes, yellow for the user's own */
+.rv-changed.rv-ai, .rv-old.rv-ai { background: #f1eaff; box-shadow: -4px 0 0 #8a5cf6; }
+.rv-changed.rv-user, .rv-old.rv-user { background: #fff6d6; box-shadow: -4px 0 0 #e0a800; }
+.rv-old { opacity: .85; }
+.rv-deleted { font: 11px "Segoe UI", system-ui, sans-serif; color: #b00; border-top: 2px dashed #d33; margin: 2px 0; padding-left: 4px; }
 /* toolbars docked on the right, one above another (5.5 docks some toolbars at the side) */
 #toolbar-right { flex: none; display: flex; flex-direction: column; gap: 3px; padding: 2px; background: #f0f0f0; border-left: 1px solid #a0a0a0; overflow-y: auto; }
 #toolbar-right .tb-group { flex-direction: column; padding: 7px 1px 1px; margin: 0; }

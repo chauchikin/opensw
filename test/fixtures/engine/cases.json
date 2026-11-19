@@ -162,6 +162,30 @@
   "expect": "x=1"
  },
  {
+  "op": "implicitdiff",
+  "latex": "x^2+by=3",
+  "json": "[\"Equal\",[\"Add\",[\"Power\",\"x\",2],[\"Multiply\",\"b\",\"y\"]],3]",
+  "expect": [
+   "b^{\\prime}y",
+   "yb^{\\prime}"
+  ]
+ },
+ {
+  "op": "implicitdiff",
+  "latex": "y'=\\frac{y}{x}",
+  "json": "[\"Equal\",[\"Prime\",\"y\"],[\"Divide\",\"y\",\"x\"]]",
+  "expect": "y^{\\prime\\prime}="
+ },
+ {
+  "op": "implicitdiff",
+  "latex": "t^2+s^2=1",
+  "json": "{\"expr\":[\"Equal\",[\"Add\",[\"Power\",\"s\",2],[\"Power\",\"t\",2]],1],\"params\":[\"t\"]}",
+  "expect": [
+   "ss^{\\prime}",
+   "s^{\\prime}s"
+  ]
+ },
+ {
   "op": "numericsolve",
   "latex": "x^2-2=0",
   "json": "[\"Equal\",[\"Add\",[\"Power\",\"x\",2],-2],0]",

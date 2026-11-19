@@ -26,6 +26,7 @@ compute(op, 要求) -> 回答
 | `solutions` | `solutions`：幾個結果（LaTeX）；`label`：接在公式後的文字（可省略） | `{"kind":"solutions","solutions":["x=1","x=2"]}` |
 | `boolean` | `value`：true／false | `{"kind":"boolean","value":true}` |
 | `text` | `text`：一段文字 | `{"kind":"text","text":" (feasible)"}` |
+| `step` | `result`：`equal`、`notequal` 或 `unknown`；`notequal` 時另有 `point`（LaTeX，例如 `x=-\frac{3}{5}`）和 `values`（兩邊在那一點的值） | `{"kind":"step","result":"equal"}` |
 | `points`、`grid`、`values`、`ode`、`exam` | 畫圖和考卷用的數字，格式看 `engine/opensw_compute.py` 裡同名指令 | |
 
 另外兩種：
@@ -109,7 +110,8 @@ LaTeX 照 Scientific Word 5.5 的樣子寫：矩陣用 `pmatrix`（或 `\left(\b
 | `series` | 微積分 > 冪級數（F+p：變數、最高次、展開點） | F | value | ✓ | ✓ |
 | `pade` | 微積分 > Padé 近似（F+p：m、n、變數、展開點；沒給是 [2/2]） | F | value | ✓ | ✓ |
 | `extrema` | 微積分 > 求極值 | F | solutions | ✓ | ✓ |
-| `implicitdiff` | 微積分 > 隱函數微分 | F | value | ✓ | ✓ |
+| `implicitdiff` | 微積分 > 隱函數微分（F+p：微分變數，沒給是 x） | F | value | ✓ | ✓ |
+| `stepcheck` | 推導檢查：a = b 是不是對的一步（參數：b）；答 equal（證明相等）、notequal（附 point、values）或 unknown | F+p | step | ✓ | 交給下一個 |
 | `gradient` | 向量微積分 > 梯度（參數：基底變數） | F+p | value | ✓ | ✓ |
 | `divergence` | 向量微積分 > 散度 | F+p | value | ✓ | ✓ |
 | `curl` | 向量微積分 > 旋度 | F+p | value | ✓ | ✓ |

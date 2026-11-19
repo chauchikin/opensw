@@ -26,6 +26,7 @@ compute(op, request) -> answer
 | `solutions` | `solutions`: several results (LaTeX); `label`: text put after the formula (optional) | `{"kind":"solutions","solutions":["x=1","x=2"]}` |
 | `boolean` | `value`: true/false | `{"kind":"boolean","value":true}` |
 | `text` | `text`: some text | `{"kind":"text","text":" (feasible)"}` |
+| `step` | `result`: `equal`, `notequal` or `unknown`; with `notequal`, `point` (LaTeX, e.g. `x=-\frac{3}{5}`) and `values` (the two sides there) | `{"kind":"step","result":"equal"}` |
 | `points`, `grid`, `values`, `ode`, `exam` | numbers for plots and exams; see the operation of the same name in `engine/opensw_compute.py` | |
 
 Two more:
@@ -109,7 +110,8 @@ This table is made by `node scripts/engine-doc.mjs` from the two engines' code (
 | `series` | Calculus > Power Series (F+p: variable, highest power, point) | F | value | ✓ | ✓ |
 | `pade` | Calculus > Padé Approximant (F+p: m, n, variable, point; without them [2/2]) | F | value | ✓ | ✓ |
 | `extrema` | Calculus > Find Extrema | F | solutions | ✓ | ✓ |
-| `implicitdiff` | Calculus > Implicit Differentiation | F | value | ✓ | ✓ |
+| `implicitdiff` | Calculus > Implicit Differentiation (F+p: the differentiation variable, x if not given) | F | value | ✓ | ✓ |
+| `stepcheck` | Derivation check: is a = b a right step (param: b); answers equal (proved), notequal (with point, values) or unknown | F+p | step | ✓ | falls back |
 | `gradient` | Vector Calculus > Gradient (params: basis variables) | F+p | value | ✓ | ✓ |
 | `divergence` | Vector Calculus > Divergence | F+p | value | ✓ | ✓ |
 | `curl` | Vector Calculus > Curl | F+p | value | ✓ | ✓ |

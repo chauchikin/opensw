@@ -14,8 +14,10 @@ const ESC = { '\\': '\\textbackslash{}', '{': '\\{', '}': '\\}', '#': '\\#', $: 
 const SPACES_TEX = { '\u00a0': '~', '\u2009': '\\,', '\u2005': '\\;', '\u00ad': '\\-',
   // dashes and quotes typed the TeX way (-- --- `` '') are read as these characters: write them back the same way,
   // so a 5.x file keeps plain ASCII there and needs no code page for them
-  '\u2013': '--', '\u2014': '---', '\u201c': '``', '\u201d': "''" };
-const escTex = (s) => s.replace(/[\\{}#$%&_~^]/g, (c) => ESC[c]).replace(/[\u00a0\u2009\u2005\u00ad\u2013\u2014\u201c\u201d]/g, (c) => SPACES_TEX[c]);
+  '\u2013': '--', '\u2014': '---', '\u201c': '``', '\u201d': "''",
+  // \quad and \ldots in text are read as an em space and an ellipsis
+  '\u2003': '\\quad ', '\u2026': '\\ldots{}' };
+const escTex = (s) => s.replace(/[\\{}#$%&_~^]/g, (c) => ESC[c]).replace(/[\u00a0\u2009\u2005\u00ad\u2013\u2014\u201c\u201d\u2003\u2026]/g, (c) => SPACES_TEX[c]);
 
 // The Chinese font: the first of these the computer has. An older TeX (MiKTeX 2.9, for example)
 // has no \IfFontExistsTF; it gets PMingLiU, which Windows has.
@@ -509,7 +511,9 @@ function toLatex55(doc, meta, opts = {}) {
 }
 
 // what the preamble must add for body (5.x text the editor wrote): packages, \makeindex, theorems
-function additions55(body, envs, preamble, graphicx) {
+// original: the body of the file an edited 5.x document came from; what it already used without
+// a package (\text, eqnarray* ... as 5.5 sets it) gets none added for the edited parts either
+function additions55(body, envs, preamble, graphicx, original = '') {
   // only where the document's style has not made it already: 5.x's thmsa option (sw20*
   // styles) defines theorem, remark, definition, example ... itself
   const theorems = [...envs].filter((k) => !new RegExp('\\\\newtheorem\\s*\\{' + k + '\\}').test(preamble))
@@ -519,7 +523,7 @@ function additions55(body, envs, preamble, graphicx) {
   // \dfrac, \text, align ... need amsmath; a preamble without it (a document set as LaTeX
   // by AI, or an old file) would leave them as errors in the PDF
   // (5.x's tcilatex.tex defines them itself when amsmath is not loaded)
-  if (AMS_ONLY.test(body) && !/\\input\{tcilatex\}/.test(preamble) && !/\\usepackage(\[[^\]]*\])?\{[^}]*\bamsmath\b|\\documentclass(\[[^\]]*\])?\{ams/.test(preamble)) pkgs.unshift('amsmath');
+  if (AMS_ONLY.test(body) && !AMS_ONLY.test(original) && !/\\input\{tcilatex\}/.test(preamble) && !/\\usepackage(\[[^\]]*\])?\{[^}]*\bamsmath\b|\\documentclass(\[[^\]]*\])?\{ams/.test(preamble)) pkgs.unshift('amsmath');
   if (graphicx && !/\\usepackage(\[[^\]]*\])?\{[^}]*\bgraphicx\b/.test(preamble)) pkgs.push('graphicx');
   if (usedXcolor && !/\\usepackage(\[[^\]]*\])?\{[^}]*\bx?color\b/.test(preamble)) pkgs.push('xcolor');
   // index entries: makeidx and \makeindex (5.x writes \makeindex itself when TCIMAKEINDEX is set)
@@ -578,7 +582,7 @@ export function patchTex55(spans, loadedDoc, doc, meta) {
   const b = text.lastIndexOf('\\begin{document}', spans.head);
   let pre = meta.preamble55raw != null && meta.preamble55raw !== spans.preamble ? meta.preamble55raw : text.slice(0, b);
   if (made) {
-    const { tablePkgs, theorems } = additions55(made, envs, pre, graphicx);
+    const { tablePkgs, theorems } = additions55(made, envs, pre, graphicx, text.slice(spans.head));
     if (tablePkgs || theorems) pre = `${pre.trimEnd()}\n${tablePkgs}${theorems}${theorems ? '\n' : ''}\n`;
   }
   let out = pre + text.slice(b, spans.head);
@@ -588,7 +592,7 @@ export function patchTex55(spans, loadedDoc, doc, meta) {
     // a kept part after a written one starts a new paragraph (the first part may not have a blank line)
     if (kept && i && !pieces[i - 1][2] && !/^[ \t]*\n[ \t]*\n/.test(t)) out += '\n\n';
     out += t;
-    segs.push({ to: out.length, n });
+    segs.push({ to: out.length, n, kept }); // kept: as it was in the file (not written again)
   });
   if (pieces.length && !pieces.at(-1)[2] && !/^[ \t]*\n/.test(tail)) out += '\n\n';
   out += tail;
@@ -596,7 +600,7 @@ export function patchTex55(spans, loadedDoc, doc, meta) {
 }
 
 // L[i] is C[match[i]] (the same block, unchanged), or -1: the longest such pairing in order
-function matchBlocks(L, C) {
+export function matchBlocks(L, C) {
   const match = new Array(L.length).fill(-1);
   let p = 0;
   while (p < L.length && p < C.length && L[p].eq(C[p])) { match[p] = p; p++; }

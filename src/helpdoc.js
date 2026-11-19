@@ -91,6 +91,7 @@ A fragment is a saved piece of text and formulas that can be put into any docume
 
 \begin{itemize}
 \item View: zoom in and out; show or hide markers, index entries, helper lines, TeX fields; toolbars (each can be turned on or off, with ${'`'}${'`'}Reset'').
+\item View \TEXTsymbol{>} Changes and LaTeX source (Ctrl+Shift+D; not in 5.5, closed until opened): on the left the document as it was opened, read only; on the right three tabs. Working document: the blocks changed since are tinted, purple where an AI changed them, yellow where you did. LaTeX source: what saving writes, read only and kept up to date; the parts written again are marked, the rest is the file's own text. Changes and errors: each change, to accept (it stays and is no longer shown) or undo (the original comes back); the errors of the last typesetting in plain words, with the block they are in; and a check of derivations: each step $a=b$ of the displayed formulas (also $=b$ on the next line) is proved equal, shown not equal with a point where the two sides differ, or marked as not decided (never called wrong then).
 \item Go: previous section, next section, marker, link (cursor on a link), previous position, next position.
 \item Tag: F2 to F12 apply tags (change them in Tag \TEXTsymbol{>} Function keys); item tags (lists, theorems), section/body tags (section, subsection), text tags (bold, emphasized, sizes).
 \item Tag \TEXTsymbol{>} Appearance: the screen font, size and color of each tag; typesetting is not affected.

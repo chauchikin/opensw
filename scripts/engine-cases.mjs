@@ -44,6 +44,10 @@ const CASES = [
   ['laplace', 't^2', null, '\\frac{2}{s^3}'],
   ['ode', "y''+y=0", null, ['c_1\\cos(x)', 'C_2\\cos(x)', 'C_{2}\\cos x', 'c_{1}\\cos x']],
   ['extrema', 'x^2-2x', null, 'x=1'],
+  // Implicit Differentiation as 5.5: every letter but the variable is a function of it (b'), y' gives y''
+  ['implicitdiff', 'x^2+by=3', null, ["b^{\\prime}y", "yb^{\\prime}"]],
+  ['implicitdiff', "y'=\\frac{y}{x}", null, "y^{\\prime\\prime}="],
+  ['implicitdiff', 't^2+s^2=1', ['t'], ["ss^{\\prime}", "s^{\\prime}s"]],
   ['numericsolve', 'x^2-2=0', null, '1.4142'],
   ['mean', '\\begin{pmatrix}1&2&3&4\\end{pmatrix}', null, '\\frac{5}{2}'],
   ['gradient', 'x^2y', ['x', 'y'], '\\begin{pmatrix}2xy\\\\x^2\\end{pmatrix}'],

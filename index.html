@@ -60,7 +60,17 @@
   </div>
 </div>
 
-<div id="workarea"><main id="scroller"><div id="page"><div id="editor"></div></div></main><aside id="toolbar-right"></aside></div>
+<div id="workarea">
+  <!-- View > Changes (review.js): the document as opened, on the left; tabs over the document -->
+  <section id="rv-left" hidden><div class="rv-head">Original (as opened, read only)</div><div id="rv-original"></div></section>
+  <div id="rv-main">
+    <nav id="rv-tabs" hidden><button data-tab="doc" class="on">Working document</button><button data-tab="source">LaTeX source (read only)</button><button data-tab="list">Changes and errors</button></nav>
+    <main id="scroller"><div id="page"><div id="editor"></div></div></main>
+    <pre id="rv-source" hidden></pre>
+    <div id="rv-list" hidden></div>
+  </div>
+  <aside id="toolbar-right"></aside>
+</div>
 
 <footer id="tagbar">
   <button id="btn-untag" title="Remove item tag (back up one level)">⇐</button>

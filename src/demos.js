@@ -29,7 +29,7 @@ export const DEMOS = [
             expect: ['x^2\\cos(x)+2x\\sin(x)', 'x^2\\cosx+2x\\sinx', '2x\\sin(x)+x^2\\cos(x)', '2x\\sinx+x^2\\cosx'] },
           { op: 'evaluate', latex: '\\lim_{x\\to\\infty}\\left(1+\\frac{2}{x}\\right)^{x}', how: EVAL, answer: 'e^{2}', expect: 'e^2' },
           { op: 'evaluate', latex: '\\lim_{x\\to 0}\\frac{1-\\cos x}{x^{2}}', how: EVAL, answer: '\\frac{1}{2}', expect: '\\frac{1}{2}' },
-          { op: 'implicitdiff', latex: 'x^{2}+y^{2}=25', how: CALC('Implicit differentiation'), answer: "2x+2yy^{\\prime }=0", expect: ['yy^{\\prime}=0', 'y^{\\prime}y=0'] },
+          { op: 'implicitdiff', latex: 'x^{2}+y^{2}=25', how: CALC('Implicit differentiation…'), answer: "2x+2yy^{\\prime }=0", expect: ['yy^{\\prime}=0', 'y^{\\prime}y=0'] },
         ],
       },
       {

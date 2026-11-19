@@ -1276,6 +1276,14 @@ export function setupUI(app) {
     askCompute('series', _t('Power series'), `<p>${_t('Expand in powers of')} ${varField(variables, guessVariable(variables))} ${_t('about')} <input id="d-a" size="5" value="0"></p>
       <p>${_t('Highest power')} <input id="d-n" size="4" value="5"></p>`, (d) => [field(d, '#d-v') || 'x', field(d, '#d-n') || '5', field(d, '#d-a') || '0']);
   }
+  // 5.5 asks the differentiation variable; the other letters are functions of it
+  async function implicitDialog() {
+    const mv = currentMath();
+    if (!mv) { app.toast(_t('Put the cursor in a formula to compute')); return; }
+    const { variables } = await formulaInfo(mv.latex).catch(() => ({ variables: [] }));
+    askCompute('implicitdiff', _t('Implicit differentiation'), `<p>${_t('Differentiation variable')} ${varField(variables, guessVariable(variables))}</p>`,
+      (d) => [field(d, '#d-v') || 'x']);
+  }
   async function padeDialog() {
     const mv = currentMath();
     if (!mv) { app.toast(_t('Put the cursor in a formula to compute')); return; }
@@ -1326,7 +1334,7 @@ export function setupUI(app) {
     [_t('Solve ODE'), [[_t('Exact'), 'ode'], [_t('Numeric'), 'odenumeric']]],
     [_t('Polynomials'), [[_t('Partial fractions'), 'partialfractions'], [_t('Collect by variable'), 'collect']]],
     [_t('Calculus'), [[_t('Differentiate'), () => calculusOp('differentiate', _t('Differentiate'))], [_t('Integrate (indefinite)'), () => calculusOp('integrate', _t('Integrate (indefinite)'))], [_t('Integrate by parts…'), byParts], [_t('Change variable…'), changeVariable],
-      [_t('Approximate integral…'), approxIntegral], [_t('Plot approximate integral…'), plotApproxIntegral], [_t('Power series…'), seriesDialog], [_t('Padé approximant…'), padeDialog], [_t('Find extrema'), 'extrema'], [_t('Iterate…'), iterateDialog], [_t('Implicit differentiation'), 'implicitdiff']]],
+      [_t('Approximate integral…'), approxIntegral], [_t('Plot approximate integral…'), plotApproxIntegral], [_t('Power series…'), seriesDialog], [_t('Padé approximant…'), padeDialog], [_t('Find extrema'), 'extrema'], [_t('Iterate…'), iterateDialog], [_t('Implicit differentiation…'), implicitDialog]]],
     [_t('Vector calculus'), [[_t('Gradient'), 'gradient'], [_t('Divergence'), 'divergence'], [_t('Curl'), 'curl'], [_t('Laplacian'), 'laplacian'], [_t('Hessian'), 'hessian'],
       [_t('Jacobian'), 'jacobian'], [_t('Wronskian'), 'wronskian'], [_t('Scalar potential'), 'potential'], [_t('Vector potential'), 'vectorpotential'], [_t('Set basis variables…'), setBasis]]],
     [_t('Simplex'), [[_t('Maximize'), 'maximize'], [_t('Minimize'), 'minimize'], [_t('Feasibility'), 'feasible'], [_t('Standardize'), 'standardize'], [_t('Dual'), 'dual']]],
@@ -1536,6 +1544,7 @@ export function setupUI(app) {
       [_t('Zoom in'), 'Ctrl+=', () => app.zoomStep(1)], [_t('Zoom out'), null, () => app.zoomStep(-1)], '-',
       ['200%', null, () => app.setZoom(2)], ['100%', null, () => app.setZoom(1)], '-',
       ...VIEW_TOGGLES.map(([cls, l]) => [() => (isShown(cls) ? '✓ ' : '　') + l, null, () => toggleView(cls)]), '-',
+      [() => (app.reviewShown?.() ? '✓ ' : '　') + _t('Changes and LaTeX source'), 'Ctrl+Shift+D', () => app.toggleReview?.()], '-',
       [_t('Toolbars…'), null, () => toolbarsDialog()],
     ]],
     [_t('Go'), [[_t('Previous section'), null, () => goSection(-1)], [_t('Next section'), null, () => goSection(1)], '-', [_t('Marker…'), null, goMarker], [_t('Link'), null, followLink], '-',

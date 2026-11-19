@@ -44,7 +44,7 @@ function accented(ch) {
 
 // codepage: 950, 1252, ... or null for UTF-8
 export function encode55(text, codepage) {
-  if (!codepage || !CODEPAGE_LABEL[codepage]) return new TextEncoder().encode(text);
+  if (!codepage || !CODEPAGE_LABEL[codepage]) return new TextEncoder().encode(text.replace(/\n/g, '\r\n'));
   const map = tableFor(codepage);
   const out = [];
   for (const ch of text.replace(/\n/g, '\r\n')) {
@@ -67,12 +67,14 @@ export function codepageFor(meta, text) {
 // does not (an old file that had only ASCII, given Chinese or accents since), so it
 // opens again the same: multibyte pages in the first line as 5.5 writes them,
 // others as %TCIDATA{Codepage=..}
-export function encodeFile55(text, meta) {
-  return encode55(withCodepage55(text, meta), codepageFor(meta, text));
+export function encodeFile55(text, meta, original) {
+  return encode55(withCodepage55(text, meta, original), codepageFor(meta, text));
 }
-// the text with that line added when needed (always before \begin{document})
-export function withCodepage55(text, meta) {
+// the text with that line added when needed (always before \begin{document}); not when the
+// file it was opened from (original) needed the same code page and had no such line either
+export function withCodepage55(text, meta, original) {
   const cp = codepageFor(meta, text);
+  if (original != null && cp === codepageFor(meta, original)) return text;
   if (cp && !/CodePage:\s*\d+|%TCIDATA\{Codepage=\d+\}/i.test(text.slice(0, Math.max(0, text.indexOf('\\begin{document}')) || 8000))) {
     if (cp !== 1252) text = `%2multibyte Version: 5.50.0.2960 CodePage: ${cp}\n` + text;
     else text = text.replace(/\\begin\{document\}/, `%TCIDATA{Codepage=${cp}}\n\n$&`);

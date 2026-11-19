@@ -59,7 +59,10 @@ export function decode55(bytes) {
 // A comment right after a control word ends that word (5.x writes "\proof%" then
 // "Let ..." on a later line): a space keeps them apart, as TeX ignores it there.
 const COMMENT = /(?<!\\)((?:\\\\)*)%[^\n]*\n?[ \t]*/g;
-const commentRep = (m, bs, at, t) => (!bs && /\\[a-zA-Z]+$/.test(t.slice(Math.max(0, at - 40), at)) ? ' ' : bs);
+// (a comment that ends its line just before an empty line: the empty line still ends the paragraph,
+// as in TeX, so one line end is kept for it)
+const commentRep = (m, bs, at, t) => (!bs && /\\[a-zA-Z]+$/.test(t.slice(Math.max(0, at - 40), at)) ? ' ' : bs)
+  + (m.includes('\n') && t[at + m.length] === '\n' ? '\n' : '');
 const VERBATIM = /(\\begin\{verbatim\*?\}[^]*?\\end\{verbatim\*?\})/;
 export function stripComments(s) {
   return s.replace(/\r\n?/g, '\n').split(VERBATIM)
@@ -168,7 +171,10 @@ function fileParts55(input, src, b, track) {
   let cur = null;
   for (const r of track) {
     const from = r.end > r.start ? m.st[off + r.start] : head;
-    const to = r.end > r.start ? m.en[off + r.end - 1] : from;
+    let to = r.end > r.start ? m.en[off + r.end - 1] : from;
+    // a comment at the end of the block's last line goes with it
+    const tail = text.slice(to).match(/^[ \t]*(?<!\\)%[^\n]*/);
+    if (tail) to += tail[0].length;
     const prev = cur ? cur.to : head;
     if (cur && (from < cur.to || !/\n[ \t]*\n/.test(text.slice(cur.to, from)))) { cur.to = Math.max(cur.to, to); cur.n++; continue; }
     if (from < prev) return null;

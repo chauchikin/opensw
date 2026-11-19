@@ -1571,6 +1571,35 @@ def check_equality(e):
     return sp.simplify(e.lhs - e.rhs) == 0
 
 
+def step_check(a, b):
+    """One step a = b of a derivation (Changes and errors panel): "equal" when a - b simplifies to 0
+    (proved for every value of the letters, complex ones included: sqrt(x^2) = x is not), "notequal"
+    with a point where the two have different values (exact numbers put in for the letters),
+    "unknown" when neither is found (then nothing is said to be wrong)."""
+    a, b = (x.doit() if hasattr(x, "doit") else x for x in (a, b))
+    if is_matrix(a) or is_matrix(b):
+        same = is_matrix(a) and is_matrix(b) and a.shape == b.shape and all(sp.simplify(x) == 0 for x in (a - b))
+        return {"result": "equal" if same else "unknown"}
+    if sp.simplify(a - b) == 0:
+        return {"result": "equal"}
+    xs = sorted((a - b).free_symbols, key=str)
+    values = [sp.Rational(1, 3), sp.Rational(-3, 5), sp.Rational(2, 7), sp.Rational(5, 2), sp.Rational(-7, 4), sp.Rational(11, 13)]
+    for k in range(len(values)):
+        point = {x: values[(k + i) % len(values)] for i, x in enumerate(xs)}
+        va, vb = a.subs(point).doit(), b.subs(point).doit()
+        if not (va.is_number and vb.is_number) or any(v.has(sp.zoo, sp.nan, sp.oo, -sp.oo) for v in (va, vb)):
+            continue
+        d = sp.simplify(va - vb)
+        if d.has(sp.Float):  # decimals in the formula: different beyond rounding
+            far = abs(complex(sp.N(d))) > 1e-9 * max(1.0, abs(complex(sp.N(va))))
+        else:
+            far = d.is_zero is False
+        if far:
+            return {"result": "notequal", "point": ", ".join(f"{tex(x)}={tex(v)}" for x, v in point.items()),
+                    "values": [tex(va), tex(vb)]}
+    return {"result": "unknown"}
+
+
 def main_variable(e):
     """The variable an operation works in: x if present, otherwise the first one."""
     free = sorted(e.free_symbols, key=str)
@@ -1795,15 +1824,22 @@ def median(xs):
     return s[n // 2] if n % 2 else (s[n // 2 - 1] + s[n // 2]) / 2
 
 
-def implicit_derivative(e):
-    """5.5's Implicit Differentiation: both sides of F(x, y) = G (or F = 0) differentiated in x, y a
-    function of x, the derivative written y' (5.5's help: x y + sin x = y gives cos x + y + x y' = y')."""
+def implicit_derivative(e, var=None):
+    """5.5's Implicit Differentiation: both sides of F = G (or F = 0) differentiated in the
+    differentiation variable (x when not given); every other letter is a function of it (b too,
+    giving b'), the derivatives written with primes (5.5's help: x y + sin x = y gives
+    cos x + y + x y' = y'; y' = .. gives y'' = ..)."""
     eq = e if isinstance(e, sp.Equality) else sp.Eq(e, 0)
-    x, y = variable("x"), variable("y")
-    if y not in (eq.lhs - eq.rhs).free_symbols:
-        raise Unsupported("Needs an expression in x and y")
-    fy, dy = sp.Function("y")(x), sp.Symbol("y^{\\prime }")
-    side = lambda u: sp.expand(u.subs(y, fy).diff(x)).subs(sp.Derivative(fy, x), dy).subs(fy, y)
+    x = var if var is not None else variable("x")
+    others = sorted((eq.lhs - eq.rhs).free_symbols - {x}, key=str)
+    if not others:
+        raise Unsupported(f"Needs an expression in {tex(x)} and another letter, e.g. y")
+    order = lambda s: len(s.name) - len(s.name.rstrip("'"))  # y'' -> 2
+    as_function = {s: sp.Function(s.name.rstrip("'"))(x).diff(x, order(s)) for s in others}
+    back = lambda u: u.replace(lambda t: isinstance(t, sp.Derivative) and len(t.variables) == t.derivative_count and set(t.variables) == {x},
+                               lambda t: variable(t.expr.func.__name__ + "'" * t.derivative_count)) \
+        .replace(lambda t: isinstance(t, sp.core.function.AppliedUndef) and t.args == (x,), lambda t: variable(t.func.__name__))
+    side = lambda u: back(sp.expand_mul(u.subs(as_function).diff(x)))
     return f"{tex(side(eq.lhs))}={tex(side(eq.rhs))}"
 
 
@@ -2983,8 +3019,12 @@ def compute(op, mathjson_text):
             ps = j.get("params", [])
             words = [p.strip("'") for p in ps if isinstance(p, str) and p[:1] == "'"]
             return json.dumps(with_options(op, apply_definitions(build(j["expr"])), [build(p) for p in ps if not (isinstance(p, str) and p[:1] == "'")], words))
+        if op == "stepcheck":  # {"expr": a, "params": [b]}: is a = b one right step (Changes and errors panel)
+            r = step_check(apply_definitions(build(j["expr"])), apply_definitions(build(j["params"][0])))
+            return json.dumps({"kind": "step", **r})
         if op == "implicitdiff":  # 5.5 writes the differentiated equation after "Derivative:"
-            return json.dumps({"kind": "solutions", "label": ", Derivative: ", "solutions": [implicit_derivative(apply_definitions(build(j)))]})
+            e, var = (j["expr"], j.get("params", [])[:1]) if isinstance(j, dict) else (j, [])  # params: [the differentiation variable]
+            return json.dumps({"kind": "solutions", "label": ", Derivative: ", "solutions": [implicit_derivative(apply_definitions(build(e)), build(var[0]) if var else None)]})
         if op in PARAM_OPS or op in LIST_OPS:
             return json.dumps(compute_more(op, j["expr"], j.get("params", [])) if isinstance(j, dict) else compute_more(op, j, []))
         if op in ("solve", "numericsolve", "integersolve") and isinstance(j, list) and j[:1] == ["Tuple"]:

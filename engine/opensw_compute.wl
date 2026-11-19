@@ -1175,12 +1175,17 @@ inIvl[v_, ivl[a_, b_, oa_, ob_]] := NumberQ[v] && Im[v] == 0 && If[oa, v > a, v 
 integerSolve[e_] := Module[{eqs = asEquation /@ Flatten[{e}], vs}, vs = userVariables[eqs];
   ruleSolutions[Solve[eqs, vs, Integers] /. ConditionalExpression[v_, _] :> v]];
 
-(* 5.5's Implicit Differentiation: both sides differentiated in x, y a function of x, the derivative
-   written y' (5.5's help: x y + sin x = y gives cos x + y + x y' = y') *)
-implicitDiff[e_] := Module[{q = asEquation[e], x = var["x"], y = var["y"], side},
-  If[FreeQ[q[[1]] - q[[2]], y], unsupported["Needs an expression in x and y"]];
-  side = Expand[D[# /. y -> y[x], x]] /. {Derivative[1][y][x] -> opensw$yPrime, y[x] -> y} &;
-  StringReplace[texEq[side[q[[1]]], side[q[[2]]]], tex[opensw$yPrime] -> "y^{\\prime }"]];
+(* 5.5's Implicit Differentiation: both sides differentiated in the differentiation variable (x when
+   not given); every other letter is a function of it (b too, giving b'), the derivatives written
+   with primes (5.5's help: x y + sin x = y gives cos x + y + x y' = y'; y' = .. gives y'' = ..) *)
+implicitDiff[e_, v_ : None] := Module[{q = asEquation[e], x = If[v === None, var["x"], v], others, base, ord, side},
+  others = DeleteCases[userVariables[q], x];
+  If[others === {}, unsupported["Needs an expression in " <> tex[x] <> " and another letter, e.g. y"]];
+  base[s_] := var[StringDelete[nameOf[s], "'"]];
+  ord[s_] := StringCount[nameOf[s], "'"];
+  side = Expand[D[# /. ((# -> If[ord[#] == 0, base[#][x], Derivative[ord[#]][base[#]][x]]) & /@ others), x]] /.
+    {Derivative[k_][f_?isVar][x] :> var[nameOf[f] <> StringRepeat["'", k]], (f_?isVar)[x] :> f} &;
+  texEq[side[q[[1]]], side[q[[2]]]]];
 
 (* the unknown of an ODE is a function the user wrote, y(x) *)
 solveODE[e_] := Module[{q = asEquation[e], fs, fx},
@@ -1714,7 +1719,7 @@ compute[op_String, j_] := Switch[op,
   "integersolve", solutions[integerSolve[expr[j]]],
   "ode", solutions[solveODE[expr[odeForm[j]]]],
   "check", <|"kind" -> "boolean", "value" -> check[inSI[expr[j]]]|>,
-  "implicitdiff", <|"kind" -> "solutions", "label" -> ", Derivative: ", "solutions" -> {implicitDiff[expr[j]]}|>,
+  "implicitdiff", With[{x = withParams[j]}, <|"kind" -> "solutions", "label" -> ", Derivative: ", "solutions" -> {implicitDiff[expr[x[[1]]], If[x[[2]] === {}, None, First[x[[2]]]]]}|>],
   "byparts", With[{x = withParams[j]}, value[byParts[x[[1]], First[x[[2]]]]]],
   "changevar", With[{x = withParams[j]}, value[changeVariable[x[[1]], First[x[[2]]]]]],
   "approxint", With[{x = withParams[j]}, value[approxIntegral[x[[1]], x[[2, 1]], x[[2, 2]]]]],

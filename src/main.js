@@ -25,8 +25,9 @@ import { setupUI } from './ui55.js';
 import { settings, applySettings } from './settings.js';
 import { makeApi } from './api.js';
 import { aiChangesPlugin, aiStart, aiEnd, aiEdit, aiBusy } from './aiedits.js';
+import { reviewPlugin, reviewKey, setupReview } from './review.js';
 import { numberingPlugin } from './numbering.js';
-import { preloadEngine, plotPoints } from './compute.js';
+import { preloadEngine, plotPoints, compute } from './compute.js';
 import { parsePlot, drawable, plotSVG, plotSVG3D, plotKind, is3D } from './plots.js';
 import { plotData } from './plotdata.js';
 import { candidates, TEX_IMAGE, WEB_IMAGE, mimeOf } from './graphics.js';
@@ -45,6 +46,7 @@ let currentPath = null; // desktop app: where the document was opened from / sav
 // leaves the file alone, so 5.5's own layout is kept exactly.
 let original55 = null; // { bytes, text, is5x, spans (the file's parts, see patchTex55) }
 let ui = null; // menus, toolbars and tag bar (set up below)
+let review = null; // View > Changes panel (review.js, set up below)
 
 // typing "$" starts a formula (like Ctrl+M in Scientific Word)
 const dollarRule = new InputRule(/\$$/, (state, match, start, end) => {
@@ -63,10 +65,11 @@ const keys = {
   'Shift-Tab': chainCommands(goToNextCell(-1), liftListItem(schema.nodes.list_item)),
 };
 
-function makeState(doc) {
+// review: what View > Changes compares with (review.js), kept when an AI replaces the document
+function makeState(doc, review = null) {
   return EditorState.create({
     doc,
-    plugins: [inputRules({ rules: [dollarRule] }), keymap(mathKeys), keymap(keys), keymap(baseKeymap), history(), tableEditing(), numberingPlugin(() => meta), aiChangesPlugin()],
+    plugins: [inputRules({ rules: [dollarRule] }), keymap(mathKeys), keymap(keys), keymap(baseKeymap), history(), tableEditing(), numberingPlugin(() => meta), aiChangesPlugin(), reviewPlugin(review)],
   });
 }
 
@@ -82,7 +85,7 @@ const view = new EditorView(document.querySelector('#editor'), {
     // the person changed the document: the AI's edit is over (aiedits.js)
     if (tr.docChanged && aiEdit() && !tr.getMeta('ai')) aiEnd();
     view.updateState(view.state.apply(tr));
-    if (tr.docChanged) { scheduleSave(); showTitle(); }
+    if (tr.docChanged) { scheduleSave(); showTitle(); review?.refresh(); }
     showAi();
     ui?.refresh();
   },
@@ -126,9 +129,12 @@ function setDoc(doc, m = {}, src = null, path = null) {
   meta = m;
   source = src;
   currentPath = path;
-  original55 = null;
-  loadedDoc = doc;
-  view.updateState(makeState(doc));
+  // an AI replacing the whole document (its set command) edits this one: the file it came from,
+  // and what the Changes panel compares with, stay
+  const rv = aiSetting ? reviewKey.getState(view.state) : null;
+  if (!aiSetting) { original55 = null; loadedDoc = doc; }
+  view.updateState(makeState(doc, rv && { base: rv.base, ranges: [{ from: 0, to: doc.content.size, author: 'ai' }] }));
+  review?.refresh();
   scheduleSave();
   ui?.refresh();
   $('#scroller').scrollTop = 0;
@@ -147,6 +153,7 @@ function showRecord(r) {
   meta = r.meta; source = r.source; currentPath = r.path; original55 = r.original55 || null; loadedDoc = r.loadedDoc; assets = r.assets; subFiles = r.subFiles;
   view.updateState(r.state);
   ui?.refresh();
+  review?.refresh();
   $('#scroller').scrollTop = r.scroll || 0;
   showTitle();
   scheduleSave();
@@ -495,7 +502,7 @@ async function writeDocument(kind, target) {
     text = p ? p.text : toTex55File(view.state.doc, meta);
     spans = p?.spans || null;
     // the code page line, when the file did not have one (it goes before \begin{document})
-    const full = withCodepage55(text, meta);
+    const full = withCodepage55(text, meta, original55?.text);
     if (spans && full.length !== text.length) {
       const d = full.length - text.length;
       spans = { ...spans, text: full, head: spans.head + d, segs: spans.segs.map((g) => ({ to: g.to + d, n: g.n })) };
@@ -506,7 +513,7 @@ async function writeDocument(kind, target) {
       const doc = view.state.doc;
       if (r.doc.childCount === doc.childCount && r.doc.content.content.every((n, i) => n.type === doc.child(i).type)) spans = r.spans55;
     }
-    bytes = encodeFile55(text, meta);
+    bytes = encodeFile55(text, meta, original55?.text);
     // a file with \n line ends (not 5.x's \r\n) keeps them (a Big5 trail byte is never \r)
     if (original55?.bytes?.length && !original55.bytes.includes(13)) bytes = bytes.filter((x) => x !== 13);
   }
@@ -819,6 +826,7 @@ async function pdf() {
   try {
     const pics = await texPictureFiles();
     const { errors } = await typeset(texForTypesetting(pics), meta.name || 'document', pics.list);
+    review.setErrors(errors);
     if (errors.length) showExport(_t('PDF opened, but TeX reported {0} errors; those parts may look wrong', errors.length), errors.join('\n'), 'typeset-errors.txt');
     else toast(_t('PDF opened'));
   } catch (err) {
@@ -863,7 +871,22 @@ ui = setupUI({
   openSample: (id) => confirmReplace(() => openSample(id)),
   help: () => { $('#help').hidden = !$('#help').hidden; },
   undoAi: undoAiChanges,
+  toggleReview: () => review.toggle(),
+  reviewShown: () => review.shown(),
 });
+// View > Changes: the LaTeX that saving as .tex writes (a 5.x file: its own text, the edited parts
+// written again and marked)
+function reviewSource() {
+  const doc = view.state.doc;
+  if (original55 && original55.is5x !== false) {
+    const sp = original55.spans;
+    if (doc.eq(loadedDoc) && !preambleEdited()) return sp ? { text: sp.text, head: sp.head, segs: sp.segs.map(({ to, n }) => ({ to, n })) } : { text: original55.text.replace(/\r\n?/g, '\n') };
+    const p = patchTex55(sp, loadedDoc, doc, meta);
+    if (p) return { text: p.text, head: p.spans.head, segs: p.spans.segs };
+  }
+  return { text: toTex55File(doc, meta) };
+}
+review = setupReview({ view, toast, compute, source: reviewSource });
 setZoom(zoom);
 ui.refresh();
 applySettings();
@@ -908,7 +931,9 @@ window.sw = makeApi({
   typesetNow: async () => {
     if (!isDesktop) throw new Error(_t('The web version cannot typeset; get the LaTeX with get'));
     const pics = await texPictureFiles();
-    return typeset(texForTypesetting(pics), meta.name || 'document', pics.list);
+    const r = await typeset(texForTypesetting(pics), meta.name || 'document', pics.list);
+    review.setErrors(r.errors || []);
+    return r;
   },
 });
 // closing the window with unsaved changes asks first: save, discard, or stay
