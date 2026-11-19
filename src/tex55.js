@@ -2,7 +2,9 @@
 // comments (%TCIDATA ...) and a few SW macros (from tcilatex.tex). CJK text is
 // stored in the Windows code page named in the first line ("CodePage: 950" = Big5).
 import { schema, envLabel } from './schema.js';
+import { _t } from './i18n.js';
 import { splitRows } from './numbering.js';
+import { readDefs, expandMacros } from './texmacros.js';
 import { frameAttrs, includeAttrs } from './graphics.js';
 
 const CODEPAGES = { 950: 'big5', 936: 'gbk', 932: 'shift_jis', 949: 'euc-kr', 1252: 'windows-1252' };
@@ -22,11 +24,14 @@ const withMark = (marks, m) => [...marks.filter((x) => markName(x) !== markName(
 const sizeMark = (size) => schema.marks.size.create({ size });
 const SKIP_CMDS = new Set(['bigskip', 'medskip', 'smallskip', 'noindent', 'indent', 'newpage', 'clearpage', 'pagebreak',
   'linebreak', 'nolinebreak', 'allowbreak', 'hfill', 'vfill', 'centering', 'raggedright', 'raggedleft', 'protect',
-  'normalfont', 'rmfamily', 'sffamily', 'upshape', 'mdseries', 'selectfont', 'relax', 'maketitle']);
-const SKIP_ARG_CMDS = { vspace: 1, 'vspace*': 1, hspace: 1, 'hspace*': 1, setcounter: 2, addtocounter: 2, thispagestyle: 1, pagestyle: 1 };
+  'normalfont', 'rmfamily', 'sffamily', 'upshape', 'mdseries', 'selectfont', 'relax', 'maketitle',
+  'sloppy', 'fussy', 'nopagebreak', 'filbreak', 'goodbreak']);
+const SKIP_ARG_CMDS = { vspace: 1, 'vspace*': 1, hspace: 1, 'hspace*': 1, setcounter: 2, addtocounter: 2, thispagestyle: 1, pagestyle: 1,
+  Needspace: 1, 'Needspace*': 1, needspace: 1 };
 const TEXT_CHARS = { '%': '%', $: '$', '&': '&', '#': '#', _: '_', '{': '{', '}': '}', ' ': '\u00a0', '\n': '\u00a0', '\t': '\u00a0', // "\ ": an extra space after a sentence (also \ at the end of a line)
   ',': ' ', ';': ' ',
   '/': '', '-': '­', '@': '' };
+const TEXT_ACCENTS = { "'": '\u0301', '`': '\u0300', '^': '\u0302', '~': '\u0303', '"': '\u0308', '=': '\u0304', c: '\u0327', v: '\u030c' };
 const TEXT_SYMBOLS = { ldots: '…', dots: '…', textbackslash: '\\', textless: '<', textgreater: '>', S: '§', P: '¶',
   copyright: '©', pounds: '£', dag: '†', ddag: '‡', textregistered: '®', texttrademark: '™', textdegree: '°',
   LaTeX: 'LaTeX', TeX: 'TeX', today: '', quad: ' ', qquad: '  ', ss: 'ß', ae: 'æ', oe: 'œ', o: 'ø', aa: 'å',
@@ -50,13 +55,52 @@ export function decode55(bytes) {
 
 // TeX comments: "%" removes the rest of the line, the line break and the next line's leading spaces
 // (verbatim environments are left as they are: % is an ordinary character there)
+// (a lookbehind, so that comment lines one after another are all removed)
+// A comment right after a control word ends that word (5.x writes "\proof%" then
+// "Let ..." on a later line): a space keeps them apart, as TeX ignores it there.
+const COMMENT = /(?<!\\)((?:\\\\)*)%[^\n]*\n?[ \t]*/g;
+const commentRep = (m, bs, at, t) => (!bs && /\\[a-zA-Z]+$/.test(t.slice(Math.max(0, at - 40), at)) ? ' ' : bs);
+const VERBATIM = /(\\begin\{verbatim\*?\}[^]*?\\end\{verbatim\*?\})/;
 export function stripComments(s) {
-  // (a lookbehind, so that comment lines one after another are all removed)
-  // A comment right after a control word ends that word (5.x writes "\proof%" then
-  // "Let ..." on a later line): a space keeps them apart, as TeX ignores it there.
-  const strip = (t) => t.replace(/(?<!\\)((?:\\\\)*)%[^\n]*\n?[ \t]*/g, (m, bs, at) => (!bs && /\\[a-zA-Z]+$/.test(t.slice(Math.max(0, at - 40), at)) ? ' ' : bs));
-  return s.replace(/\r\n?/g, '\n').split(/(\\begin\{verbatim\*?\}[^]*?\\end\{verbatim\*?\})/)
-    .map((part, k) => (k % 2 ? part : strip(part))).join('');
+  return s.replace(/\r\n?/g, '\n').split(VERBATIM)
+    .map((part, k) => (k % 2 ? part : part.replace(COMMENT, commentRep))).join('');
+}
+
+// A string that remembers where each of its characters came from in the text it was made
+// from (start and end there), so that a part of what the parser read can be found in the
+// file as written, comments and all.
+class Mapped {
+  constructor(s, st, en) { this.s = s; this.st = st; this.en = en; }
+  static of(s) { return new Mapped(s, Array.from(s, (c, i) => i), Array.from(s, (c, i) => i + 1)); }
+  // as String.replace with a function: a replacement comes from the whole match
+  replace(re, fn) {
+    let s = '', last = 0;
+    const st = [], en = [];
+    const copy = (a, b) => { s += this.s.slice(a, b); for (let i = a; i < b; i++) { st.push(this.st[i]); en.push(this.en[i]); } };
+    for (const m of this.s.matchAll(re)) {
+      copy(last, m.index);
+      const rep = fn(...m, m.index, this.s);
+      const a = m[0].length ? this.st[m.index] : (m.index ? this.en[m.index - 1] : 0);
+      const b = m[0].length ? this.en[m.index + m[0].length - 1] : a;
+      for (let i = 0; i < rep.length; i++) { st.push(a); en.push(b); }
+      s += rep;
+      last = m.index + m[0].length;
+    }
+    copy(last, this.s.length);
+    return new Mapped(s, st, en);
+  }
+  // stripComments, remembering where things were
+  stripComments() {
+    const parts = [];
+    let last = 0;
+    for (const m of this.s.matchAll(new RegExp(VERBATIM.source, 'g'))) {
+      parts.push(this.slice(last, m.index).replace(COMMENT, commentRep), this.slice(m.index, m.index + m[0].length));
+      last = m.index + m[0].length;
+    }
+    parts.push(this.slice(last, this.s.length).replace(COMMENT, commentRep));
+    return new Mapped(parts.map((p) => p.s).join(''), parts.flatMap((p) => p.st), parts.flatMap((p) => p.en));
+  }
+  slice(a, b) { return new Mapped(this.s.slice(a, b), this.st.slice(a, b), this.en.slice(a, b)); }
 }
 
 // -> { doc, meta }
@@ -65,24 +109,34 @@ export function readTex55(bytes) {
 }
 
 // LaTeX text (a whole document or just a part of one) -> { doc, meta }
+// a 5.x HTML field is a TCI macro (a comment): %TCIMACRO{\HTML{..}}% with an empty expansion;
+// an Exam Builder formula is %TCIMACRO{\FORMULA{expr}{value}{operation}}% with the value as
+// its expansion: kept as \FORMULA{..}{..}{..} in the formula (shown as the value)
+const FORMULA_MACRO = /%TCIMACRO\{((?:[^\n]|\r?\n%)*?)\}%[ \t]*\r?\n%BeginExpansion\r?\n[^]*?%EndExpansion/g;
+const formulaRep = (all, inner) => { const m = inner.replace(/\r?\n%/g, ''); return /^\\FORMULA\{/.test(m) ? m : all; };
+const HTML_MACRO = /%TCIMACRO\{\\HTML\{([^\n]*)\}\s*\}%[ \t]*\r?\n%BeginExpansion\r?\n[^]*?%EndExpansion[^\n]*\n?[ \t]*/g;
+const htmlRep = (all, inner) => `\\HTML{${inner}}`;
+
 export function readLatex(text) {
-  // a 5.x HTML field is a TCI macro (a comment): %TCIMACRO{\HTML{..}}% with an empty expansion;
-  // an Exam Builder formula is %TCIMACRO{\FORMULA{expr}{value}{operation}}% with the value as
-  // its expansion: kept as \FORMULA{..}{..}{..} in the formula (shown as the value)
-  text = text.replace(/%TCIMACRO\{((?:[^\n]|\r?\n%)*?)\}%[ \t]*\r?\n%BeginExpansion\r?\n[^]*?%EndExpansion/g,
-    (all, inner) => { const m = inner.replace(/\r?\n%/g, ''); return /^\\FORMULA\{/.test(m) ? m : all; });
-  const src = stripComments(text.replace(/%TCIMACRO\{\\HTML\{([^\n]*)\}\s*\}%[ \t]*\r?\n%BeginExpansion\r?\n[^]*?%EndExpansion[^\n]*\n?[ \t]*/g, '\\HTML{$1}'));
+  const input = text;
+  text = text.replace(FORMULA_MACRO, formulaRep);
+  const src = stripComments(text.replace(HTML_MACRO, htmlRep));
   const b = src.indexOf('\\begin{document}');
   const e = src.lastIndexOf('\\end{document}');
   const preamble = b >= 0 ? src.slice(0, b) : '';
-  const body = b >= 0 ? src.slice(b + 16, e > b ? e : undefined) : src;
+  let body = b >= 0 ? src.slice(b + 16, e > b ? e : undefined) : src;
+  // a LaTeX document's own commands are written out (5.x writes its own itself)
+  if (!/\\input\{tcilatex\}|%TCIDATA/.test(text)) body = expandMacros(body, readDefs(preamble));
   const theorems = {};
   for (const m of preamble.matchAll(/\\newtheorem\*?\{([^}]+)\}(?:\[[^\]]*\])?\{([^}]*)\}/g)) theorems[m[1]] = m[2];
   const p = new Parser(theorems);
   const head = new Parser(theorems); // \title, \author in the preamble
   head.blocks(preamble.replace(/\\documentclass[^\n]*|\\usepackage[^\n]*|\\input\{tcilatex\}/g, ''));
   p.title = head.title; p.author = head.author;
+  const is5x = /\\input\{tcilatex\}|%TCIDATA|^%2multibyte/.test(text);
+  if (is5x) p.track = [];
   let blocks = p.blocks(body);
+  const spans55 = is5x && blocks.length ? fileParts55(input, src, b, p.track) : null;
   if (!blocks.length) blocks = [schema.nodes.paragraph.create()];
   const cls = (preamble.match(/\\documentclass(?:\[[^\]]*\])?\{([^}]+)\}/) || [])[1];
   const packages = [...preamble.matchAll(/\\usepackage(?:\[[^\]]*\])?\{([^}]+)\}/g)].flatMap((m) => m[1].split(',').map((x) => x.trim()));
@@ -94,7 +148,34 @@ export function readLatex(text) {
   const preamble55raw = rb >= 0 ? rawText.slice(0, rb) : null;
   const codepage = +((rawText.slice(0, 300).match(/CodePage:\s*(\d+)/) || rawText.match(/%TCIDATA\{Codepage=(\d+)\}/) || [])[1]) || null;
   const keep = [...preamble.matchAll(/\\newtheorem\*?\{[^}]+\}(?:\[[^\]]*\])?\{[^}]*\}(?:\[[^\]]*\])?/g)].map((m) => m[0]);
-  return { doc: schema.nodes.doc.create(null, blocks), meta: { documentclass: cls, packages, preambleTeX: keep.join('\n'), preamble55, preamble55raw, codepage, author55: p.author ?? null } };
+  if (spans55) spans55.preamble = preamble55raw;
+  return { doc: schema.nodes.doc.create(null, blocks), meta: { documentclass: cls, packages, preambleTeX: keep.join('\n'), preamble55, preamble55raw, codepage, author55: p.author ?? null }, spans55 };
+}
+
+// Where each top-level block of a 5.x file is in the file as written (line ends as \n):
+// blocks with no blank line between them are one part. A part that is not edited is
+// saved again as it was (export.js patchTex55), comments and spacing included.
+// -> { text, head (end of \begin{document}), segs: [{ to, n }] (a part ends at to and has
+// n blocks; it starts where the one before ended, or at head) }, or null when the
+// parser's text and the file cannot be matched up.
+function fileParts55(input, src, b, track) {
+  const text = input.replace(/\r\n?/g, '\n');
+  const m = Mapped.of(text).replace(FORMULA_MACRO, formulaRep).replace(HTML_MACRO, htmlRep).stripComments();
+  if (m.s !== src || b < 0 || !track) return null;
+  const off = b + 16;
+  const head = m.en[off - 1];
+  const segs = [];
+  let cur = null;
+  for (const r of track) {
+    const from = r.end > r.start ? m.st[off + r.start] : head;
+    const to = r.end > r.start ? m.en[off + r.end - 1] : from;
+    const prev = cur ? cur.to : head;
+    if (cur && (from < cur.to || !/\n[ \t]*\n/.test(text.slice(cur.to, from)))) { cur.to = Math.max(cur.to, to); cur.n++; continue; }
+    if (from < prev) return null;
+    cur = { to: Math.max(to, prev), n: 1 };
+    segs.push(cur);
+  }
+  return { text, head, segs };
 }
 
 // Scientific Word macros MathLive should display and keep as they are
@@ -278,7 +359,7 @@ export function mathForDisplay(tex) {
   let t = tabularsToArrays(tex);
   t = replaceCmd(t, 'multicolumn', 3, (a) => a[2]);
   t = replaceCmd(t, 'substack', 1, (a) => `\\begin{smallmatrix}${a[0]}\\end{smallmatrix}`);
-  t = replaceCmd(t, 'FRAME', 8, () => '\\boxed{\\text{圖}}');
+  t = replaceCmd(t, 'FRAME', 8, () => `\\boxed{\\text{${_t('Picture')}}}`);
   t = replaceCmd(t, '(?:page|eq)?ref', 1, (a) => `\\text{${a[0]}}`);
   // \symbol{126} (a character by its number; 5.x puts the tilde over letters this way)
   t = replaceCmd(t, 'symbol', 1, (a) => { const c = /^\d+$/.test(a[0]) ? String.fromCharCode(+a[0]) : ''; return c === '~' ? '\\sim' : /[\\{}$&#^_%]/.test(c) ? '' : `\\text{${c}}`; });
@@ -460,13 +541,20 @@ export class Parser {
   blocks(s) {
     const out = [];
     let para = '';
+    // the top level of a 5.x document: where each block is in s (this.track, see fileParts55)
+    const track = this.track && !this.depth ? this.track : null;
+    this.depth = (this.depth || 0) + 1;
+    let paraFrom = 0, stepFrom = 0;
+    // blocks made in the step that started at stepFrom end where the next step starts
+    const note = (at) => { if (track) { while (track.length < out.length) track.push({ start: stepFrom, end: at }); stepFrom = at; if (!para) paraFrom = at; } };
     const flush = () => {
       const inl = this.inline(para);
       para = '';
-      if (inl.length) { out.push(schema.nodes.paragraph.create(null, inl)); this.started = true; }
+      if (inl.length) { out.push(schema.nodes.paragraph.create(null, inl)); this.started = true; if (track) track.push({ start: paraFrom, end: i }); }
     };
     let i = 0;
     while (i < s.length) {
+      note(i);
       const c = s[i];
       if (c === '\n' && /^\n[ \t]*\n/.test(s.slice(i))) { flush(); i = s.slice(i).match(/^\n[ \t\n]*/)[0].length + i; continue; }
       // a line break \\ (maybe \\[2pt]): not the start of a display \[ .. \]
@@ -587,7 +675,9 @@ export class Parser {
       para += c;
       i++;
     }
+    note(i);
     flush();
+    this.depth--;
     return out;
   }
 
@@ -675,11 +765,17 @@ export class Parser {
     const colspec = args[0] || '';
     const aligns = columnAligns(colspec);
     const rows = splitRows(rest.slice(end));
+    // \\[9pt]: extra space below a row, written at the start of the next one's text
+    const spaces = rows.map(() => '');
+    for (let r = 1; r < rows.length; r++) {
+      const sp = rows[r].match(/^\s*\[([^\]]*)\]/);
+      if (sp) { spaces[r - 1] = sp[1].trim(); rows[r] = rows[r].slice(sp[0].length); }
+    }
     // the text after the last \\ holds only the closing rules
     let after = '';
     const last = rows[rows.length - 1];
     if (!/&/.test(last) && takeRules(last).rest.trim() === '') { after = takeRules(rows.pop()).rules; }
-    const tableRows = rows.map((row) => {
+    const tableRows = rows.map((row, r) => {
       const { rules, rest: cellsText } = takeRules(row);
       let col = 0;
       const cells = splitCells(cellsText).map((cellText) => {
@@ -693,7 +789,7 @@ export class Parser {
       });
       // short rows get empty cells, so every row has the same width
       for (; col < Math.max(aligns.length, 1); col++) cells.push(schema.nodes.table_cell.create({ align: aligns[col] || null }, [schema.nodes.paragraph.create()]));
-      return schema.nodes.table_row.create({ before: rules }, cells);
+      return schema.nodes.table_row.create({ before: rules, space: spaces[r] }, cells);
     });
     if (!tableRows.length) tableRows.push(schema.nodes.table_row.create(null, [schema.nodes.table_cell.create(null, [schema.nodes.paragraph.create()])]));
     return schema.nodes.table.create({ colspec, after, pos: posM ? posM[1].trim() || null : null }, tableRows);
@@ -780,6 +876,13 @@ export class Parser {
           continue;
         }
         if (cmd === 'U') { const { args, end } = Parser.args(s, after, 1); text += String.fromCodePoint(parseInt(args[0], 16) || 63); i = end; continue; }
+        // an accent on a letter, \'{e} or \'e: é (a Big5 file writes é so, see tex55file.js)
+        if (cmd in TEXT_ACCENTS && /^(\{[A-Za-z]\}|[A-Za-z])/.test(s.slice(after))) {
+          const two = s[after] === '{';
+          text += (s[after + (two ? 1 : 0)] + TEXT_ACCENTS[cmd]).normalize('NFC');
+          i = after + (two ? 3 : 1);
+          continue;
+        }
         if (cmd === 'TEXTsymbol') { const { args, end } = Parser.args(s, after, 1); text += args[0].replace(/^\\backslash$/, '\\'); i = end; continue; }
         if (cmd === 'QTR') { // 5.x text tag: \QTR{tag}{text}
           const { args, end } = Parser.args(s, after, 2);

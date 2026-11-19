@@ -7,30 +7,59 @@ import { schema } from './schema.js';
 import { readLatex } from './tex55.js';
 import { toLatex, toMarkdown } from './export.js';
 import { compute } from './compute.js';
+import { settings } from './settings.js';
 
 // name -> [description, parameters]; shown by sw.help() and listed as MCP tools
 export const COMMANDS = {
-  help: ['列出所有指令。', {}],
-  get: ['讀出整份文件。format: "latex"（預設）、"markdown"、"json"（編輯器內部格式）。', { format: 'string?' }],
-  outline: ['文件的區塊清單：每塊的編號 index、種類、文字開頭、公式。改某一塊前先用這個找編號。', {}],
-  set: ['用 LaTeX 取代整份文件（可以是完整文件或只有內文）。', { latex: 'string' }],
-  insert: ['在第 index 塊之後插入 LaTeX 內容（段落、公式、清單、定理都可以）；不給 index 就加在文件最後；index = -1 加在最前面。', { latex: 'string', index: 'number?' }],
-  replaceBlock: ['用 LaTeX 取代第 index 塊。', { index: 'number', latex: 'string' }],
-  deleteBlock: ['刪掉第 index 塊。', { index: 'number' }],
-  find: ['找文字（不含公式內），回傳每個位置所在的區塊編號。', { text: 'string' }],
-  replace: ['把文字 find 換成 with（不含公式內）；all 為 false 時只換第一個。', { find: 'string', with: 'string', all: 'boolean?' }],
-  formulas: ['列出所有公式（行內與獨立）和所在的區塊編號。', {}],
-  setFormula: ['把第 n 個公式（formulas 的順序）改成新的 LaTeX。', { n: 'number', latex: 'string' }],
-  undo: ['復原上一步。', {}],
-  redo: ['重做。', {}],
-  open: ['開啟檔案：桌面版給 path（.sci 或 5.x 的 .tex）。', { path: 'string' }],
-  save: ['存檔（桌面版）：主要格式是 5.x 的 .tex（5.5 打得開）；path 以 .sci 結尾就存成 .sci。不給 path 就存回原本的檔（先留 .bak；沒改過的 5.x 檔不會重寫）。', { path: 'string?' }],
-  typeset: ['排版成 PDF 並打開（桌面版）。回傳 PDF 路徑。', {}],
-  info: ['文件名稱、路徑、區塊數、公式數、是否從 5.x 開啟。', {}],
-  compute: ['用目前選的計算引擎（SymPy 或 Mathematica，見 工具 > 計算引擎）計算一條公式（不改文件）。op: evaluate（預設）、numeric、simplify、expand、factor、combine、rewrite_exp、rewrite_sincos、solve、numericsolve、ode、check、partialfractions、collect、differentiate、integrate、series、extrema、laplace、inverselaplace、fourier、determinant、inverse、transpose、eigenvalues、rank、rref、nullspace、trace、charpoly、adjugate、mean、median、variance、stddev、implicitdiff、integersolve、recursion（一行矩陣：遞迴式和起始值）、maximize、minimize、feasible、standardize、dual（單形法：一行矩陣，第一列目標函數、其餘限制式，變數都 ≥ 0）、gradient、divergence、curl、laplacian、hessian、jacobian、wronskian、potential、vectorpotential（params 是基底變數，預設 x、y、z）、byparts（params: [u]）、changevar（params: ["u=g(x)"]）、approxint（params: [方法, 區間數]，方法是 left、midpoint、right、trapezoid 或 simpson，前後加單引號）、iterate（params: [起始值, 次數]）。回傳結果的 LaTeX；solve、numericsolve、integersolve、ode、extrema、maximize、minimize 回傳解的清單。', { latex: 'string', op: 'string?', params: 'string[]?' }],
-  select: ['把游標放到第 block 塊。', { block: 'number' }],
-  focusEnd: ['把游標放到文件最後。', {}],
+  help: ['Lists all commands.', {}],
+  get: ['Reads the whole document. format: "latex" (default), "markdown", "json" (the editor\'s own format).', { format: 'string?' }],
+  outline: ['The document\'s blocks: for each, its number (index), kind, first words and formulas. Use it to find a block\'s number before changing that block.', {}],
+  set: ['Replaces the whole document with LaTeX (a full document or just the body).', { latex: 'string' }],
+  insert: ['Inserts LaTeX (paragraphs, formulas, lists, theorems...) after block index; without index it goes at the end; index = -1 puts it at the start.', { latex: 'string', index: 'number?' }],
+  replaceBlock: ['Replaces block index with LaTeX.', { index: 'number', latex: 'string' }],
+  deleteBlock: ['Deletes block index.', { index: 'number' }],
+  find: ['Finds text (not inside formulas); returns the block number of each place.', { text: 'string' }],
+  replace: ['Replaces the text find with with (not inside formulas); all = false replaces only the first.', { find: 'string', with: 'string', all: 'boolean?' }],
+  formulas: ['Lists all formulas (inline and displayed) with their block numbers.', {}],
+  setFormula: ['Changes formula n (in the order formulas gives) to new LaTeX.', { n: 'number', latex: 'string' }],
+  undo: ['Undoes the last step.', {}],
+  redo: ['Redoes.', {}],
+  open: ['Opens a file: in the desktop app give path (.sci or a 5.x .tex). Only files in the open document\'s folder, aiFolder (see info) and the folders the user allowed; anywhere else the user is asked first.', { path: 'string' }],
+  save: ['Saves (desktop app): the main format is 5.x .tex (5.5 opens it); a path ending in .sci saves as .sci. Without path it saves back to the same file (keeping a .bak; an unchanged 5.x file is not rewritten; in an edited one only the edited parts are written again, the rest stays as it was in the file). Only .tex and .sci; saving outside the open document\'s folder, aiFolder (see info) and the folders the user allowed asks the user first.', { path: 'string?' }],
+  typeset: ['Typesets to PDF and opens it (desktop app). Returns pdf (its path) and errors (what TeX reported). With errors the PDF still comes out but those parts may be wrong, so fix them (the message gives the line of the TeX).', {}],
+  info: ['The document\'s name, path, number of blocks and formulas, whether it was opened from 5.x, and aiFolder: the folder (Documents\\opensw) where AI may always save, e.g. a new document, without asking.', {}],
+  compute: ['Computes one formula with the chosen computation engine (SymPy or Mathematica, see Tools > Computation Engine), without changing the document. op: evaluate (default), numeric, simplify, expand, factor, combine, rewrite_exp, rewrite_sincos, solve, numericsolve, ode, odenumeric (Solve ODE > Numeric: a one-column matrix of equations (any order) and initial values y(0) = 1, y\'(0) = 0; defines the solutions as functions, so y(1) can then be evaluated), check, partialfractions (params: [variable], when there are several), collect, differentiate, integrate, series, extrema, laplace, inverselaplace, fourier, determinant, inverse, transpose, eigenvalues, rank, rref, nullspace, trace, charpoly, adjugate, mean, median, variance, stddev, implicitdiff, integersolve, recursion (a one-column matrix: the recurrence and starting values), maximize, minimize, feasible, standardize, dual (simplex method: a one-column matrix, first row the objective, the other rows the constraints, all variables >= 0), gradient, divergence, curl, laplacian, hessian, jacobian, wronskian, potential, vectorpotential (params are the basis variables, default x, y, z), byparts (params: [u]), changevar (params: ["u=g(x)"]), approxint (params: [method, number of subintervals]; method is left, midpoint, right, trapezoid or simpson, in single quotes), iterate (params: [starting value, count]). Returns the result as LaTeX; solve, numericsolve, integersolve, ode, extrema, maximize, minimize return a list of solutions.', { latex: 'string', op: 'string?', params: 'string[]?' }],
+  select: ['Puts the cursor in block block.', { block: 'number' }],
+  focusEnd: ['Puts the cursor at the end of the document.', {}],
 };
+
+// Is `path` in `folder` (or a folder inside it)? Full paths as Windows or Unix writes them
+// (a relative path is not); "." and ".." are worked out first; letter case is ignored on Windows.
+export function insideFolder(path, folder) {
+  if (!/^([a-z]:)?[\\/]/i.test(path)) return false;
+  const parts = (p) => {
+    const out = [];
+    for (const x of String(p).split(/[\\/]+/)) {
+      if (x === '..') out.pop(); else if (x !== '.' && x !== '') out.push(x);
+    }
+    return /^[a-z]:/i.test(p) ? out.map((x) => x.toLowerCase()) : out;
+  };
+  const f = parts(folder);
+  const p = parts(path);
+  return f.length > 0 && f.length < p.length && f.every((x, i) => x === p[i]);
+}
+
+// AI may open and save only in the open document's folder, Documents\\opensw and the folders the
+// user allowed (Tools > User Setup); elsewhere the user is asked first. It saves only .tex and .sci.
+async function checkPath(app, path, action) {
+  if (!('__TAURI_INTERNALS__' in window)) return; // the web version opens and saves no paths at all
+  if (action === 'save' && !/\.(tex|sci)$/i.test(path)) throw new Error('Can only save as .tex or .sci');
+  const current = app.path();
+  const home = await app.aiHome?.(); // Documents\\opensw: always allowed
+  const folders = [...(current ? [current.replace(/[\\/][^\\/]*$/, '')] : []), ...(home ? [home] : []), ...settings().aiFolders];
+  if (folders.some((f) => insideFolder(path, f))) return;
+  if (!(await app.askAllow(path, action))) throw new Error(`The user did not allow ${action === 'save' ? 'saving to' : 'opening'} ${path}`);
+}
 
 export function makeApi(app) {
   const view = () => app.view;
@@ -44,7 +73,7 @@ export function makeApi(app) {
   }
   function block(index) {
     const b = blocks()[index];
-    if (!b) throw new Error(`沒有第 ${index} 塊（共 ${doc().childCount} 塊）`);
+    if (!b) throw new Error(`There is no block ${index} (the document has ${doc().childCount} blocks)`);
     return b;
   }
   // LaTeX -> block nodes
@@ -53,7 +82,11 @@ export function makeApi(app) {
     readLatex(String(latex)).doc.forEach((n) => nodes.push(n));
     return nodes;
   }
-  function dispatch(tr) { view().dispatch(tr.scrollIntoView()); }
+  // every change goes through here (or set): it belongs to the AI's edit (aiedits.js)
+  function dispatch(tr) {
+    if (tr.docChanged) app.aiStart?.();
+    view().dispatch(tr.setMeta('ai', true).scrollIntoView());
+  }
   const summary = (node) => {
     const maths = node.type.name.startsWith('math') ? [node.attrs.latex] : [];
     node.descendants((n) => { if (n.type.name.startsWith('math')) maths.push(n.attrs.latex); });
@@ -95,7 +128,9 @@ export function makeApi(app) {
       const r = readLatex(String(latex));
       // a whole document brings its own preamble; a body keeps the current one
       const whole = /\\begin\{document\}/.test(latex);
-      app.setDoc(r.doc, whole ? { name: app.meta().name, ...r.meta } : app.meta());
+      app.aiStart?.();
+      // a whole new document not saved anywhere yet has no name (the old one's would stay on the PDF)
+      app.setDoc(r.doc, whole ? { name: app.path() ? app.meta().name : undefined, ...r.meta } : app.meta());
       return { blocks: r.doc.childCount };
     },
     insert: ({ latex, index }) => {
@@ -131,19 +166,23 @@ export function makeApi(app) {
     formulas: () => allFormulas().map((f, n) => ({ n, block: f.block, display: f.node.type.name === 'math_display', latex: f.node.attrs.latex })),
     setFormula: ({ n, latex }) => {
       const f = allFormulas()[n];
-      if (!f) throw new Error(`沒有第 ${n} 個公式`);
+      if (!f) throw new Error(`There is no formula ${n}`);
       dispatch(view().state.tr.setNodeMarkup(f.pos, null, { ...f.node.attrs, latex: String(latex) }));
       return { ok: true };
     },
-    undo: () => ({ done: undo(view().state, view().dispatch) }),
-    redo: () => ({ done: redo(view().state, view().dispatch) }),
-    open: async ({ path }) => { await app.openPath(path); return api.info(); },
-    save: async ({ path } = {}) => ({ path: await app.saveTo(path) }),
-    typeset: async () => ({ pdf: await app.typesetNow() }),
+    undo: () => ({ done: undo(view().state, dispatch) }),
+    redo: () => ({ done: redo(view().state, dispatch) }),
+    open: async ({ path }) => { await checkPath(app, String(path), 'open'); await app.openPath(path); return api.info(); },
+    save: async ({ path } = {}) => {
+      if (path) await checkPath(app, String(path), 'save');
+      return { path: await app.saveTo(path) };
+    },
+    typeset: async () => app.typesetNow(),
     compute: ({ latex, op = 'evaluate', params }) => compute(op, String(latex), Array.isArray(params) ? params.map(String) : undefined),
-    info: () => ({
+    info: async () => ({
       name: app.meta().name || null,
       path: app.path(),
+      aiFolder: (await app.aiHome?.()) || null,
       blocks: doc().childCount,
       formulas: allFormulas().length,
       from55: !!app.meta().preamble55,
@@ -161,7 +200,7 @@ export function makeApi(app) {
 
   // one entry point for remote callers: { cmd, args } -> { ok, result } | { ok: false, error }
   api.call = async (cmd, args = {}) => {
-    if (!(cmd in api) || cmd === 'call') return { ok: false, error: `沒有這個指令：${cmd}。可用：${Object.keys(COMMANDS).join(', ')}` };
+    if (!(cmd in api) || cmd === 'call') return { ok: false, error: `No such command: ${cmd}. Available: ${Object.keys(COMMANDS).join(', ')}` };
     try { return { ok: true, result: await api[cmd](args || {}) }; } catch (e) { return { ok: false, error: String(e.message || e) }; }
   };
   return api;

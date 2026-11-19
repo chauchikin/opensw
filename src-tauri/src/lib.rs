@@ -2,8 +2,10 @@
 //! and the control channel AI agents use (remote.rs, mcp.rs).
 
 pub mod mcp;
+pub mod cli;
 mod remote;
-mod wolfram;
+mod engine;
+mod aiconnect;
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -14,7 +16,7 @@ use tauri_plugin_opener::OpenerExt;
 /// Reads a file the user picked in a file dialog.
 #[tauri::command]
 fn read_file(path: &str) -> Result<Vec<u8>, String> {
-    std::fs::read(path).map_err(|e| format!("讀不到 {path}：{e}"))
+    std::fs::read(path).map_err(|e| format!("Cannot read {path}: {e}"))
 }
 
 /// Writes a file the user picked in a save dialog.
@@ -24,9 +26,30 @@ fn write_file(path: &str, data: Vec<u8>) -> Result<(), String> {
     if let Some(parent) = Path::new(path).parent()
         && !parent.as_os_str().is_empty()
     {
-        std::fs::create_dir_all(parent).map_err(|e| format!("建不了資料夾 {}：{e}", parent.display()))?;
+        std::fs::create_dir_all(parent).map_err(|e| format!("Cannot create the folder {}: {e}", parent.display()))?;
     }
-    std::fs::write(path, data).map_err(|e| format!("寫不進 {path}：{e}"))
+    std::fs::write(path, data).map_err(|e| format!("Cannot write {path}: {e}"))
+}
+
+/// Tools > Document Manager: whether a file is there.
+#[tauri::command]
+fn file_exists(path: &str) -> bool {
+    Path::new(path).is_file()
+}
+
+/// Tools > Document Manager > Rename: never over a file that is there.
+#[tauri::command]
+fn rename_file(from: &str, to: &str) -> Result<(), String> {
+    if Path::new(to).exists() {
+        return Err(format!("{to} already exists"));
+    }
+    std::fs::rename(from, to).map_err(|e| format!("Cannot rename {from}: {e}"))
+}
+
+/// Tools > Document Manager > Delete and Clean Up: the files go to the Recycle Bin (they can be restored).
+#[tauri::command]
+fn trash_files(paths: Vec<String>) -> Result<(), String> {
+    trash::delete_all(&paths).map_err(|e| format!("Cannot delete the files: {e}"))
 }
 
 /// The document the app was started with (double-clicking a .sci, or "opensw file.sci").
@@ -63,7 +86,7 @@ fn inside(dir: &Path, name: &str) -> Option<PathBuf> {
 /// Typesets LaTeX to PDF and opens the PDF in the system viewer.
 /// Uses xelatex when it is installed, otherwise the bundled Tectonic engine.
 #[tauri::command]
-async fn typeset(app: tauri::AppHandle, tex: String, name: String, files: Option<Vec<TexFile>>) -> Result<String, String> {
+async fn typeset(app: tauri::AppHandle, tex: String, name: String, files: Option<Vec<TexFile>>) -> Result<Typeset, String> {
     let dir = app
         .path()
         .app_cache_dir()
@@ -94,14 +117,40 @@ async fn typeset(app: tauri::AppHandle, tex: String, name: String, files: Option
     // Running a TeX engine takes seconds: keep it off the UI thread.
     let tectonic = bundled_tectonic(&app);
     let tex_cache = bundled_tex_cache(&app);
+    let log = dir.join(format!("{stem}.log"));
     let pdf = tauri::async_runtime::spawn_blocking(move || run_engine(&dir, &stem, tectonic.as_deref(), tex_cache.as_deref()))
         .await
         .map_err(|e| e.to_string())??;
 
     app.opener()
         .open_path(pdf.to_string_lossy(), None::<&str>)
-        .map_err(|e| format!("PDF 已產生（{}），但打不開：{e}", pdf.display()))?;
-    Ok(pdf.to_string_lossy().into_owned())
+        .map_err(|e| format!("The PDF was made ({}) but cannot be opened: {e}", pdf.display()))?;
+    let errors = tex_errors(&std::fs::read_to_string(&log).unwrap_or_default());
+    Ok(Typeset { pdf: pdf.to_string_lossy().into_owned(), errors })
+}
+
+/// A typeset PDF, and the errors TeX met on the way (the PDF comes out anyway, as in 5.5,
+/// so the editor can tell the user that parts of it may be wrong)
+#[derive(serde::Serialize)]
+struct Typeset {
+    pdf: String,
+    errors: Vec<String>,
+}
+
+/// "! Undefined control sequence." with the line it was on ("l.42 ... \dfrac"), at most 20
+fn tex_errors(log: &str) -> Vec<String> {
+    let lines: Vec<&str> = log.lines().collect();
+    let mut out = Vec::new();
+    for (i, line) in lines.iter().enumerate() {
+        if let Some(msg) = line.strip_prefix("! ") {
+            let at = lines[i + 1..].iter().take(8).find(|l| l.starts_with("l.")).map(|l| format!(" ({})", l.trim())).unwrap_or_default();
+            out.push(format!("{msg}{at}"));
+            if out.len() == 20 {
+                break;
+            }
+        }
+    }
+    out
 }
 
 /// File > Open Location: the bytes at a web address. curl (part of Windows 10 and later,
@@ -109,7 +158,7 @@ async fn typeset(app: tauri::AppHandle, tex: String, name: String, files: Option
 #[tauri::command]
 async fn fetch_url(url: String) -> Result<Vec<u8>, String> {
     if !(url.starts_with("http://") || url.starts_with("https://")) {
-        return Err("網址要以 http:// 或 https:// 開頭".into());
+        return Err("The address must start with http:// or https://".into());
     }
     let mut cmd = Command::new("curl");
     cmd.args(["-fsSL", "--max-time", "60", "--", &url]);
@@ -121,9 +170,9 @@ async fn fetch_url(url: String) -> Result<Vec<u8>, String> {
     let out = tauri::async_runtime::spawn_blocking(move || cmd.output())
         .await
         .map_err(|e| e.to_string())?
-        .map_err(|e| format!("執行不了 curl：{e}"))?;
+        .map_err(|e| format!("Cannot run curl: {e}"))?;
     if !out.status.success() {
-        return Err(format!("下載失敗：{}", String::from_utf8_lossy(&out.stderr).trim()));
+        return Err(format!("The download failed: {}", String::from_utf8_lossy(&out.stderr).trim()));
     }
     Ok(out.stdout)
 }
@@ -134,13 +183,13 @@ async fn fetch_url(url: String) -> Result<Vec<u8>, String> {
 async fn lean_check(app: tauri::AppHandle, project: String, code: String) -> Result<(bool, String), String> {
     let project = PathBuf::from(project);
     if !project.join("lakefile.toml").is_file() && !project.join("lakefile.lean").is_file() {
-        return Err(format!("{} 不是 Lean 專案（裡面沒有 lakefile）", project.display()));
+        return Err(format!("{} is not a Lean project (it has no lakefile)", project.display()));
     }
     let dir = app.path().app_cache_dir().map_err(|e| e.to_string())?.join("lean");
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     let file = dir.join("OpenswCheck.lean");
     std::fs::write(&file, code).map_err(|e| e.to_string())?;
-    let lake = find_lake(&project).ok_or("找不到 Lean 的 lake（裝在 elan 裡的那個）")?;
+    let lake = find_lake(&project).ok_or("Cannot find Lean's lake (the one installed with elan)")?;
     let mut cmd = Command::new(&lake);
     cmd.args(["env", "lean"]).arg(&file).current_dir(&project);
     // lake is elan's stand-in program: it finds Lean through ELAN_HOME (the folder above bin)
@@ -156,18 +205,30 @@ async fn lean_check(app: tauri::AppHandle, project: String, code: String) -> Res
     let out = tauri::async_runtime::spawn_blocking(move || cmd.output())
         .await
         .map_err(|e| e.to_string())?
-        .map_err(|e| format!("Lean 執行失敗：{e}"))?;
+        .map_err(|e| format!("Lean failed to run: {e}"))?;
     let text = String::from_utf8_lossy(&out.stdout).into_owned() + &String::from_utf8_lossy(&out.stderr);
     Ok((out.status.success(), text))
 }
 
-/// Tools > Computation Engine > Mathematica: one computation by the Wolfram kernel
-/// (wolfram.rs). data and the answer are base64 (the MathJSON text / the JSON answer).
+/// Tools > Computation Engine: the engines on this computer the editor can use (engine/engines.json).
 #[tauri::command]
-async fn wolfram_compute(kernel: Option<String>, op: String, data: String) -> Result<String, String> {
-    tauri::async_runtime::spawn_blocking(move || wolfram::compute(kernel.as_deref(), &op, &data))
+fn engine_list(app: tauri::AppHandle) -> Result<Vec<engine::Spec>, String> {
+    engine::list(&engine_dir(&app)?)
+}
+
+/// One computation by an engine on this computer (engine.rs). data and the answer are base64
+/// (the MathJSON text / the JSON answer); program: the one the user chose, or none (found).
+#[tauri::command]
+async fn engine_compute(app: tauri::AppHandle, engine: String, program: Option<String>, op: String, data: String) -> Result<engine::Answer, String> {
+    let dir = engine_dir(&app)?;
+    tauri::async_runtime::spawn_blocking(move || engine::compute(&dir, &engine, program.as_deref(), &op, &data))
         .await
         .map_err(|e| e.to_string())?
+}
+
+/// engine/ of the app: engines.json and the adapter files the engines load
+fn engine_dir(app: &tauri::AppHandle) -> Result<PathBuf, String> {
+    app.path().resource_dir().map(|d| d.join("engine")).map_err(|e| e.to_string())
 }
 
 /// lake from elan: $ELAN_HOME, ~/.elan, or an elan folder next to the project or above it
@@ -197,7 +258,7 @@ fn copy_macro_files(from: &Path, to: &Path) -> Result<(), String> {
     for entry in entries.flatten() {
         let path = entry.path();
         if path.is_file() {
-            std::fs::copy(&path, to.join(entry.file_name())).map_err(|e| format!("複製 {} 失敗：{e}", path.display()))?;
+            std::fs::copy(&path, to.join(entry.file_name())).map_err(|e| format!("Copying {} failed: {e}", path.display()))?;
         }
     }
     Ok(())
@@ -255,7 +316,7 @@ fn run_engine(dir: &Path, stem: &str, tectonic: Option<&Path>, tex_cache: Option
         Ok(out) => finish_xelatex(dir, stem, out, xelatex),
         Err(_) => {
             let Some(tectonic) = tectonic else {
-                return Err("找不到排版程式（xelatex 或內附的 Tectonic）。".to_string());
+                return Err("Cannot find a typesetting program (xelatex or the bundled Tectonic).".to_string());
             };
             // The bundled cache has what opensw's documents need; anything else is downloaded
             // (internet) the first time and kept in the same cache.
@@ -265,7 +326,7 @@ fn run_engine(dir: &Path, stem: &str, tectonic: Option<&Path>, tex_cache: Option
                 cmd.env("TECTONIC_CACHE_DIR", cache);
             }
             cmd.output()
-                .map_err(|e| format!("Tectonic 執行失敗：{e}"))?
+                .map_err(|e| format!("Tectonic failed to run: {e}"))?
         }
     };
 
@@ -274,7 +335,7 @@ fn run_engine(dir: &Path, stem: &str, tectonic: Option<&Path>, tex_cache: Option
     }
     let log = String::from_utf8_lossy(&output.stdout).into_owned() + &String::from_utf8_lossy(&output.stderr);
     let tail: String = log.lines().rev().take(15).collect::<Vec<_>>().into_iter().rev().collect::<Vec<_>>().join("\n");
-    Err(format!("排版失敗：\n{tail}"))
+    Err(format!("Typesetting failed:\n{tail}"))
 }
 
 /// After a first xelatex run: BibTeX and makeindex when the document uses them, then
@@ -358,20 +419,20 @@ pub fn run() {
             }
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![read_file, write_file, typeset, startup_path, lean_check, fetch_url, wolfram_compute, remote::api_reply, remote::api_ready])
+        .invoke_handler(tauri::generate_handler![read_file, write_file, file_exists, rename_file, trash_files, typeset, startup_path, lean_check, fetch_url, engine_list, engine_compute, remote::api_reply, remote::api_ready, aiconnect::ai_apps, aiconnect::ai_connect])
         .build(tauri::generate_context!())
         .unwrap_or_else(|e| panic!("opensw could not start: {e}"))
         .run(|_, event| {
             if let tauri::RunEvent::Exit = event {
                 remote::stop();
-                wolfram::stop();
+                engine::stop();
             }
         });
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{Path, copy_macro_files, inside, run_engine, safe_stem};
+    use super::{Path, copy_macro_files, inside, rename_file, run_engine, safe_stem, tex_errors};
 
     #[test]
     fn safe_stem_should_replace_spaces_and_dots() {
@@ -398,6 +459,13 @@ mod tests {
     #[test]
     fn copy_macro_files_should_ignore_a_missing_folder() {
         assert!(copy_macro_files(std::path::Path::new("/no/such/folder"), &std::env::temp_dir()).is_ok());
+    }
+
+    #[test]
+    fn tex_errors_should_give_the_message_and_line() {
+        let log = "This is XeTeX\n! Undefined control sequence.\n<recently read> \\dfrac \n                \nl.21 $w=\\dfrac\n                  {x}{y}$\nmore\n! Missing $ inserted.\n";
+        assert_eq!(tex_errors(log), vec!["Undefined control sequence. (l.21 $w=\\dfrac)", "Missing $ inserted."]);
+        assert!(tex_errors("no errors here").is_empty());
     }
 
     #[test]
@@ -432,5 +500,19 @@ mod tests {
         for bad in ["../x.png", "/etc/x", "a//b", "C:/x.png", "a\\..\\b", ""] {
             assert_eq!(inside(dir, bad), None, "{bad}");
         }
+    }
+
+    #[test]
+    fn rename_file_should_not_replace_a_file() {
+        let base = std::env::temp_dir().join(format!("opensw-rename-{}", std::process::id()));
+        std::fs::create_dir_all(&base).unwrap();
+        let (a, b, c) = (base.join("a.tex"), base.join("b.tex"), base.join("c.tex"));
+        std::fs::write(&a, "a").unwrap();
+        std::fs::write(&b, "b").unwrap();
+        assert!(rename_file(a.to_str().unwrap(), b.to_str().unwrap()).is_err());
+        assert_eq!(std::fs::read_to_string(&b).unwrap(), "b");
+        rename_file(a.to_str().unwrap(), c.to_str().unwrap()).unwrap();
+        assert!(!a.exists() && std::fs::read_to_string(&c).unwrap() == "a");
+        std::fs::remove_dir_all(&base).unwrap();
     }
 }

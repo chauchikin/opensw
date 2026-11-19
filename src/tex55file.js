@@ -5,6 +5,11 @@
 // Browsers can decode these code pages but not encode them, so the table is built
 // once from the decoder: every byte sequence the code page has, decoded.
 
+// The browser's Big5 decoder also knows Hong Kong's extension (HKSCS), which 5.x's code page 950
+// does not: 都 is there twice, as B3A3 and as 906D, and é as 886D; 5.5 shows the extension ones as
+// blanks. So for 950 only Big5 itself: lead bytes A1-F9, without C6A1-C8FE (no characters in 950).
+const big5Lead = (lead) => lead >= 0xa1 && lead <= 0xf9 && lead !== 0xc7 && lead !== 0xc8;
+
 const CODEPAGE_LABEL = { 950: 'big5', 936: 'gbk', 932: 'shift_jis', 949: 'euc-kr', 1252: 'windows-1252' };
 const tables = new Map();
 
@@ -21,11 +26,20 @@ function tableFor(cp) {
   for (let b = 0x80; b <= 0xff; b++) add([b]); // single-byte code pages, and their upper half
   if (cp !== 1252) {
     for (let lead = 0x81; lead <= 0xfe; lead++) {
-      for (let trail = 0x40; trail <= 0xfe; trail++) if (trail !== 0x7f) add([lead, trail]);
+      if (cp === 950 && !big5Lead(lead)) continue;
+      for (let trail = 0x40; trail <= 0xfe; trail++) if (trail !== 0x7f && !(cp === 950 && lead === 0xc6 && trail >= 0xa1)) add([lead, trail]);
     }
   }
   tables.set(cp, map);
   return map;
+}
+
+// A letter with an accent the code page lacks (é in a Big5 file): as TeX writes it, \\'{e}
+const ACCENTS = { '\u0300': '`', '\u0301': "'", '\u0302': '^', '\u0303': '~', '\u0308': '"', '\u0304': '=', '\u0327': 'c', '\u030c': 'v' };
+function accented(ch) {
+  const [base, mark, more] = [...ch.normalize('NFD')];
+  if (more || !mark || !/^[A-Za-z]$/.test(base) || !ACCENTS[mark]) return null;
+  return `\\${ACCENTS[mark]}{${base}}`;
 }
 
 // codepage: 950, 1252, ... or null for UTF-8
@@ -37,7 +51,7 @@ export function encode55(text, codepage) {
     const c = ch.codePointAt(0);
     if (c < 0x80) out.push(c);
     else if (map.has(ch)) out.push(...map.get(ch));
-    else for (const b of `\\U{${c.toString(16).toUpperCase()}}`) out.push(b.charCodeAt(0));
+    else for (const b of accented(ch) || `\\U{${c.toString(16).toUpperCase()}}`) out.push(b.charCodeAt(0));
   }
   return new Uint8Array(out);
 }
@@ -54,10 +68,14 @@ export function codepageFor(meta, text) {
 // opens again the same: multibyte pages in the first line as 5.5 writes them,
 // others as %TCIDATA{Codepage=..}
 export function encodeFile55(text, meta) {
+  return encode55(withCodepage55(text, meta), codepageFor(meta, text));
+}
+// the text with that line added when needed (always before \begin{document})
+export function withCodepage55(text, meta) {
   const cp = codepageFor(meta, text);
   if (cp && !/CodePage:\s*\d+|%TCIDATA\{Codepage=\d+\}/i.test(text.slice(0, Math.max(0, text.indexOf('\\begin{document}')) || 8000))) {
     if (cp !== 1252) text = `%2multibyte Version: 5.50.0.2960 CodePage: ${cp}\n` + text;
     else text = text.replace(/\\begin\{document\}/, `%TCIDATA{Codepage=${cp}}\n\n$&`);
   }
-  return encode55(text, cp);
+  return text;
 }

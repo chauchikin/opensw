@@ -77,10 +77,10 @@ export function toHtml(doc, meta = {}, pictures = new Map(), opts = {}) {
     const src = pictures.get(a.path);
     const size = (a.width ? `width:${a.width}px;` : '') + (a.height ? `height:${a.height}px;` : '');
     const img = src ? `<img src="${src}" alt="${esc(a.caption || a.path)}" style="${size}">`
-      : `<span class="missing" style="${size}">${esc(a.path || _t('圖片'))}</span>`;
+      : `<span class="missing" style="${size}">${esc(a.path || _t('Picture'))}</span>`;
     if (a.place === 'inline') return img;
     if (a.label) anchors.add(a.label);
-    const cap = a.place === 'float' ? `<figcaption>${esc(nums.captions.get(posOf.get(c)) || '')}${a.caption ? _t('：') + esc(a.caption) : ''}</figcaption>` : '';
+    const cap = a.place === 'float' ? `<figcaption>${esc(nums.captions.get(posOf.get(c)) || '')}${a.caption ? _t(': ') + esc(a.caption) : ''}</figcaption>` : '';
     return `<figure${a.label ? ` id="${esc(a.label)}"` : ''}>${img}${cap}</figure>`;
   }
 
@@ -109,7 +109,7 @@ export function toHtml(doc, meta = {}, pictures = new Map(), opts = {}) {
       case 'env': {
         const k = node.attrs.kind;
         const num = nums.envs.get(posOf.get(node));
-        const head = PLAIN_ENVS.has(k) && k !== 'proof' && k !== 'abstract' ? '' : `<span class="env-label">${esc(envLabel(k))}${num ? ' ' + esc(num) : ''}${node.attrs.title ? _t('（{0}）', esc(node.attrs.title)) : ''}.</span> `;
+        const head = PLAIN_ENVS.has(k) && k !== 'proof' && k !== 'abstract' ? '' : `<span class="env-label">${esc(envLabel(k))}${num ? ' ' + esc(num) : ''}${node.attrs.title ? _t(' ({0})', esc(node.attrs.title)) : ''}.</span> `;
         let inner = '';
         node.forEach((c) => { inner += block(c); });
         if (head) inner = inner.replace(/^<p>/, '<p>' + head);
@@ -138,7 +138,7 @@ export function toHtml(doc, meta = {}, pictures = new Map(), opts = {}) {
         node.forEach((c, off) => {
           if (c.type.name === 'caption') {
             c.forEach((x) => { if (x.type.name === 'marker') anchors.add(x.attrs.key); });
-            cap = `<figcaption>${_t('{0}：{1}', esc(nums.captions.get(posOf.get(node) + 1 + off) || ''), inline(c))}</figcaption>`;
+            cap = `<figcaption>${_t('{0}: {1}', esc(nums.captions.get(posOf.get(node) + 1 + off) || ''), inline(c))}</figcaption>`;
           } else inner += block(c);
         });
         return `<figure>${inner}${cap}</figure>\n`;
@@ -146,10 +146,10 @@ export function toHtml(doc, meta = {}, pictures = new Map(), opts = {}) {
       case 'bibliography': {
         let s = '';
         node.forEach((it) => { s += `<li id="bib-${esc(it.attrs.key)}"><span class="biblabel">[${esc(nums.bib.get(it.attrs.key) || it.attrs.key)}]</span> ${inline(it)}</li>`; });
-        return `<h2>${_t('參考文獻')}</h2>\n<ul class="bibliography">${s}</ul>\n`;
+        return `<h2>${_t('References')}</h2>\n<ul class="bibliography">${s}</ul>\n`;
       }
-      case 'bibtex': return `<p class="note">${_t('（參考文獻來自 BibTeX：{0}）', esc(node.attrs.files))}</p>\n`;
-      case 'front_field': return `<p class="front"><span>${_t('{0}：', esc(FRONT_LABELS[node.attrs.cmd] || node.attrs.cmd))}</span>${inline(node)}</p>\n`;
+      case 'bibtex': return `<p class="note">${_t('(References come from BibTeX: {0})', esc(node.attrs.files))}</p>\n`;
+      case 'front_field': return `<p class="front"><span>${_t('{0}: ', esc(FRONT_LABELS[node.attrs.cmd] || node.attrs.cmd))}</span>${inline(node)}</p>\n`;
       case 'toc': case 'appendix': case 'subdoc': return '';
       default: {
         let s = '';

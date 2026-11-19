@@ -1,7 +1,7 @@
 // 5.x .tex is the main format (desktop app, with a stand-in for its shell):
 // an opened .tex is saved back to itself (old file kept as .bak), an unchanged one is
 // not written at all and is typeset from its own text; once edited, the editor's text
-// is used; a .sci path still gives a .sci.  node test/save55main.mjs
+// is the file's own with only the edited part written again; a .sci path still gives a .sci.  node test/save55main.mjs
 import { chromium } from 'playwright';
 import fs from 'node:fs';
 const original = fs.readFileSync('test/fixtures/real55.tex');
@@ -11,6 +11,7 @@ const errs = []; page.on('pageerror', (e) => errs.push(e.message));
 await page.addInitScript((b64) => {
   const files = new Map([['C:\\Teacher\\Ch1.tex', Array.from(atob(b64), (c) => c.charCodeAt(0))]]);
   window.shell = { writes: [], typeset: [] };
+  localStorage.setItem('opensw-settings', JSON.stringify({ aiFolders: ['C:\\Teacher'] })); // AI may open and save there
   window.__TAURI_INTERNALS__ = {
     transformCallback: () => 0,
     invoke: async (cmd, args) => {
@@ -46,7 +47,10 @@ r = await call('setFormula', { n: 0, latex: 'x^{3}+4x^{2}-11=0' });
 r = await call('typeset');
 s = await shell();
 const t2 = s.typeset.at(-1) || '';
-check('edited: typeset from the editor', t2.includes('x^{3}+4x^{2}-11=0') && !t2.includes('%TCIDATA{Version'), t2.slice(0, 200));
+// only the edited paragraph is written again: every other line is the file's own
+const changedLines = (x, y) => { const keep = new Set(y.split('\n')); return x.split('\n').filter((l) => !keep.has(l)); };
+check('edited: typeset from the file\'s text, only the edited part written again', t2.includes('x^{3}+4x^{2}-11=0') && t2.includes('%TCIDATA{Version')
+  && changedLines(t1, t2).every((l) => l.includes('10=0')) && changedLines(t2, t1).every((l) => l.includes('11=0')), [changedLines(t1, t2), changedLines(t2, t1)]);
 
 r = await call('save');
 s = await shell();
@@ -54,6 +58,10 @@ const paths = s.writes.map((w) => w.path);
 check('edited: old file kept as .bak, then the .tex written back', r.ok && r.result.path === 'C:\\Teacher\\Ch1.tex' && paths[0] === 'C:\\Teacher\\Ch1.bak' && paths[1] === 'C:\\Teacher\\Ch1.tex', paths);
 const saved = Buffer.from(s.writes[1]?.data || []).toString('latin1');
 check('the file written is a 5.x .tex with the change', saved.includes('x^{3}+4x^{2}-11=0') && saved.includes('%TCIDATA{OutputFilter=LATEX.DLL}'), saved.slice(0, 200));
+const savedLines = saved.split('\n');
+const origLines = original.toString('latin1').split('\n');
+check('…and every other line is as it was, byte for byte', changedLines(origLines.join('\n'), savedLines.join('\n')).every((l) => l.includes('10=0'))
+  && savedLines.length === origLines.length && saved.includes('\r') === original.includes(13), [savedLines.length, origLines.length, changedLines(origLines.join('\n'), savedLines.join('\n'))]);
 check('the .bak is the old file', Buffer.from(s.writes[0]?.data || []).equals(original));
 
 r = await call('save');

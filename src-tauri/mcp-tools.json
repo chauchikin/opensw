@@ -1,7 +1,7 @@
 [
   {
     "name": "sw_get",
-    "description": "讀出整份文件。format: \"latex\"（預設）、\"markdown\"、\"json\"（編輯器內部格式）。",
+    "description": "Reads the whole document. format: \"latex\" (default), \"markdown\", \"json\" (the editor's own format).",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -13,7 +13,7 @@
   },
   {
     "name": "sw_outline",
-    "description": "文件的區塊清單：每塊的編號 index、種類、文字開頭、公式。改某一塊前先用這個找編號。",
+    "description": "The document's blocks: for each, its number (index), kind, first words and formulas. Use it to find a block's number before changing that block.",
     "inputSchema": {
       "type": "object",
       "properties": {}
@@ -21,7 +21,7 @@
   },
   {
     "name": "sw_set",
-    "description": "用 LaTeX 取代整份文件（可以是完整文件或只有內文）。",
+    "description": "Replaces the whole document with LaTeX (a full document or just the body).",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -36,7 +36,7 @@
   },
   {
     "name": "sw_insert",
-    "description": "在第 index 塊之後插入 LaTeX 內容（段落、公式、清單、定理都可以）；不給 index 就加在文件最後；index = -1 加在最前面。",
+    "description": "Inserts LaTeX (paragraphs, formulas, lists, theorems...) after block index; without index it goes at the end; index = -1 puts it at the start.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -54,7 +54,7 @@
   },
   {
     "name": "sw_replaceBlock",
-    "description": "用 LaTeX 取代第 index 塊。",
+    "description": "Replaces block index with LaTeX.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -73,7 +73,7 @@
   },
   {
     "name": "sw_deleteBlock",
-    "description": "刪掉第 index 塊。",
+    "description": "Deletes block index.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -88,7 +88,7 @@
   },
   {
     "name": "sw_find",
-    "description": "找文字（不含公式內），回傳每個位置所在的區塊編號。",
+    "description": "Finds text (not inside formulas); returns the block number of each place.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -103,7 +103,7 @@
   },
   {
     "name": "sw_replace",
-    "description": "把文字 find 換成 with（不含公式內）；all 為 false 時只換第一個。",
+    "description": "Replaces the text find with with (not inside formulas); all = false replaces only the first.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -125,7 +125,7 @@
   },
   {
     "name": "sw_formulas",
-    "description": "列出所有公式（行內與獨立）和所在的區塊編號。",
+    "description": "Lists all formulas (inline and displayed) with their block numbers.",
     "inputSchema": {
       "type": "object",
       "properties": {}
@@ -133,7 +133,7 @@
   },
   {
     "name": "sw_setFormula",
-    "description": "把第 n 個公式（formulas 的順序）改成新的 LaTeX。",
+    "description": "Changes formula n (in the order formulas gives) to new LaTeX.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -152,7 +152,7 @@
   },
   {
     "name": "sw_undo",
-    "description": "復原上一步。",
+    "description": "Undoes the last step.",
     "inputSchema": {
       "type": "object",
       "properties": {}
@@ -160,7 +160,7 @@
   },
   {
     "name": "sw_redo",
-    "description": "重做。",
+    "description": "Redoes.",
     "inputSchema": {
       "type": "object",
       "properties": {}
@@ -168,7 +168,7 @@
   },
   {
     "name": "sw_open",
-    "description": "開啟檔案：桌面版給 path（.sci 或 5.x 的 .tex）。",
+    "description": "Opens a file: in the desktop app give path (.sci or a 5.x .tex). Only files in the open document's folder, aiFolder (see info) and the folders the user allowed; anywhere else the user is asked first.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -183,7 +183,7 @@
   },
   {
     "name": "sw_save",
-    "description": "存檔（桌面版）：主要格式是 5.x 的 .tex（5.5 打得開）；path 以 .sci 結尾就存成 .sci。不給 path 就存回原本的檔（先留 .bak；沒改過的 5.x 檔不會重寫）。",
+    "description": "Saves (desktop app): the main format is 5.x .tex (5.5 opens it); a path ending in .sci saves as .sci. Without path it saves back to the same file (keeping a .bak; an unchanged 5.x file is not rewritten; in an edited one only the edited parts are written again, the rest stays as it was in the file). Only .tex and .sci; saving outside the open document's folder, aiFolder (see info) and the folders the user allowed asks the user first.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -195,7 +195,7 @@
   },
   {
     "name": "sw_typeset",
-    "description": "排版成 PDF 並打開（桌面版）。回傳 PDF 路徑。",
+    "description": "Typesets to PDF and opens it (desktop app). Returns pdf (its path) and errors (what TeX reported). With errors the PDF still comes out but those parts may be wrong, so fix them (the message gives the line of the TeX).",
     "inputSchema": {
       "type": "object",
       "properties": {}
@@ -203,7 +203,7 @@
   },
   {
     "name": "sw_info",
-    "description": "文件名稱、路徑、區塊數、公式數、是否從 5.x 開啟。",
+    "description": "The document's name, path, number of blocks and formulas, whether it was opened from 5.x, and aiFolder: the folder (Documents\\opensw) where AI may always save, e.g. a new document, without asking.",
     "inputSchema": {
       "type": "object",
       "properties": {}
@@ -211,7 +211,7 @@
   },
   {
     "name": "sw_compute",
-    "description": "用目前選的計算引擎（SymPy 或 Mathematica，見 工具 > 計算引擎）計算一條公式（不改文件）。op: evaluate（預設）、numeric、simplify、expand、factor、combine、rewrite_exp、rewrite_sincos、solve、numericsolve、ode、check、partialfractions、collect、differentiate、integrate、series、extrema、laplace、inverselaplace、fourier、determinant、inverse、transpose、eigenvalues、rank、rref、nullspace、trace、charpoly、adjugate、mean、median、variance、stddev、implicitdiff、integersolve、recursion（一行矩陣：遞迴式和起始值）、maximize、minimize、feasible、standardize、dual（單形法：一行矩陣，第一列目標函數、其餘限制式，變數都 ≥ 0）、gradient、divergence、curl、laplacian、hessian、jacobian、wronskian、potential、vectorpotential（params 是基底變數，預設 x、y、z）、byparts（params: [u]）、changevar（params: [\"u=g(x)\"]）、approxint（params: [方法, 區間數]，方法是 left、midpoint、right、trapezoid 或 simpson，前後加單引號）、iterate（params: [起始值, 次數]）。回傳結果的 LaTeX；solve、numericsolve、integersolve、ode、extrema、maximize、minimize 回傳解的清單。",
+    "description": "Computes one formula with the chosen computation engine (SymPy or Mathematica, see Tools > Computation Engine), without changing the document. op: evaluate (default), numeric, simplify, expand, factor, combine, rewrite_exp, rewrite_sincos, solve, numericsolve, ode, odenumeric (Solve ODE > Numeric: a one-column matrix of equations (any order) and initial values y(0) = 1, y'(0) = 0; defines the solutions as functions, so y(1) can then be evaluated), check, partialfractions (params: [variable], when there are several), collect, differentiate, integrate, series, extrema, laplace, inverselaplace, fourier, determinant, inverse, transpose, eigenvalues, rank, rref, nullspace, trace, charpoly, adjugate, mean, median, variance, stddev, implicitdiff, integersolve, recursion (a one-column matrix: the recurrence and starting values), maximize, minimize, feasible, standardize, dual (simplex method: a one-column matrix, first row the objective, the other rows the constraints, all variables >= 0), gradient, divergence, curl, laplacian, hessian, jacobian, wronskian, potential, vectorpotential (params are the basis variables, default x, y, z), byparts (params: [u]), changevar (params: [\"u=g(x)\"]), approxint (params: [method, number of subintervals]; method is left, midpoint, right, trapezoid or simpson, in single quotes), iterate (params: [starting value, count]). Returns the result as LaTeX; solve, numericsolve, integersolve, ode, extrema, maximize, minimize return a list of solutions.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -235,7 +235,7 @@
   },
   {
     "name": "sw_select",
-    "description": "把游標放到第 block 塊。",
+    "description": "Puts the cursor in block block.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -250,7 +250,7 @@
   },
   {
     "name": "sw_focusEnd",
-    "description": "把游標放到文件最後。",
+    "description": "Puts the cursor at the end of the document.",
     "inputSchema": {
       "type": "object",
       "properties": {}

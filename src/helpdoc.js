@@ -6,187 +6,198 @@ import { LANG } from './i18n.js';
 const TRANSLATED = import.meta.env
   ? import.meta.glob('./locales/manual.*.tex', { query: '?raw', import: 'default', eager: true }) : {};
 
-export const MANUAL = TRANSLATED[`./locales/manual.${LANG}.tex`] || String.raw`\title{opensw 說明文件}
+export const MANUAL = TRANSLATED[`./locales/manual.${LANG}.tex`] || String.raw`\title{opensw manual}
 \maketitle
 
-\section{開始}
+\section{Getting started}
 
-opensw 是照 Scientific Word 5.5 重做的數學編輯器。選單、快捷鍵、檔案格式盡量跟 5.5 一樣。
-
-\begin{itemize}
-\item 桌面版（Windows）能做全部的事：開檔存檔、排版 PDF、計算、AI 控制。
-\item 網頁版可以打字和計算，但不能直接讀寫電腦上的檔案，也不能排版。
-\item 按 F1 看快捷鍵表。這份說明可以用 編輯 \TEXTsymbol{>} 尋找（Ctrl+Q）找字。
-\end{itemize}
-
-\section{檔案}
-
-\subsection{開檔和存檔}
+opensw is a math editor rebuilt after Scientific Word 5.5. Its menus, shortcuts and file formats follow 5.5 as closely as possible.
 
 \begin{itemize}
-\item 開啟：6.x 的 .sci、5.x 的 .tex、考卷範本 .qiz 都可以。
-\item 儲存：主要格式是 5.x 的 .tex（5.5 打得開，中文用 Big5）。打開的 .tex 會存回原檔，存之前留一份 .bak；沒改過就不重寫。從 .sci 打開的文件照樣存成 .sci。
-\item 另存成 .sci：6.x 的格式，給需要的人。
-\item 覆蓋舊檔前會留一份 .bak（工具 \TEXTsymbol{>} 使用者設定 可以關掉）。
-\item 開啟網址：網址結尾是 .tex 或 .sci 就在這裡開；其他網址用瀏覽器開。網址後面加「 as .tex」可以把沒有 .tex 結尾的檔當文件開。
-\item 最近的檔案（桌面版）、範例、文件資訊（字數、公式數、圖片數）。
+\item The desktop app (Windows) does everything: opening and saving files, typesetting PDF, computing, AI control.
+\item The web version can type and compute, but cannot read or write files on the computer directly, and cannot typeset.
+\item Press F1 for the keyboard shortcuts. Search this manual with Edit \TEXTsymbol{>} Find (Ctrl+Q).
 \end{itemize}
 
-\subsection{片段}
+\section{File}
 
-片段是存起來的一小段文字和公式，隨時可以插進文件。跟 5.5 的 .frg 檔一樣，內容是 5.x 的 LaTeX。
+\subsection{Opening and saving}
 
 \begin{itemize}
-\item 存成片段：先選取內容，再取名字。
-\item 匯入片段：從清單挑一個插到游標的地方。也可以從 5.5 的 Frags 資料夾加入 .frg 檔。
-\item 工具列的「片段…」清單一樣可以插入。內建幾個物理常數。
-\item 片段存在這台電腦，所有文件共用。
+\item Open: 6.x .sci, 5.x .tex and exam templates (.qiz) all work.
+\item Save: the main format is 5.x .tex (5.5 can open it; Chinese is saved in Big5). An opened .tex is saved back to the same file, keeping a .bak first; if nothing changed, it is not rewritten. A document opened from a .sci is saved as .sci.
+\item Save as .sci: the 6.x format, for those who need it.
+\item Before saving over an old file, a .bak copy is kept (it can be turned off in Tools \TEXTsymbol{>} User setup).
+\item Open location: an address ending in .tex or .sci opens here; other addresses open in the browser. Add ${'`'}${'`'} as .tex'' after an address to open a file without a .tex ending as a document.
+\item Recent files (desktop app), Samples, Document info (words, formulas, pictures).
 \end{itemize}
 
-\subsection{匯入和匯出}
+\subsection{Fragments}
+
+A fragment is a saved piece of text and formulas that can be put into any document. Like 5.5's .frg files, it holds 5.x LaTeX.
 
 \begin{itemize}
-\item 匯入圖片：PNG、JPG、GIF、SVG 等。
-\item 匯出 LaTeX、HTML、Word（.docx）、給 AI 讀的 Markdown。
-\item 匯出 Word 時公式會變成 Word 的方程式，有編號的公式編號靠右。
+\item Save as fragment: select the content first, then give it a name.
+\item Import fragment: pick one from the list to insert at the cursor. .frg files from 5.5's Frags folder can be added too.
+\item The ${'`'}${'`'}Fragments…'' list on the toolbar inserts them as well. A few physical constants are built in.
+\item As in 5.5, holding Ctrl and typing a fragment's name (two or more letters or digits, without its folder) inserts it when Ctrl is let go. A name cannot begin with C, V, X, A, Z or Y: those keep Copy, Paste, Cut, Select All, Undo and Redo.
+\item Fragments are kept on this computer and shared by all documents.
 \end{itemize}
 
-\subsection{版面設定、預覽、排版}
+\subsection{Importing and exporting}
 
 \begin{itemize}
-\item 版面設定：邊界、頁首、頁尾、頁碼。只用在「預覽」，不影響排版 PDF（跟 5.5 一樣）。
-\item 預覽（不排版）：照畫面的樣子分頁，送到系統的列印預覽，可以直接印或存 PDF。
-\item 排版 PDF（Ctrl+P，桌面版）：用 LaTeX 排成 PDF。5.x 的文件會用 5.x 的巨集排，看起來跟 5.5 排的一樣。
+\item Import picture: PNG, JPG, GIF, SVG and so on.
+\item Export LaTeX, HTML, Word (.docx), and Markdown for AI.
+\item When exporting Word, formulas become Word equations; numbered formulas have their numbers on the right.
 \end{itemize}
 
-\section{編輯}
+\subsection{Page setup, preview, typesetting}
 
 \begin{itemize}
-\item 復原、重做、剪下、複製、貼上、全選。
-\item 選擇性貼上：當純文字、當 LaTeX（節標題、公式照 LaTeX 讀）、或當一條公式。
-\item 複製成圖片：游標在公式裡就複製那條公式；選取圖片就複製那張圖。解析度在 工具 \TEXTsymbol{>} 匯出設定。
-\item 屬性（Ctrl+F5）：公式改 TeX、表格改對齊和格線、圖片改大小和標題、繪圖改公式和範圍。
-\item 表格：插入或刪除列和欄、合併和分割儲存格。在表格裡按 Tab 跳下一格。
-\item 尋找（Ctrl+Q）、取代（Ctrl+W）：文字和公式裡都找。
+\item Page setup: margins, header, footer, page numbers. Used only for Preview; typesetting PDF is not affected (as in 5.5).
+\item Preview (no typesetting): pages as on screen, sent to the system's print preview, to print or save as PDF.
+\item Typeset PDF (Ctrl+P, desktop app): makes a PDF with LaTeX. 5.x documents are typeset with the 5.x macros and look as they do from 5.5.
 \end{itemize}
 
-\section{插入}
+\section{Edit}
 
 \begin{itemize}
-\item 數學（Ctrl+M 或打 \$）開始一條公式；獨立公式 Ctrl+D。
-\item 分數 Ctrl+F、根號 Ctrl+R、上標 Ctrl+H、下標 Ctrl+L。
-\item 運算子、括號、矩陣、函數名稱、二項式、裝飾（帽子、橫線、箭頭）。
-\item 表格、表格標題。
-\item 標記和交叉引用：先在要引用的地方放標記，再插入交叉引用。
-\item 註解：註腳、邊註。點小數字可以改內容。
-\item 引用文獻、索引項目、超連結。
-\item TeX 欄位：直接寫 LaTeX，畫面顯示灰底，排版時照用。
-\item HTML 欄位：只在匯出 HTML 時用。
-\item 考卷公式：產生考卷時才算的公式（見「考卷產生器」）。
-\item 間距、單位名稱。
+\item Undo, redo, cut, copy, paste, select all.
+\item Paste special: as plain text, as LaTeX (section titles and formulas read as LaTeX), or as one formula.
+\item Copy as picture: with the cursor in a formula, copies that formula; with a picture selected, copies the picture. The resolution is in Tools \TEXTsymbol{>} Export settings.
+\item Properties (Ctrl+F5): a formula's TeX, a table's alignment and lines, a picture's size and caption, a plot's formula and ranges.
+\item Tables: insert or delete rows and columns, merge and split cells. In a table, Tab goes to the next cell.
+\item Find (Ctrl+Q), Replace (Ctrl+W): in text and in formulas.
 \end{itemize}
 
-\section{檢視、前往、標籤}
+\section{Insert}
 
 \begin{itemize}
-\item 檢視：放大縮小；顯示或隱藏標記、索引項目、輔助線、TeX 欄位；工具列（每一列都可以開關，有「重設」）。
-\item 前往：上一節、下一節、標記、連結（游標在連結上）、上一個位置、下一個位置。
-\item 標籤：F2 到 F12 套用標籤（標籤 \TEXTsymbol{>} 功能鍵 可以自己改）；項目標籤（清單、定理類）、段落標籤（節、小節）、文字標籤（粗體、強調、字級）。
-\item 標籤 \TEXTsymbol{>} 外觀：改每個標籤在畫面上的字型、大小、顏色，不影響排版。
+\item Math (Ctrl+M, or type \$) starts a formula; a displayed formula is Ctrl+D.
+\item Fraction Ctrl+F, radical Ctrl+R, superscript Ctrl+H, subscript Ctrl+L.
+\item Operators, brackets, matrices, math names, binomials, decorations (hats, bars, arrows).
+\item Tables, table captions.
+\item Markers and cross references: put a marker where you want to refer to, then insert a cross reference.
+\item Notes: footnotes, margin notes. Click the small number to edit it.
+\item Citations, index entries, hypertext links.
+\item TeX field: LaTeX written directly; shown grey on screen, used as it is when typesetting.
+\item HTML field: used only when exporting HTML.
+\item Exam formula: a formula computed only when exams are made (see ${'`'}${'`'}Exam builder'').
+\item Spacing, unit names.
 \end{itemize}
 
-\section{計算}
-
-游標放在公式裡，從計算選單選一個動作。結果接在公式後面。計算用的是 SymPy，第一次要載入幾秒；桌面版在 工具 > 計算引擎 可以改用這台電腦裝的 Mathematica。
+\section{View, Go, Tag}
 
 \begin{itemize}
-\item 計算（Ctrl+E）、數值計算、化簡、因式分解、展開、合併、改寫。
-\item 解：精確、數值、整數、遞迴。解常微分方程：精確。
-\item 多項式：部分分式、依變數整理。
-\item 微積分：微分、不定積分、分部積分、換變數、近似積分、畫近似積分圖、冪級數、求極值、迭代、隱函數微分。
-\item 向量微積分：梯度、散度、旋度、拉普拉斯、黑塞矩陣、雅可比矩陣、朗斯基行列式、位勢、向量位勢。基底變數預設是 $x,y,z$。
-\item 單形法：最大化、最小化、可行性、標準化、對偶。打成一行矩陣，第一列是目標函數，其他列是限制式，變數都當成 $\geq 0$。
-\item 統計、拉氏轉換、傅立葉轉換、矩陣（行列式、反矩陣、特徵值、秩、零空間⋯⋯）。
-\item 定義：例如 $f(x)=x^{2}$ 選「新定義」，之後的計算都會用到。
-\item 用 Lean 檢查：把等式交給 Lean 4 證明（要先在 工具 \TEXTsymbol{>} Lean 設定 選 Lean 專案資料夾）。
+\item View: zoom in and out; show or hide markers, index entries, helper lines, TeX fields; toolbars (each can be turned on or off, with ${'`'}${'`'}Reset'').
+\item Go: previous section, next section, marker, link (cursor on a link), previous position, next position.
+\item Tag: F2 to F12 apply tags (change them in Tag \TEXTsymbol{>} Function keys); item tags (lists, theorems), section/body tags (section, subsection), text tags (bold, emphasized, sizes).
+\item Tag \TEXTsymbol{>} Appearance: the screen font, size and color of each tag; typesetting is not affected.
 \end{itemize}
 
-\subsection{繪圖}
+\section{Compute}
 
-游標放在公式裡，選 計算 \TEXTsymbol{>} 繪圖 2D 或 繪圖 3D。圖畫好後選取它按 Ctrl+F5 可以改公式、範圍、格線數。5.5 檔裡的繪圖會照原本的設定重新畫。
+Put the cursor in a formula and choose an action from the Compute menu. The result follows the formula. Computing uses SymPy, which takes a few seconds to load the first time; in the desktop app, Tools > Computation engine can switch to Mathematica installed on this computer. Computing is opensw's own: 5.5 computed with MuPAD, which opensw does not have, so an answer may be written in a different (equal) form from 5.5's, and some commands may give more or fewer answers.
 
 \begin{itemize}
-\item 2D 直角座標：$y=f(x)$。屬性裡可以改成對數或雙對數刻度。
-\item 2D 極座標：$r=f(\theta)$，或 $(r,\theta)$ 兩個分量。
-\item 2D 隱函數：等式，例如 $x^{2}+y^{2}=4$。
-\item 2D 參數式：$(x(t),y(t))$。
-\item 2D 保角：複數函數，例如 $\frac{z-1}{z+1}$，畫出方格被函數帶到哪裡。
-\item 2D 梯度：$f(x,y)$ 的梯度箭頭。2D 向量場：$[P,Q]$。
-\item 2D 不等式：例如 $x+y^{2}<5$，塗滿成立的區域。
-\item 2D 常微分方程：把方程和起始值打成一行矩陣，例如 $y'=\sin (xy)$ 和 $y(0)=3$，用數值方法畫解。可以是方程組。
-\item 近似積分圖：計算 \TEXTsymbol{>} 微積分 \TEXTsymbol{>} 畫近似積分圖，選左端點、中點、右端點、上和、下和或梯形。
-\item 3D 直角座標：$z=f(x,y)$，或參數曲面 $(x(s,t),y(s,t),z(s,t))$。
-\item 3D 柱座標：$r=f(\theta ,z)$；球座標：$\rho =f(\theta ,\varphi )$。也可以寫三個分量。
-\item 3D 隱函數：等式，例如 $x^{2}+y^{2}+z^{2}=9$。
-\item 3D 管狀：沿著曲線 $(x(t),y(t),z(t))$ 的管子，屬性裡可以改半徑。
-\item 3D 梯度、3D 向量場 $[P,Q,R]$。
+\item Evaluate (Ctrl+E), evaluate numerically, simplify, factor, expand, combine, rewrite.
+\item Solve: exact, numeric, integer, recursion. Solve ODE: exact, numeric.
+\item Solve ODE \TEXTsymbol{>} Numeric solves an initial-value problem typed as a one-column matrix, one equation or initial value in each row (for example $y'=-y$ and $y(0)=1$; equations of any order, or a system of them: an equation of order $n$ in $y$ needs the initial values $y(x_0)$, $y'(x_0)$, \ldots, $y^{(n-1)}(x_0)$, as $y''+y=0$, $y(0)=1$, $y'(0)=0$). As in 5.5 it answers ${'`'}${'`'}Functions defined: $y$'': the solution becomes a function, so evaluating $y(1)$ afterwards gives a number, $y$ applied to a column of numbers gives a column of values, and plotting $y$ (Plot 2D \TEXTsymbol{>} Rectangular or ODE) draws the solution.
+\item Polynomials: partial fractions, collect by variable.
+\item Calculus: differentiate, integrate, integrate by parts, change variable, approximate integral, plot approximate integral, power series, find extrema, iterate, implicit differentiation.
+\item Vector calculus: gradient, divergence, curl, Laplacian, Hessian, Jacobian, Wronskian, scalar potential, vector potential. The basis variables are $x,y,z$ by default; Vector calculus \TEXTsymbol{>} Set basis variables (or Tools \TEXTsymbol{>} Computation engine) changes them, for $\nabla$ in Evaluate too: with $u,v,w$, $\nabla (cuv)$ is $(cv,cu,0)$.
+\item Simplex: maximize, minimize, feasibility, standardize, dual. Type a one-row matrix: the first entry is the objective, the others are constraints; all variables are taken as $\geq 0$.
+\item Statistics, Laplace transform, Fourier transform, matrices (determinant, inverse, eigenvalues, rank, null space…).
+\item Definitions: for example choose ${'`'}${'`'}New definition'' on $f(x)=x^{2}$; later computations use it. Defining a name with a letter subscript, such as $a_{i}=3i$, asks how to interpret the subscript, as 5.5 does: as a function argument ($a_{2}$ is then $6$, and $i$ on the right is the argument, not the imaginary unit), or as part of the name ($a_{2}$ stays $a_{2}$).
+\item Check with Lean: Lean 4 proves the equation (choose a Lean project folder in Tools \TEXTsymbol{>} Lean setup first).
 \end{itemize}
 
-\section{排版}
+\subsection{Plots}
+
+Put the cursor in a formula and choose Compute \TEXTsymbol{>} Plot 2D or Plot 3D. Select a finished plot and press Ctrl+F5 to change its formula, ranges and grid. Plots in 5.5 files are drawn again from their own settings.
 
 \begin{itemize}
-\item 排版 PDF（桌面版）：電腦有裝 XeLaTeX 就用它，沒有就用內附的 Tectonic。常用的 TeX 檔已經附在程式裡，沒有網路也能排；用到其他套件時，第一次要上網下載。中文可以排。
-\item 導言：排版用的 LaTeX 前言（\TEXTsymbol{\backslash}usepackage 等）。
-\item 選項：文件類別、字級、紙張、套件。
+\item 2D rectangular: $y=f(x)$. Its properties can switch to a logarithmic or log-log scale.
+\item 2D polar: $r=f(\theta)$, or the two components $(r,\theta)$.
+\item 2D implicit: an equation, for example $x^{2}+y^{2}=4$.
+\item 2D parametric: $(x(t),y(t))$.
+\item 2D conformal: a complex function, for example $\frac{z-1}{z+1}$, showing where the function takes a grid.
+\item 2D gradient: the gradient arrows of $f(x,y)$. 2D vector field: $[P,Q]$.
+\item 2D inequality: for example $x+y^{2}<5$, shading the region where it holds.
+\item 2D ODE: type the equation and the initial value as a one-row matrix, for example $y'=\sin (xy)$ and $y(0)=3$; the solution is drawn numerically. Systems work too.
+\item Approximate integral plot: Compute \TEXTsymbol{>} Calculus \TEXTsymbol{>} Plot approximate integral, with left endpoints, midpoints, right endpoints, upper sum, lower sum or trapezoids.
+\item 3D rectangular: $z=f(x,y)$, or a parametric surface $(x(s,t),y(s,t),z(s,t))$.
+\item 3D cylindrical: $r=f(\theta ,z)$; spherical: $\rho =f(\theta ,\varphi )$. Three components work too.
+\item 3D implicit: an equation, for example $x^{2}+y^{2}+z^{2}=9$.
+\item 3D tube: a tube along the curve $(x(t),y(t),z(t))$; the radius is in its properties.
+\item 3D gradient, 3D vector field $[P,Q,R]$.
 \end{itemize}
 
-\section{工具}
-
-\subsection{考卷產生器}
-
-把目前的文件當範本，產生好幾份數字不一樣的考卷和答案。範本是 5.5 的考卷格式（.qiz），用節標題當關鍵字：
+\section{Typeset}
 
 \begin{itemize}
-\item Exam（或 Quiz、Test）：表示這是考卷範本。Comment：只是註記，不會出現在考卷。
-\item Text：原樣放進考卷的文字。Part：分成幾個部分，各有自己的設定。
-\item Setup：設定。例如 $a:=\func{rand}(1,9)$（只算一次）、$b=1/a$（每次用到重算）、「Condition: $(a\neq b)$」（不成立就重抽）、「Questions: number, permute」（題目編號、打亂）、「Choices: permute」（選項打亂）、「Seed: 123」（固定亂數）。
-\item 亂數：$\func{rand}()$、$\func{rand}(n)$ 是 0 到 $n-1$、$\func{rand}(n,m)$ 是 $n$ 到 $m$、$\func{rand}(\{2,3,5\})$ 從集合挑一個、$\func{randmat}(3,3,1,(1,9))$ 隨機矩陣（第三個數：1 任意、2 對稱、3 反對稱、4 行列式為 1）。
-\item Question：一題。Statement：題目。Substatement：小題。Response：選項清單或填空（寫 InputField）。正確的選項後面放 \TEXTsymbol{\backslash}correctchoice（TeX 欄位）。標籤是 fixed 的選項固定放最後。
-\item Answer、Solution：只放在答案裡。Variant：同一題的另一種問法，產生時隨機挑一種。
-\item 題目裡要代數字的地方用 插入 \TEXTsymbol{>} 考卷公式，例如 $a+b$，產生考卷時才算。
+\item Typeset PDF (desktop app): uses XeLaTeX when it is installed, otherwise the bundled Tectonic. The usual TeX files come with the program, so typesetting works without the internet; a package outside them is downloaded the first time it is used. Chinese can be typeset.
+\item Preamble: the LaTeX preamble used for typesetting (\TEXTsymbol{\backslash}usepackage and so on).
+\item Options: document class, font size, paper, packages.
 \end{itemize}
 
-產生的考卷開成新的文件，範本還在 視窗 選單。沒做：線上作答和評分、成績資料庫。
+\section{Tools}
 
-\subsection{其他工具}
+\subsection{Exam builder}
+
+Uses the current document as a template to make several versions of an exam, with different numbers, and their answers. The template is 5.5's exam format (.qiz), with section titles as keywords:
 
 \begin{itemize}
-\item 拼字檢查：英文，用瀏覽器內建的。
-\item 文件管理：列出文件用到的圖片和子文件、有沒有找到；打包成 .zip（.sci、5.x .tex、圖片一起）給別人；開啟 .zip 或 5.5 的 .rap 包裝檔。
-\item 自動替換：在公式裡打一串字母（例如 sum10）就換成一個公式。可以整個關掉。
-\item 使用者設定：矩陣和表格預設大小、開程式時開哪份文件、存檔留 .bak、公式顏色、介面語言。
-\item 匯出設定：HTML 的公式用 MathML 或 MathJax；複製成圖片的解析度。
-\item 計算引擎：選 SymPy 或 Mathematica（桌面版、電腦要有裝），並看版本。Lean 設定：Lean 專案資料夾。
+\item Exam (or Quiz, Test): marks the document as an exam template. Comment: a note only, not in the exams.
+\item Text: text put into the exam as it is. Part: divides the exam into parts, each with its own setup.
+\item Setup: settings. For example $a:=\func{rand}(1,9)$ (computed once), $b=1/a$ (computed again each time it is used), ${'`'}${'`'}Condition: $(a\neq b)$'' (draw again until it holds), ${'`'}${'`'}Questions: number, permute'' (number and shuffle the questions), ${'`'}${'`'}Choices: permute'' (shuffle the choices), ${'`'}${'`'}Seed: 123'' (fixed random numbers).
+\item Random numbers: $\func{rand}()$; $\func{rand}(n)$ is 0 to $n-1$; $\func{rand}(n,m)$ is $n$ to $m$; $\func{rand}(\{2,3,5\})$ picks one from the set; $\func{randmat}(3,3,1,(1,9))$ is a random matrix (third number: 1 any, 2 symmetric, 3 antisymmetric, 4 determinant 1).
+\item Question: one question. Statement: the question. Substatement: a part of it. Response: a list of choices, or a blank (write InputField). Put \TEXTsymbol{\backslash}correctchoice (a TeX field) after the correct choice. A choice tagged fixed stays last.
+\item Answer, Solution: only in the answers. Variant: another wording of the same question; one is picked at random.
+\item Where a question needs a number, use Insert \TEXTsymbol{>} Exam formula, for example $a+b$; it is computed when the exams are made.
 \end{itemize}
 
-\section{視窗}
+The exams open as a new document; the template stays in the Window menu. Not done: answering and grading online, a grade database.
 
-可以同時開好幾份文件。視窗選單切換，Ctrl+F6 或 Ctrl+Tab 換下一份。
-
-\section{5.5 的檔案}
+\subsection{Other tools}
 
 \begin{itemize}
-\item 公式、定理、清單、表格、圖片、繪圖、註腳、引用、索引、子文件、考卷公式都會讀進來。
-\item 不認得的 5.x 指令會原樣留成灰底的 TeX 欄位，存檔和匯出都不會掉。
-\item 圖片要跟 .tex 放在一起（或 graphics 資料夾）。網頁版讀不到電腦上的圖片，用桌面版，或用 文件管理 開打包檔。
-\item 存回 5.x 的 .tex 時，5.5 打得開。
+\item Spell check: English, built into the browser.
+\item Document manager: lists the pictures and subdocuments the document uses and whether they were found; packs them into a .zip (.sci, 5.x .tex and pictures together) to give to others; opens a .zip or a 5.5 .rap package. In the desktop app, as 5.5: Copy (the saved document and its files to another folder), Rename, Delete and Clean Up auxiliary files (.aux, .log, .bak ...); deleted files go to the Recycle Bin, and each file beside the document can be left out.
+\item Automatic substitution: a string of letters typed in a formula (for example sum10) becomes a formula. It can be turned off.
+\item User setup: default matrix and table sizes, the document shown when the program opens, keeping .bak files, the formula color, the interface language.
+\item Export settings: MathML or MathJax for formulas in HTML; the resolution of Copy as picture.
+\item Computation engine: choose SymPy or Mathematica (desktop app, installed on the computer) and see the versions. Lean setup: the Lean project folder.
+\item Computation engine also holds the settings that change answers, as 5.5's computation setup: Solve gives the principal value only; the base for the log function changes from $e$ to $10$ ($\log x$ is then $\log_{10}x$, and Evaluate shows it so; $\ln$ stays the natural logarithm); the basis variables of vector calculus and $\nabla$ (default $x,y,z$).
 \end{itemize}
 
-\section{讓 AI 幫忙}
+\section{Window}
 
-桌面版有 MCP：Claude、Codex 這類 AI 可以讀文件、改文件、計算、排版。設定方法在原始碼的 docs/AI.md。
+Several documents can be open at once. Switch in the Window menu; Ctrl+F6 or Ctrl+Tab goes to the next one.
 
-\section{關於}
+\section{5.5 files}
 
-opensw 用 MIT 授權。程式是重新寫的，沒有用 Scientific Word 的程式碼、圖示或說明檔。Scientific Word 是 MacKichan Software 的商標，opensw 跟他們沒有關係。
+\begin{itemize}
+\item Formulas, theorems, lists, tables, pictures, plots, footnotes, citations, index entries, subdocuments and exam formulas are all read.
+\item 5.x commands that are not recognised are kept as they are in grey TeX fields, and saving and exporting keep them.
+\item Pictures must be next to the .tex (or in a graphics folder). The web version cannot read pictures on the computer; use the desktop app, or open a package with the Document manager.
+\item A document saved back as 5.x .tex opens in 5.5.
+\end{itemize}
+
+\section{Letting AI help}
+
+In the desktop app, an AI app such as Claude or ChatGPT can read the open document, change it, compute and typeset (through MCP).
+
+\begin{enumerate}
+\item Tools $>$ Connect AI: tick Claude or ChatGPT / Codex and press OK. opensw adds itself to that app's settings (keeping a copy of the old settings). Quit the AI app completely and open it again.
+\item Ask in your own words, for example: ${'`'}${'`'}Read the document open in opensw and tell me what it is about'', ${'`'}${'`'}Fix the typos, but do not change the formulas'', ${'`'}${'`'}Compute the integral in the third formula and write the answer after it''. Help $>$ Talking to AI has more.
+\item While the AI works the status bar says so, and the paragraphs it changed are tinted. Edit $>$ Undo AI Changes (or the button in the status bar) puts the document back as it was, in one step.
+\end{enumerate}
+
+The AI can open and save only in the open document's folder, Documents\textbackslash{}opensw (where it can save a new document without asking) and the folders allowed in Tools $>$ User Setup; anywhere else opensw asks you first. It saves only .tex and .sci files. The details for setting it up by hand are in docs/AI.md in the source code.
+
+\section{About}
+
+opensw is MIT licensed. Its code is written anew and uses no code, icons or help files from Scientific Word. Scientific Word is a trademark of MacKichan Software, which has nothing to do with opensw.
 `;

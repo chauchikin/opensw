@@ -1,38 +1,41 @@
-// Sample documents written for opensw (File > Samples). Plain LaTeX, read like any
+// Sample documents written for opensw (File > Samples), and the demo documents of src/demos.js. Plain LaTeX, read like any
 // Scientific Word 5.x / LaTeX document. Other languages: src/locales/sample.<language>.tex.
 import { _t, LANG } from './i18n.js';
+import { DEMOS, demoLatex } from './demos.js';
 
 const TRANSLATED = import.meta.env
   ? import.meta.glob('./locales/sample.*.tex', { query: '?raw', import: 'default', eager: true }) : {};
 export const SAMPLES = [
   {
     id: 'math-sample',
-    label: _t('數學範例（定理、矩陣、計算）'),
+    label: _t('A math sample (theorems, matrices, computing)'),
     latex: TRANSLATED[`./locales/sample.${LANG}.tex`] || String.raw`
-\begin{center}{\Large 數學範例}\end{center}
+\begin{center}{\Large A Math Sample}\end{center}
 
-\section{函數與極限}
-設 $f(x)=\dfrac{\sin x}{x}$。當 $x\to 0$ 時，
+\section{Functions and limits}
+Let $f(x)=\dfrac{\sin x}{x}$. As $x\to 0$,
 \[\lim_{x\to 0}\frac{\sin x}{x}=1.\]
 
 \begin{theorem}
-若 $f$ 在 $[a,b]$ 上連續，則存在 $c\in[a,b]$ 使得 $f(c)$ 是 $f$ 在 $[a,b]$ 上的最大值。
+If $f$ is continuous on $[a,b]$, then there is a $c\in[a,b]$ such that $f(c)$ is the maximum of $f$ on $[a,b]$.
 \end{theorem}
 
 \begin{proof}
-由 $[a,b]$ 的緊緻性與 $f$ 的連續性可得。
+It follows from the compactness of $[a,b]$ and the continuity of $f$.
 \end{proof}
 
-\section{矩陣}
-令 $A=\begin{pmatrix}2&1\\1&2\end{pmatrix}$，則 $\det A=3$，特徵值是 $1$ 與 $3$。
+\section{Matrices}
+Let $A=\begin{pmatrix}2&1\\1&2\end{pmatrix}$. Then $\det A=3$, and the eigenvalues are $1$ and $3$.
 
-\section{試試計算}
-把游標放在下面的公式裡，按 Ctrl+E（或選單「計算」）：
+\section{Try computing}
+Put the cursor in a formula below and press Ctrl+E (or use the Compute menu):
 \begin{enumerate}
 \item $\int_0^1 x^2\,dx$
-\item $x^2-5x+6=0$（用「解方程」）
-\item $(a+b)^3$（用「展開」）
+\item $x^2-5x+6=0$ (use ${'`'}${'`'}Solve'')
+\item $(a+b)^3$ (use ${'`'}${'`'}Expand'')
 \end{enumerate}
 `,
   },
+  // the demos: problems for each part of the Compute menu, in the interface language
+  ...DEMOS.map((d) => ({ id: d.id, label: _t(d.label), get latex() { return demoLatex(d, _t); } })),
 ];

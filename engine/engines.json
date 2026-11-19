@@ -1,0 +1,24 @@
+{
+  "about": "Computation engines on the user's computer, besides the built-in SymPy (desktop app only). How to add one: ENGINE.md. A file name here is in this folder (engine/); program: where to look for the program, the newest version found is used (* is any folder name), a bare name is looked for on the PATH. In args and load, {adapter} is the adapter file's full path and {adapter64} the same in base64; in call, {op} is the operation and {data} the request in base64.",
+  "engines": [
+    {
+      "id": "mathematica",
+      "name": "Mathematica",
+      "program": [
+        "C:\\Program Files\\Wolfram Research\\Wolfram\\*\\wolfram.exe",
+        "C:\\Program Files\\Wolfram Research\\Mathematica\\*\\wolfram.exe",
+        "C:\\Program Files\\Wolfram Research\\Wolfram Engine\\*\\wolfram.exe",
+        "C:\\Program Files\\Wolfram Research\\Mathematica\\*\\math.exe",
+        "/Applications/Wolfram.app/Contents/MacOS/WolframKernel",
+        "/Applications/Mathematica.app/Contents/MacOS/WolframKernel",
+        "/Applications/Wolfram Engine.app/Contents/MacOS/WolframKernel",
+        "wolfram"
+      ],
+      "example": "C:\\Program Files\\Wolfram Research\\Wolfram\\14.3\\wolfram.exe",
+      "args": ["-noprompt"],
+      "adapter": "opensw_compute.wl",
+      "load": "Get[ByteArrayToString[BaseDecode[\"{adapter64}\"], \"UTF-8\"], CharacterEncoding -> \"UTF-8\"]; WriteString[\"stdout\", \"@@OPENSW@@\" <> If[DownValues[OpenSW`OpenSWCompute] === {}, \"failed\", \"ready\"] <> \"\\n\"]",
+      "call": "OpenSW`OpenSWCompute[\"{op}\", \"{data}\"]"
+    }
+  ]
+}

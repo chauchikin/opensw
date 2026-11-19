@@ -39,7 +39,9 @@ for (const f of files) {
   // (a file that needs a code page it did not name gets 5.5's first line saying which)
   const saved = bytes.toString('latin1').replace(/\r\n?/g, '\n').replace(/^%2multibyte Version: [\d.]+ CodePage: \d+\n(?!%2multibyte)/, (m) => (orig.startsWith('%2multibyte') ? m : ''));
   const pre = (s) => s.slice(0, s.indexOf('\\begin{document}')).trimEnd();
-  check(saved.startsWith(pre(orig)), `${name}: preamble kept`);
+  // a 5.x file keeps its preamble; plain LaTeX gets 5.x's, with its own class and packages
+  if (/\\input\{tcilatex\}|%TCIDATA/.test(orig)) check(saved.startsWith(pre(orig)), `${name}: preamble kept`);
+  else check(saved.includes('\\input{tcilatex}') && saved.includes((orig.match(/\\documentclass[^\n]*/) || [''])[0]), `${name}: 5.x preamble with its class`);
   if (/\\input\{tcilatex\}/.test(saved) && bytes.every((x) => x < 128)) { // xelatex reads UTF-8; 5.x reads its code page
     try { execSync(`xelatex -interaction=nonstopmode "${path.basename(out)}"`, { cwd: '/tmp/save55', stdio: 'ignore', timeout: 120000 }); } catch (e) { /* below */ }
     check(fs.existsSync(out.replace(/\.tex$/, '.pdf')), `${name}: typesets with 5.x's macros`);

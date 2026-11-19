@@ -40,7 +40,7 @@ pub struct Pending {
 /// The page has registered its command listener: from now on agents may connect.
 #[tauri::command]
 pub fn api_ready(state: tauri::State<'_, Pending>) -> Result<(), String> {
-    let file = control_file().ok_or("找不到使用者資料夾")?;
+    let file = control_file().ok_or("Cannot find the user folder")?;
     if let Some(dir) = file.parent() {
         std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
     }
@@ -100,7 +100,7 @@ fn handle(app: &AppHandle, stream: TcpStream, token: &str) -> Result<(), String>
     let (headers, body) = read_request(&mut reader)?;
     let mut out = stream;
     if header(&headers, "x-sw-token") != Some(token) {
-        return respond(&mut out, 403, r#"{"ok":false,"error":"token 不對"}"#);
+        return respond(&mut out, 403, r#"{"ok":false,"error":"wrong token"}"#);
     }
     let req: serde_json::Value = serde_json::from_str(&body).map_err(|e| e.to_string())?;
     let reply = run_in_page(app, &req["cmd"], &req["args"]);
@@ -124,7 +124,7 @@ fn run_in_page(app: &AppHandle, cmd: &serde_json::Value, args: &serde_json::Valu
         Ok(reply) => reply,
         Err(_) => {
             state.waiting.lock().unwrap_or_else(|e| e.into_inner()).remove(&id);
-            serde_json::json!({ "ok": false, "error": "編輯器沒有回應（逾時）" }).to_string()
+            serde_json::json!({ "ok": false, "error": "The editor did not answer (timed out)" }).to_string()
         }
     }
 }

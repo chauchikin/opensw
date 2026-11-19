@@ -4,7 +4,7 @@
 // points checked against the formulas.  node test/plots4.mjs  (needs `npx vite preview --port 4173`)
 import { chromium } from 'playwright';
 import { parsePlot, drawable, plotKind, splitRelation } from '../src/plots.js';
-import { odeRows } from '../src/plotdata.js';
+import { odeRows } from '../src/mathjson.js';
 let fails = 0;
 const check = (ok, what) => { console.log(ok ? 'ok  ' : 'FAIL', what); if (!ok) fails++; };
 const near = (a, b, e = 1e-6) => Math.abs(a - b) <= e;
@@ -18,7 +18,7 @@ check(!drawable(sp('plottype 11;function \\TEXUX{$x+y$};')), 'vector field of on
 check(!drawable(sp('plottype 12;function \\TEXUX{$x+y$};')) && !drawable(sp('plottype 25;function \\TEXUX{$x+y=1$};')), 'implicit needs "=", inequality needs "<" or ">"');
 check(splitRelation('\\left( x<1\\right) \\leq y').rel === '<=', 'relation found outside brackets');
 const rows = odeRows("\\begin{array}{r}y^{\\prime }=\\sin \\left( xy\\right) \\\\ y(0)=3\\end{array}");
-check(rows.equations.join() === 'y^{\\prime }=\\sin \\left( xy\\right)' && rows.inits[0].join() === 'y,0,3', 'ODE rows: equation and initial value');
+check(rows.equations.join() === 'y^{\\prime }=\\sin \\left( xy\\right)' && rows.inits[0].join() === 'y,0,3,0', 'ODE rows: equation and initial value');
 
 // 2. in the editor
 const b = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium-1243/chrome-linux64/chrome' });
@@ -75,6 +75,19 @@ r = await plotFrom('\\begin{pmatrix}y\'=y\\\\ y(0)=1\\end{pmatrix}', ['繪圖 2D
 d = (await dataOf(r.frame))[0];
 const yl = d.paths[0].y;
 check(/plottype 23;/.test(r.frame) && near(d.paths[0].x[0], 0) && near(yl[Math.round(yl.length / 5)], Math.E, 1e-6), `ODE y' = y, y(0) = 1: y(1) = ${yl[Math.round(yl.length / 5)]}`);
+
+// second order: y'' + y = 0, y(0) = 1, y'(0) = 0 is cos x, so y(π) = -1
+r = await plotFrom("\\begin{array}{r}y^{\\prime \\prime }+y=0\\\\y(0)=1\\\\y^{\\prime }(0)=0\\end{array}", ['繪圖 2D', '常微分方程']);
+d = (await dataOf(r.frame))[0];
+const at = (p, x) => p.y[p.x.findIndex((v) => Math.abs(v - x) < 0.013)];
+check(near(at(d.paths[0], Math.PI), -1, 1e-3), `ODE y'' + y = 0: y(π) = ${at(d.paths[0], Math.PI)}`);
+// Solve ODE > Numeric defines y; Plot 2D > ODE of y then draws it from the initial point
+const answer = await call('compute', { latex: "\\begin{pmatrix}y''=-y\\\\y(1)=0\\\\y'(1)=2\\end{pmatrix}", op: 'odenumeric' });
+r = await plotFrom('y', ['繪圖 2D', '常微分方程']);
+d = (await dataOf(r.frame))[0];
+check(answer.result?.solutions?.[0] === 'y' && /plottype 4;/.test(r.frame) && near(d.x[0], 1) && near(at(d, 3.5), 2 * Math.sin(2.5), 1e-4),
+  `Plot 2D > ODE of y from Solve ODE > Numeric: starts at ${d.x[0]}, y(3.5) = ${at(d, 3.5)}`);
+await call('compute', { latex: '0', op: 'cleardefs' }); // y is a function no more (the plots below use y)
 
 r = await plotFrom('\\frac{1}{x^2+1}', ['微積分', '畫近似積分圖…'], async () => {
   await page.selectOption('#d-m', 'right'); await page.fill('#d-n', '10'); await page.fill('#d-a', '-1'); await page.fill('#d-b', '1'); await page.click('#dialog-ok');

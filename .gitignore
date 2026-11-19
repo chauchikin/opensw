@@ -7,4 +7,6 @@ src-tauri/bin/
 src-tauri/texcache/
 public/engine/
 __pycache__/
+
+# Scientific Word 6 sample documents (MacKichan Software): test input only, not part of opensw (see test/fixtures/README.md)
 test/fixtures/sw6/

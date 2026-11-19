@@ -1,7 +1,7 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "opensw",
-  "version": "0.5.0",
+  "version": "0.7.0",
   "identifier": "org.opensw.editor",
   "build": {
     "frontendDist": "../dist",
@@ -41,9 +41,11 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
-    "shortDescription": "opensw：照 Scientific Word 5.5 重做的開源數學編輯器",
+    "shortDescription": "opensw: an open-source math editor modelled on Scientific Word 5.5",
     "resources": {
       "tex55/": "tex55/",
+      "../engine/engines.json": "engine/engines.json",
+      "../engine/opensw_compute.wl": "engine/opensw_compute.wl",
       "../LICENSE": "LICENSE.txt",
       "../THIRD-PARTY-NOTICES.txt": "THIRD-PARTY-NOTICES.txt"
     },
@@ -53,7 +55,7 @@
           "sci"
         ],
         "name": "Scientific Word document",
-        "description": "Scientific Word 6 文件（.sci）",
+        "description": "Scientific Word 6 document (.sci)",
         "role": "Editor",
         "mimeType": "application/x-scientificword"
       }

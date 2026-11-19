@@ -2,6 +2,7 @@
 // (compute.js), the shapes (contour lines, surfaces, arrows ...) are made here.
 import { plotPoints, plotGrid, plotValues, odePoints } from './compute.js';
 import { plotKind, components, splitRelation } from './plots.js';
+import { odeRows } from './mathjson.js';
 import { _t } from './i18n.js';
 
 const cap = (n, lo, hi) => Math.min(hi, Math.max(lo, Math.round(n)));
@@ -119,7 +120,7 @@ async function curveData(kind, plot, c) {
       }
       return { arrows, cell: [c.range, c.range2, c.range3].map(([a, b]) => (b - a) / (n - 1)), box: [c.range, c.range2, c.range3] };
     }
-    default: throw new Error(_t('這種繪圖還不能畫'));
+    default: throw new Error(_t('This kind of plot cannot be drawn yet'));
   }
 }
 
@@ -259,16 +260,3 @@ function marchingTetrahedra([xs, ys, zs], F) {
   return tris;
 }
 
-// the rows of an ODE system typed as a column (array, matrix or one per line):
-// equations y' = f(x, y) and initial values y(x0) = a
-export function odeRows(latex) {
-  const body = latex.replace(/\\begin\{[a-zA-Z]*\}(\{[^}]*\})?|\\end\{[a-zA-Z]*\}/g, '').replace(/^\s*\\left\s*[([]|\\right\s*[)\]]\s*$/g, '');
-  const equations = [];
-  const inits = [];
-  for (const row of body.split(/\\\\|,(?![^{(]*[})])/).map((r) => r.replace(/&/g, '').trim()).filter(Boolean)) {
-    const m = !/'|\\prime|\\frac\s*\{\s*d/.test(row) && row.match(/^([a-zA-Z])\s*(?:\\left\s*)?\(\s*(.+?)\s*(?:\\right\s*)?\)\s*=\s*(.+)$/);
-    if (m) inits.push([m[1], m[2], m[3]]);
-    else equations.push(row);
-  }
-  return { equations, inits };
-}

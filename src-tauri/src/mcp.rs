@@ -13,8 +13,8 @@ use serde_json::{Value, json};
 use crate::remote::control_file;
 
 /// Tool list generated from src/api.js COMMANDS (scripts/gen-mcp-tools.mjs).
-const TOOLS: &str = include_str!("../mcp-tools.json");
-const PREFIX: &str = "sw_";
+pub(crate) const TOOLS: &str = include_str!("../mcp-tools.json");
+pub(crate) const PREFIX: &str = "sw_";
 
 pub fn run() {
     let stdin = std::io::stdin();
@@ -46,7 +46,7 @@ pub fn answer(msg: &Value) -> Option<Value> {
             "protocolVersion": msg["params"]["protocolVersion"].as_str().unwrap_or("2025-06-18"),
             "capabilities": { "tools": {} },
             "serverInfo": { "name": "scientific-word-next", "version": env!("CARGO_PKG_VERSION") },
-            "instructions": "opensw（Scientific Word 5.5 風格的數學文件編輯器）。文件以區塊為單位：先用 sw_outline 看區塊編號，再用 sw_insert / sw_replaceBlock 改；內容一律寫 LaTeX。開 .sci 或 Scientific Word 5.x 的 .tex 用 sw_open，存檔 sw_save，排版 PDF 用 sw_typeset。"
+            "instructions": "opensw (a math document editor in the style of Scientific Word 5.5). A document is made of blocks: use sw_outline to see the block numbers, then change them with sw_insert / sw_replaceBlock; content is always written in LaTeX. Open a .sci or Scientific Word 5.x .tex with sw_open, save with sw_save, typeset to PDF with sw_typeset."
         })),
         "ping" => Ok(json!({})),
         "tools/list" => Ok(json!({ "tools": serde_json::from_str::<Value>(TOOLS).unwrap_or(json!([])) })),
@@ -71,13 +71,13 @@ fn call_tool(params: &Value) -> Value {
             v => serde_json::to_string_pretty(v).unwrap_or_default(),
         }
     } else {
-        reply["error"].as_str().unwrap_or("失敗").to_string()
+        reply["error"].as_str().unwrap_or("failed").to_string()
     };
     json!({ "content": [{ "type": "text", "text": text }], "isError": !ok })
 }
 
 /// Sends one command to the editor, starting it first when needed.
-fn send(cmd: &str, args: &Value) -> Result<Value, String> {
+pub(crate) fn send(cmd: &str, args: &Value) -> Result<Value, String> {
     match try_send(cmd, args) {
         Ok(v) => Ok(v),
         Err(_) => {
@@ -88,10 +88,10 @@ fn send(cmd: &str, args: &Value) -> Result<Value, String> {
 }
 
 fn try_send(cmd: &str, args: &Value) -> Result<Value, String> {
-    let file = control_file().ok_or("找不到使用者資料夾")?;
+    let file = control_file().ok_or("Cannot find the user folder")?;
     let info: Value = serde_json::from_str(&std::fs::read_to_string(&file).map_err(|e| e.to_string())?).map_err(|e| e.to_string())?;
-    let port = info["port"].as_u64().ok_or("控制檔沒有 port")?;
-    let token = info["token"].as_str().ok_or("控制檔沒有 token")?;
+    let port = info["port"].as_u64().ok_or("The control file has no port")?;
+    let token = info["token"].as_str().ok_or("The control file has no token")?;
     let mut stream = TcpStream::connect(("127.0.0.1", port as u16)).map_err(|e| e.to_string())?;
     stream.set_read_timeout(Some(Duration::from_secs(320))).map_err(|e| e.to_string())?;
     let body = json!({ "cmd": cmd, "args": args }).to_string();
@@ -116,9 +116,13 @@ fn try_send(cmd: &str, args: &Value) -> Result<Value, String> {
     serde_json::from_str(&text).map_err(|e| format!("{status}: {e}"))
 }
 
-/// Opens the editor window (this same program without --mcp) and waits until it listens.
+/// Opens the editor window (this same program without --mcp; opensw next to opensw-cli)
+/// and waits until it listens.
 fn start_editor() -> Result<(), String> {
-    let exe = std::env::current_exe().map_err(|e| e.to_string())?;
+    let mut exe = std::env::current_exe().map_err(|e| e.to_string())?;
+    if exe.file_stem().is_some_and(|s| s == "opensw-cli") {
+        exe.set_file_name(if cfg!(windows) { "opensw.exe" } else { "opensw" });
+    }
     if let Some(file) = control_file() {
         let _ = std::fs::remove_file(file); // stale file from an editor that did not close cleanly
     }
@@ -128,7 +132,7 @@ fn start_editor() -> Result<(), String> {
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .spawn()
-        .map_err(|e| format!("打不開編輯器：{e}"))?;
+        .map_err(|e| format!("Cannot open the editor: {e}"))?;
     let deadline = Instant::now() + Duration::from_secs(30);
     while Instant::now() < deadline {
         std::thread::sleep(Duration::from_millis(500));
@@ -137,7 +141,7 @@ fn start_editor() -> Result<(), String> {
             return Ok(());
         }
     }
-    Err("編輯器 30 秒內沒有開好".to_string())
+    Err("The editor did not open within 30 seconds".to_string())
 }
 
 #[cfg(test)]

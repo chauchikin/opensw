@@ -10,17 +10,19 @@ opensw aims at one thing: open 5.5 files, edit them, typeset them, and work the 
 ## What it does
 
 - Opens Scientific Word 5.x `.tex` files and 6.x `.sci` files
-- 5.x `.tex` is the main format: saves back to the file it opened (keeping a `.bak`; Chinese in Big5), typesets an unchanged document from its own text, and can also save `.sci`
+- 5.x `.tex` is the main format: saves back to the file it opened (keeping a `.bak`; Chinese in Big5) writing only the edited paragraphs again and leaving the rest exactly as it was, typesets from that same text, and can also save `.sci`
 - Text and formulas on the same line; menus and keyboard shortcuts as in 5.5
-- A Compute menu run by SymPy: simplify, solve, calculus, matrices, ODEs, statistics; with Mathematica installed, Tools > Computation Engine can switch it to Mathematica (desktop app)
+- A Compute menu run by SymPy: simplify, solve, calculus, matrices, ODEs, statistics; with Mathematica installed, Tools > Computation Engine can switch it to Mathematica (desktop app). To connect another engine: [ENGINE.en.md](ENGINE.en.md). Computing is opensw's own (5.5 used MuPAD), so answers may be written differently from 5.5's
 - Tables, pictures, footnotes, citations, index entries, cross-references, numbered equations
 - 5.5 plots are drawn again from the settings stored in the file (all the 2D and 3D kinds)
+- Demo problems: File > Samples has three demo documents (calculus, algebra and matrices, vectors and statistics and more); each problem names its menu command and gives the answer, to try the Compute menu on
 - Exam Builder: exams and answer keys made from a 5.5 exam template (.qiz)
 - Fragments, Open Location, Document Manager (pack into a .zip, open 5.5's wrapped .rap)
 - A manual for every menu: Help > Manual (source in `src/helpdoc.js`)
 - Typesets to PDF (XeLaTeX, Chinese included; the Windows version bundles Tectonic and the usual TeX files, so it works offline); exports LaTeX, HTML and Markdown
-- Interface in English and Traditional Chinese (Tools > User Setup); to add a language, see the top of `src/i18n.js`
-- The desktop app has an MCP server, so AI tools can read, edit, compute and typeset
+- Interface in English and Traditional Chinese (Tools > User Setup). The program is written in English; Chinese is the translation file `src/locales/zh-TW.json`; to add a language, see the top of `src/i18n.js`
+- In the desktop app, Claude or ChatGPT can work on the document: Tools > Connect AI sets it up in one step; what the AI changed is tinted, and Edit > Undo AI Changes takes it back in one step
+- The desktop app has an MCP server, so AI tools can read, edit, compute and typeset; the same commands work from a terminal with `opensw-cli` (see docs/AI.md)
 
 A 5.x command it does not know is kept as a TeX field, so nothing is lost on saving or export.
 

@@ -15,11 +15,11 @@ const RULE_ROW = /\\(hline|toprule|midrule|bottomrule)/;
 
 // Line styles of the Lines choice. colspec bars and the \hline rules carry them.
 export const LINE_STYLES = [
-  ['none', _t('無格線')],
-  ['all', _t('全部格線')],
-  ['box', _t('只有外框')],
-  ['rows', _t('只有橫線')],
-  ['booktabs', _t('三線表')],
+  ['none', _t('No lines')],
+  ['all', _t('All lines')],
+  ['box', _t('Outside border only')],
+  ['rows', _t('Horizontal lines only')],
+  ['booktabs', _t('Three lines (booktabs)')],
 ];
 
 export function makeTable(rows, cols, align = 'l', lines = 'none') {
@@ -74,14 +74,14 @@ function tableAt(state) {
 
 export function setupTables({ view, dialog, toast, run }) {
   const inTable = () => isInTable(view.state);
-  const need = (fn) => () => { if (!inTable()) { toast(_t('把游標放在表格裡')); return; } fn(); };
+  const need = (fn) => () => { if (!inTable()) { toast(_t('Put the cursor in a table')); return; } fn(); };
 
   // Insert > Table: rows, columns, column alignment and lines, as 5.5 asks
   function insertTable() {
-    dialog(_t('表格'), `<p>${_t('列數')} <input id="d-rows" type="number" min="1" max="50" value="${settings().table[0]}" size="3">
-      ${_t('欄數')} <input id="d-cols" type="number" min="1" max="20" value="${settings().table[1]}" size="3"></p>
-      <p>${_t('欄對齊')} <select id="d-align"><option value="l">${_t('靠左')}</option><option value="c">${_t('置中')}</option><option value="r">${_t('靠右')}</option></select></p>
-      <p>${_t('格線')} <select id="d-lines">${LINE_STYLES.map(([v, l]) => `<option value="${v}">${l}</option>`).join('')}</select></p>`, (d) => {
+    dialog(_t('Table'), `<p>${_t('Rows')} <input id="d-rows" type="number" min="1" max="50" value="${settings().table[0]}" size="3">
+      ${_t('Columns')} <input id="d-cols" type="number" min="1" max="20" value="${settings().table[1]}" size="3"></p>
+      <p>${_t('Column alignment')} <select id="d-align"><option value="l">${_t('Flush left')}</option><option value="c">${_t('Centered')}</option><option value="r">${_t('Flush right')}</option></select></p>
+      <p>${_t('Lines')} <select id="d-lines">${LINE_STYLES.map(([v, l]) => `<option value="${v}">${l}</option>`).join('')}</select></p>`, (d) => {
       const r = Math.min(50, Math.max(1, +d.querySelector('#d-rows').value || 1));
       const c = Math.min(20, Math.max(1, +d.querySelector('#d-cols').value || 1));
       const table = makeTable(r, c, d.querySelector('#d-align').value, d.querySelector('#d-lines').value);
@@ -102,8 +102,8 @@ export function setupTables({ view, dialog, toast, run }) {
 
   // Edit > Insert Row(s) / Insert Column(s): how many and where, as 5.5 asks
   function insertRows() {
-    dialog(_t('插入列'), `<p>${_t('列數')} <input id="d-n" type="number" min="1" max="50" value="1" size="3"></p>
-      <p>${_t('位置')} <select id="d-where"><option value="after">${_t('游標所在列的下面')}</option><option value="before">${_t('上面')}</option></select></p>`, (d) => {
+    dialog(_t('Insert row'), `<p>${_t('Rows')} <input id="d-n" type="number" min="1" max="50" value="1" size="3"></p>
+      <p>${_t('Position')} <select id="d-where"><option value="after">${_t('Below the cursor\'s row')}</option><option value="before">${_t('Above')}</option></select></p>`, (d) => {
       const n = Math.min(50, Math.max(1, +d.querySelector('#d-n').value || 1));
       const cmd = d.querySelector('#d-where').value === 'before' ? addRowBefore : addRowAfter;
       for (let i = 0; i < n; i++) cmd(view.state, view.dispatch);
@@ -111,8 +111,8 @@ export function setupTables({ view, dialog, toast, run }) {
     });
   }
   function insertColumns() {
-    dialog(_t('插入欄'), `<p>${_t('欄數')} <input id="d-n" type="number" min="1" max="20" value="1" size="3"></p>
-      <p>${_t('位置')} <select id="d-where"><option value="after">${_t('游標所在欄的右邊')}</option><option value="before">${_t('左邊')}</option></select></p>`, (d) => {
+    dialog(_t('Insert column'), `<p>${_t('Columns')} <input id="d-n" type="number" min="1" max="20" value="1" size="3"></p>
+      <p>${_t('Position')} <select id="d-where"><option value="after">${_t('Right of the cursor\'s column')}</option><option value="before">${_t('Left')}</option></select></p>`, (d) => {
       const n = Math.min(20, Math.max(1, +d.querySelector('#d-n').value || 1));
       const cmd = d.querySelector('#d-where').value === 'before' ? addColumnBefore : addColumnAfter;
       for (let i = 0; i < n; i++) cmd(view.state, view.dispatch);
@@ -123,16 +123,16 @@ export function setupTables({ view, dialog, toast, run }) {
   // Edit > Properties in a table: alignment of the selected columns, and the lines
   function tableProperties() {
     const t = tableAt(view.state);
-    if (!t) { toast(_t('把游標放在表格裡')); return; }
+    if (!t) { toast(_t('Put the cursor in a table')); return; }
     const rect = selectedRect(view.state);
     const style = lineStyleOf(t.node);
     const map = TableMap.get(t.node);
     const cellAt = (c) => t.node.nodeAt(map.map[rect.top * map.width + c]);
     const cur = cellAt(rect.left).attrs.align || columnAligns(t.node.attrs.colspec || '')[rect.left] || 'l';
     const opt = (v, l, sel) => `<option value="${v}"${v === sel ? ' selected' : ''}>${l}</option>`;
-    dialog(_t('表格屬性'), `<p>${_t('第 {0}{1} 欄對齊', rect.left + 1, rect.right - rect.left > 1 ? `–${rect.right}` : '')}
-      <select id="d-align">${opt('l', _t('靠左'), cur)}${opt('c', _t('置中'), cur)}${opt('r', _t('靠右'), cur)}</select></p>
-      <p>${_t('格線')} <select id="d-lines">${style ? '' : _t('<option value="">照原本（手寫的格線）</option>')}${LINE_STYLES.map(([v, l]) => opt(v, l, style)).join('')}</select></p>`, (d) => {
+    dialog(_t('Table properties'), `<p>${_t('Alignment of column {0}{1}', rect.left + 1, rect.right - rect.left > 1 ? `–${rect.right}` : '')}
+      <select id="d-align">${opt('l', _t('Flush left'), cur)}${opt('c', _t('Centered'), cur)}${opt('r', _t('Flush right'), cur)}</select></p>
+      <p>${_t('Lines')} <select id="d-lines">${style ? '' : _t('<option value="">As it was (lines written by hand)</option>')}${LINE_STYLES.map(([v, l]) => opt(v, l, style)).join('')}</select></p>`, (d) => {
       const align = d.querySelector('#d-align').value;
       const lines = d.querySelector('#d-lines').value;
       let table = t.node;
@@ -164,10 +164,10 @@ export function setupTables({ view, dialog, toast, run }) {
   // Insert > Caption: puts the table in a floating table with a caption (LaTeX's table environment)
   function addCaption() {
     const t = tableAt(view.state);
-    if (!t) { toast(_t('把游標放在表格裡')); return; }
+    if (!t) { toast(_t('Put the cursor in a table')); return; }
     const $t = view.state.doc.resolve(t.pos);
-    if ($t.parent.type.name === 'float_box') { toast(_t('這個表格已經有標題')); return; }
-    const cap = schema.nodes.caption.create(null, [schema.text(_t('標題'))]);
+    if ($t.parent.type.name === 'float_box') { toast(_t('This table already has a caption')); return; }
+    const cap = schema.nodes.caption.create(null, [schema.text(_t('Caption'))]);
     const box = schema.nodes.float_box.create({ env: 'table', placement: 'htbp', centered: 'centering' }, [cap, t.node]);
     let tr = view.state.tr.replaceWith(t.pos, t.pos + t.node.nodeSize, box);
     tr = tr.setSelection(TextSelection.create(tr.doc, t.pos + 2, t.pos + 2 + 2));
@@ -182,8 +182,8 @@ export function setupTables({ view, dialog, toast, run }) {
     deleteRow: need(() => run(deleteRow)),
     deleteColumn: need(() => run(deleteColumn)),
     deleteTable: need(() => run(deleteTable)),
-    mergeCells: need(() => { if (!mergeCells(view.state, view.dispatch)) toast(_t('先拖曳選取要合併的幾格')); view.focus(); }),
-    splitCell: need(() => { if (!splitCell(view.state, view.dispatch)) toast(_t('這一格沒有合併過')); view.focus(); }),
+    mergeCells: need(() => { if (!mergeCells(view.state, view.dispatch)) toast(_t('First drag to select the cells to merge')); view.focus(); }),
+    splitCell: need(() => { if (!splitCell(view.state, view.dispatch)) toast(_t('This cell has not been merged')); view.focus(); }),
     tableProperties,
     addCaption: need(addCaption),
     inTable,

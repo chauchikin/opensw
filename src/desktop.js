@@ -1,24 +1,48 @@
 // File dialogs, file access and typesetting when the editor runs inside the
 // desktop app (Tauri). In a browser none of this is loaded.
-import { invoke } from '@tauri-apps/api/core';
+import { invoke as tauriInvoke } from '@tauri-apps/api/core';
 import { open, save } from '@tauri-apps/plugin-dialog';
-import { _t } from './i18n.js';
+import { _t, _tm } from './i18n.js';
+
+// The Rust part's error messages are English; show them in the interface language.
+const invoke = (cmd, args) => tauriInvoke(cmd, args).catch((e) => { throw typeof e === 'string' ? _tm(e) : e; });
 
 export const isDesktop = '__TAURI_INTERNALS__' in window;
 
-// Tools > Computation Engine > Mathematica: one Compute-menu operation by the Wolfram kernel
-// (src-tauri/src/wolfram.rs). json: the MathJSON text -> the answer object (see opensw_compute.wl)
+// Tools > Computation Engine: the engines on this computer (engine/engines.json), and one
+// Compute-menu operation by one of them (src-tauri/src/engine.rs). json: the MathJSON text
+// -> { answer: the answer object (see ENGINE.md), started: the engine's program was (re)started }
 const toBase64 = (text) => { let s = ''; for (const b of new TextEncoder().encode(text)) s += String.fromCharCode(b); return btoa(s); };
 const fromBase64 = (b64) => new TextDecoder().decode(Uint8Array.from(atob(b64), (c) => c.charCodeAt(0)));
-export async function wolframCompute(kernel, op, json) {
-  return JSON.parse(fromBase64(await invoke('wolfram_compute', { kernel: kernel || null, op, data: toBase64(json) })));
+export const engineList = () => invoke('engine_list');
+
+// The folder AI may always open and save in without asking (besides the open document's and the
+// ones allowed in Tools > User Setup): Documents\\opensw. So a new document an AI writes can be
+// saved when nobody is at the computer. null when it cannot be found.
+let aiHomeFolder;
+export async function aiHome() {
+  if (aiHomeFolder === undefined) {
+    try {
+      const { documentDir, join } = await import('@tauri-apps/api/path');
+      aiHomeFolder = (await join(await documentDir(), 'opensw')) || null;
+    } catch (e) { aiHomeFolder = null; }
+  }
+  return aiHomeFolder;
+}
+
+// Tools > Connect AI (src-tauri/src/aiconnect.rs): the AI apps on this computer, and adding opensw to one
+export const aiApps = () => invoke('ai_apps');
+export const aiConnect = (id) => invoke('ai_connect', { id });
+export async function engineCompute(engine, program, op, json) {
+  const r = await invoke('engine_compute', { engine, program: program || null, op, data: toBase64(json) });
+  return { answer: JSON.parse(fromBase64(r.data)), started: r.started };
 }
 
 const SCI = [{ name: 'Scientific Word', extensions: ['sci'] }];
 
 // -> { path, bytes } or null when the user cancels
 export async function pickAndRead() {
-  const path = await open({ multiple: false, filters: [{ name: _t('Scientific Word（.sci、5.x 的 .tex、考卷範本 .qiz）'), extensions: ['sci', 'tex', 'qiz'] }, ...SCI] });
+  const path = await open({ multiple: false, filters: [{ name: _t('Scientific Word (.sci, 5.x .tex, exam templates .qiz)'), extensions: ['sci', 'tex', 'qiz'] }, ...SCI] });
   if (!path) return null;
   return { path, bytes: new Uint8Array(await invoke('read_file', { path })) };
 }
@@ -34,6 +58,13 @@ export async function writeBytes(bytes, path, defaultName, filters = SCI) {
   await invoke('write_file', { path: target, data: Array.from(bytes) });
   return target;
 }
+
+// Tools > Document Manager: whether a file is there; renaming (never over another file); deleting
+// (into the Recycle Bin); a folder to copy into (null when cancelled)
+export const fileExists = (path) => invoke('file_exists', { path });
+export const renameFile = (from, to) => invoke('rename_file', { from, to });
+export const trashFiles = (paths) => invoke('trash_files', { paths });
+export const pickFolder = () => open({ directory: true, multiple: false });
 
 // File > Open Location: the bytes at a web address (fetched by the desktop shell)
 export async function fetchUrl(url) {
@@ -74,9 +105,11 @@ export async function serveApi(handler) {
 }
 
 // LaTeX -> PDF, opened in the system PDF viewer. files: [{ name, data }] pictures the
-// .tex names, written next to it. -> the PDF's path
-export function typeset(tex, name, files = []) {
-  return invoke('typeset', { tex, name, files: files.map((f) => ({ name: f.name, data: Array.from(f.data) })) });
+// .tex names, written next to it. -> { pdf: its path, errors: what TeX reported (the PDF comes
+// out anyway, as in 5.5, but those parts may be wrong) }
+export async function typeset(tex, name, files = []) {
+  const r = await invoke('typeset', { tex, name, files: files.map((f) => ({ name: f.name, data: Array.from(f.data) })) });
+  return typeof r === 'string' ? { pdf: r, errors: [] } : r;
 }
 
 // Lean 4 checks a file in a Lean project with Mathlib (the folder the user chose)

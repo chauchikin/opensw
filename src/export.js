@@ -4,6 +4,7 @@ import { frameAttrs, includeAttrs } from './graphics.js';
 import { TableMap } from 'prosemirror-tables';
 import { splitRows } from './numbering.js';
 import { _t } from './i18n.js';
+import { readDefs, withoutDefs } from './texmacros.js';
 
 // ---------- LaTeX ----------
 const SECTION_CMD = ['part', 'chapter', 'section', 'subsection', 'subsubsection', 'paragraph', 'subparagraph'];
@@ -18,10 +19,11 @@ const escTex = (s) => s.replace(/[\\{}#$%&_~^]/g, (c) => ESC[c]).replace(/[\u00a
 
 // The Chinese font: the first of these the computer has. An older TeX (MiKTeX 2.9, for example)
 // has no \IfFontExistsTF; it gets PMingLiU, which Windows has.
+// PMingLiU has no bold: headings and \textbf are drawn thicker (AutoFakeBold), as Word does
 const CJK_FONT = `\\ifdefined\\IfFontExistsTF
 \\IfFontExistsTF{Noto Serif CJK TC}{\\setCJKmainfont{Noto Serif CJK TC}}{%
-  \\IfFontExistsTF{PMingLiU}{\\setCJKmainfont{PMingLiU}}{\\setCJKmainfont{Microsoft JhengHei}}}
-\\else\\setCJKmainfont{PMingLiU}\\fi
+  \\IfFontExistsTF{PMingLiU}{\\setCJKmainfont[AutoFakeBold=2.5]{PMingLiU}}{\\setCJKmainfont{Microsoft JhengHei}}}
+\\else\\setCJKmainfont[AutoFakeBold=2.5]{PMingLiU}\\fi
 `;
 
 // packages from the .sci preamble that a normal TeX installation has
@@ -229,7 +231,7 @@ function tableTex(node) {
       cells.push(s);
       c += colspan;
     }
-    lines.push((row.attrs.before ? row.attrs.before + '\n' : '') + cells.join(' & ') + ' \\\\');
+    lines.push((row.attrs.before ? row.attrs.before + '\n' : '') + cells.join(' & ') + ' \\\\' + (row.attrs.space ? `[${row.attrs.space}]` : ''));
   });
   return `\\begin{tabular}${node.attrs.pos ? `[${node.attrs.pos}]` : ''}{${spec}}\n${lines.join('\n')}${node.attrs.after ? '\n' + node.attrs.after : ''}\n\\end{tabular}`;
 }
@@ -383,7 +385,7 @@ function inlineMd(node) {
     else if (child.type.name === 'html_field') s = child.attrs.html;
     else if (child.type.name === 'hard_break') s = '  \n';
     else if (child.type.name === 'image') s = `![${child.attrs.caption || ''}](${child.attrs.path})`;
-    else if (child.type.name === 'note') s = `^[${child.attrs.kind === 'margin' ? _t('邊註：') : ''}${inlineMd(child)}]`;
+    else if (child.type.name === 'note') s = `^[${child.attrs.kind === 'margin' ? _t('Margin note: ') : ''}${inlineMd(child)}]`;
     else if (child.type.name === 'cite') s = child.attrs.kind === 'nocite' ? '' : `[${child.attrs.keys.split(',').map((k) => '@' + k).join('; ')}${child.attrs.note ? ', ' + child.attrs.note : ''}]`;
     else s = '';
     for (const m of child.marks) {
@@ -412,11 +414,11 @@ function blockMd(node, indent = '') {
     case 'caption': return indent + '*' + inlineMd(node) + '*\n\n';
     case 'verbatim': return '```\n' + node.textContent + '\n```\n\n';
     case 'bibliography': {
-      let s = _t('## 參考文獻\n\n');
+      let s = _t('## References\n\n');
       node.forEach((it) => { s += `- [${it.attrs.key}] ${inlineMd(it)}\n`; });
       return s + '\n';
     }
-    case 'bibtex': return _t('（參考文獻來自 BibTeX：{0}）\n\n', node.attrs.files);
+    case 'bibtex': return _t('(References come from BibTeX: {0})\n\n', node.attrs.files);
     case 'env': {
       let inner = '';
       node.forEach((c) => { inner += blockMd(c); });
@@ -477,10 +479,11 @@ export function originalTex55(text, opts = {}) {
 
 // A Scientific Word 5.x document keeps its own preamble, which loads SW's macro
 // files (tcilatex.tex and its style); the desktop app has those files.
-function toLatex55(doc, meta, opts = {}) {
+const AMS_ONLY = /\\(dfrac|tfrac|dbinom|tbinom|binom|text|operatorname|boldsymbol|eqref|tag|substack|overset|underset|xrightarrow|xleftarrow|iint|iiint|genfrac|intertext)(?![a-zA-Z])|\\begin\{(align|gather|multline|flalign|alignat|split|cases|pmatrix|bmatrix|vmatrix|Vmatrix|Bmatrix|smallmatrix)\*?\}/;
+// the 5.x writer's state for doc: the author line shown under the title is \author, not a separate block
+function start55(doc, meta) {
   doc55 = { author55: meta.author55, skip: null, graphicx: false,
     hyperref: /\\usepackage(\[[^\]]*\])?\{[^}]*\bhyperref\b/.test(meta.preamble55) };
-  // the author line shown under the title is \author, not a separate block
   doc.forEach((n, off, i) => {
     if (n.type.name === 'title' && !n.attrs.form && meta.author55) { // an empty \author{} has no block
       const next = i + 1 < doc.childCount ? doc.child(i + 1) : null;
@@ -488,29 +491,168 @@ function toLatex55(doc, meta, opts = {}) {
     }
   });
   if (doc55.skip) doc55.author55 = inlineTex(doc55.skip.firstChild); // the author line as edited
+}
+function toLatex55(doc, meta, opts = {}) {
   const envs = new Set();
   let body;
   let graphicx = false;
+  start55(doc, meta);
   try { body = childrenTex(doc, envs); graphicx = doc55.graphicx; } finally { doc55 = null; }
-  // only where the document's style has not made it already: 5.x's thmsa option (sw20*
-  // styles) defines theorem, remark, definition, example ... itself
-  const theorems = [...envs].filter((k) => !new RegExp('\\\\newtheorem\\s*\\{' + k + '\\}').test(meta.preamble55))
-    .map((k) => `\\expandafter\\ifx\\csname ${k}\\endcsname\\relax\\newtheorem{${k}}{${envLabel(k)}}\\fi`).join('\n');
   // Chinese anywhere in the text, formulas included ($\mathsf{李}$)
   const cjk = /[\u3000-\u9fff\uf900-\ufaff\uff00-\uffef]/.test(body)
     ? `\\usepackage{xeCJK}\n${CJK_FONT}` : '';
-  // XeTeX would use its own default paper; use the document's (letter for most 5.x documents)
-  const pkgs = tablePackages(body, meta.preamble55);
-  if (graphicx && !/\\usepackage(\[[^\]]*\])?\{[^}]*\bgraphicx\b/.test(meta.preamble55)) pkgs.push('graphicx');
-  if (usedXcolor && !/\\usepackage(\[[^\]]*\])?\{[^}]*\bx?color\b/.test(meta.preamble55)) pkgs.push('xcolor');
-  // index entries: makeidx and \makeindex (5.x writes \makeindex itself when TCIMAKEINDEX is set)
-  const index55 = (usedIndex || /\\printindex/.test(body)) && !/\\makeindex|TCIMAKEINDEX/.test(meta.preamble55);
-  if (index55) pkgs.push('makeidx');
-  const tablePkgs = pkgs.map((p) => `\\usepackage{${p}}\n`).join('') + (index55 ? '\\makeindex\n' : '');
+  const { tablePkgs, theorems } = additions55(body, envs, meta.preamble55, graphicx);
   // a file for 5.x itself gets neither: 5.x typesets with its own TeX
   if (opts.file55) return `${meta.preamble55.trimEnd()}\n${tablePkgs}${theorems}${theorems ? '\n' : ''}\n\\begin{document}\n\n${body.trim()}\n\n\\end{document}\n`;
   const paper = tablePkgs + '\\ifdefined\\XeTeXversion\\pdfpagewidth=\\paperwidth \\pdfpageheight=\\paperheight\\fi\n';
   return `${meta.preamble55}\n${paper}${cjk}${theorems}\n\n\\begin{document}\n\n${body.trim()}\n\n\\end{document}\n`;
+}
+
+// what the preamble must add for body (5.x text the editor wrote): packages, \makeindex, theorems
+function additions55(body, envs, preamble, graphicx) {
+  // only where the document's style has not made it already: 5.x's thmsa option (sw20*
+  // styles) defines theorem, remark, definition, example ... itself
+  const theorems = [...envs].filter((k) => !new RegExp('\\\\newtheorem\\s*\\{' + k + '\\}').test(preamble))
+    .map((k) => `\\expandafter\\ifx\\csname ${k}\\endcsname\\relax\\newtheorem{${k}}{${envLabel(k)}}\\fi`).join('\n');
+  // XeTeX would use its own default paper; use the document's (letter for most 5.x documents)
+  const pkgs = tablePackages(body, preamble);
+  // \dfrac, \text, align ... need amsmath; a preamble without it (a document set as LaTeX
+  // by AI, or an old file) would leave them as errors in the PDF
+  // (5.x's tcilatex.tex defines them itself when amsmath is not loaded)
+  if (AMS_ONLY.test(body) && !/\\input\{tcilatex\}/.test(preamble) && !/\\usepackage(\[[^\]]*\])?\{[^}]*\bamsmath\b|\\documentclass(\[[^\]]*\])?\{ams/.test(preamble)) pkgs.unshift('amsmath');
+  if (graphicx && !/\\usepackage(\[[^\]]*\])?\{[^}]*\bgraphicx\b/.test(preamble)) pkgs.push('graphicx');
+  if (usedXcolor && !/\\usepackage(\[[^\]]*\])?\{[^}]*\bx?color\b/.test(preamble)) pkgs.push('xcolor');
+  // index entries: makeidx and \makeindex (5.x writes \makeindex itself when TCIMAKEINDEX is set)
+  const index55 = (usedIndex || /\\printindex/.test(body)) && !/\\makeindex|TCIMAKEINDEX/.test(preamble);
+  if (index55) pkgs.push('makeidx');
+  const tablePkgs = pkgs.map((p) => `\\usepackage{${p}}\n`).join('') + (index55 ? '\\makeindex\n' : '');
+  return { tablePkgs, theorems };
+}
+
+// Saving an edited 5.x file: the parts nobody edited are written as they were in the file
+// (spans: tex55.js fileParts55, made when it was opened or last saved, for loadedDoc);
+// only the edited parts are written from the editor. The preamble is the file's, with
+// what the new parts need added; one the user edited (Typeset > Preamble) replaces it.
+// -> { text, spans } for doc, or null (no parts known, or they do not fit loadedDoc)
+export function patchTex55(spans, loadedDoc, doc, meta) {
+  if (!spans || spans.segs.reduce((a, g) => a + g.n, 0) !== loadedDoc.childCount) return null;
+  const L = [], C = [];
+  loadedDoc.forEach((n) => L.push(n));
+  doc.forEach((n) => C.push(n));
+  const match = matchBlocks(L, C);
+  // a part is kept when all its blocks are still there, one after another
+  const keptAt = new Map(); // index in C -> part
+  let a = 0;
+  let from = spans.head;
+  spans.segs.forEach((g) => {
+    const j = match[a];
+    let ok = j >= 0;
+    for (let t = 1; ok && t < g.n; t++) ok = match[a + t] === j + t;
+    if (ok) keptAt.set(j, { from, to: g.to, n: g.n });
+    a += g.n;
+    from = g.to;
+  });
+  const text = spans.text;
+  const tail = text.slice(from);
+  texFiles = new Map(); // pictures stay \FRAMEs: 5.x shows them itself
+  usedXcolor = false;
+  usedIndex = false;
+  const envs = new Set();
+  const pieces = []; // [text, blocks, kept]
+  let made = '';
+  let graphicx = false;
+  start55(doc, meta);
+  try {
+    for (let j = 0; j < C.length;) {
+      const k = keptAt.get(j);
+      if (k) { pieces.push([text.slice(k.from, k.to), k.n, true]); j += k.n; continue; }
+      const run = [];
+      while (j < C.length && !keptAt.has(j)) run.push(C[j++]);
+      const t = childrenTex({ forEach: (f) => run.forEach((n, i) => f(n, 0, i)) }, envs).trim();
+      made += t + '\n\n';
+      pieces.push(['\n\n' + t, run.length, false]);
+    }
+    graphicx = doc55.graphicx;
+  } finally { doc55 = null; }
+  // the preamble: the user's own edit, or the file's
+  const b = text.lastIndexOf('\\begin{document}', spans.head);
+  let pre = meta.preamble55raw != null && meta.preamble55raw !== spans.preamble ? meta.preamble55raw : text.slice(0, b);
+  if (made) {
+    const { tablePkgs, theorems } = additions55(made, envs, pre, graphicx);
+    if (tablePkgs || theorems) pre = `${pre.trimEnd()}\n${tablePkgs}${theorems}${theorems ? '\n' : ''}\n`;
+  }
+  let out = pre + text.slice(b, spans.head);
+  const head = out.length;
+  const segs = [];
+  pieces.forEach(([t, n, kept], i) => {
+    // a kept part after a written one starts a new paragraph (the first part may not have a blank line)
+    if (kept && i && !pieces[i - 1][2] && !/^[ \t]*\n[ \t]*\n/.test(t)) out += '\n\n';
+    out += t;
+    segs.push({ to: out.length, n });
+  });
+  if (pieces.length && !pieces.at(-1)[2] && !/^[ \t]*\n/.test(tail)) out += '\n\n';
+  out += tail;
+  return { text: out, spans: { text: out, head, segs, preamble: meta.preamble55raw ?? spans.preamble } };
+}
+
+// L[i] is C[match[i]] (the same block, unchanged), or -1: the longest such pairing in order
+function matchBlocks(L, C) {
+  const match = new Array(L.length).fill(-1);
+  let p = 0;
+  while (p < L.length && p < C.length && L[p].eq(C[p])) { match[p] = p; p++; }
+  let qL = L.length, qC = C.length;
+  while (qL > p && qC > p && L[qL - 1].eq(C[qC - 1])) { qL--; qC--; match[qL] = qC; }
+  const n = qL - p, m = qC - p;
+  if (!n || !m || n * m > 4e6) return match;
+  // longest common subsequence of the middle
+  const w = m + 1;
+  const len = new Uint32Array((n + 1) * w);
+  for (let i = n - 1; i >= 0; i--) {
+    for (let j = m - 1; j >= 0; j--) {
+      len[i * w + j] = L[p + i].eq(C[p + j]) ? len[(i + 1) * w + j + 1] + 1 : Math.max(len[(i + 1) * w + j], len[i * w + j + 1]);
+    }
+  }
+  for (let i = 0, j = 0; i < n && j < m;) {
+    if (L[p + i].eq(C[p + j]) && len[i * w + j] === len[(i + 1) * w + j + 1] + 1) { match[p + i] = p + j; i++; j++; }
+    else if (len[(i + 1) * w + j] >= len[i * w + j + 1]) i++;
+    else j++;
+  }
+  return match;
+}
+
+const is5xPreamble = (p) => /\\input\{tcilatex\}|%TCIDATA/.test(p);
+
+// packages and commands only XeTeX or LuaTeX have (5.5 typesets with pdfLaTeX)
+const XE_PACKAGES = new Set(['fontspec', 'xeCJK', 'xunicode', 'xltxtra', 'polyglossia', 'unicode-math', 'ctex', 'luatexja', 'luatexja-fontspec']);
+const XE_CMDS = /\\(setmainfont|setsansfont|setmonofont|setmathfont|setCJKmainfont|setCJKsansfont|setCJKmonofont|setCJKfamilyfont|newfontfamily|newCJKfontfamily|defaultfontfeatures|XeTeXlinebreaklocale|XeTeXlinebreakskip)(?![a-zA-Z])/;
+
+// A LaTeX document's own preamble (not one 5.x wrote), as lines a 5.x file can keep: what
+// 5.5's pdfLaTeX has, without the definitions written out in the text (texmacros.js)
+// and without XeTeX's font commands
+function latexPreambleFor55(pre) {
+  let p = pre.replace(/\\documentclass(\[[^\]]*\])?\{[^}]*\}/, '');
+  p = withoutDefs(p, readDefs(p).spans);
+  // \usepackage[..]{a,b}: only the packages pdfLaTeX has
+  p = p.replace(/\\usepackage(\[[^\]]*\])?\{([^}]*)\}/g, (all, opt, list) => {
+    const keep = list.split(',').map((x) => x.trim()).filter((x) => x && !XE_PACKAGES.has(x));
+    return keep.length ? `\\usepackage${keep.length === list.split(',').length ? opt || '' : ''}{${keep.join(',')}}` : '';
+  });
+  // a font command with its arguments: \newfontfamily\sans{Noto Sans}[Ligatures=TeX], \XeTeXlinebreakskip=0pt plus 1pt
+  for (let m; (m = p.match(XE_CMDS));) {
+    let j = m.index + m[0].length;
+    if (/^XeTeX/.test(m[1])) { const e = p.slice(j).search(/\\|\n/); j = e < 0 ? p.length : j + e; }
+    else {
+      for (;;) {
+        const k = j + (p.slice(j).match(/^\s*/)[0].length);
+        if (p[k] === '\\' && m[1].startsWith('new') && j === m.index + m[0].length) { j = k + p.slice(k).match(/^\\[a-zA-Z]+/)[0].length; continue; }
+        if (p[k] === '{') { j = Parser55.groupEnd(p, k); continue; }
+        if (p[k] === '[') { j = p.indexOf(']', k) + 1; continue; }
+        break;
+      }
+    }
+    p = p.slice(0, m.index) + p.slice(j);
+  }
+  return p.split('\n').map((l) => l.trimEnd()).filter((l) => l.trim()).join('\n');
 }
 
 // A document as a Scientific Word 5.x .tex file (text; tex55file.js encodes it).
@@ -522,12 +664,16 @@ export function toTex55File(doc, meta = {}) {
   usedIndex = false;
   const cjk = /[\u3000-\u9fff\uf900-\ufaff\uff00-\uffef]/.test(doc.textContent);
   const cls = meta.documentclass && /^(article|book|report|amsart|amsbook)$/.test(meta.documentclass) ? meta.documentclass : 'article';
-  const preamble = meta.preamble55raw || meta.preamble55 || [
+  const own = meta.preamble55raw || meta.preamble55;
+  const clsOpt = (own && !is5xPreamble(own) && (stripComments(own).match(/\\documentclass(\[[^\]]*\])/) || [])[1]) || '';
+  const preamble = (own && is5xPreamble(own) ? own : null) || [
     cjk ? '%2multibyte Version: 5.50.0.2960 CodePage: 950' : '%% This document created by opensw',
-    '', `\\documentclass{${cls}}`, '\\usepackage{amsmath}', '',
+    '', `\\documentclass${clsOpt}{${cls}}`, '\\usepackage{amsmath}',
+    // a LaTeX document's packages and settings go where 5.x writes its \usepackage lines
+    own ? latexPreambleFor55(meta.preamble55 || own) : '', '',
     '%TCIDATA{OutputFilter=LATEX.DLL}', '%TCIDATA{Version=5.50.0.2960}', cjk ? '%TCIDATA{Codepage=950}' : '%TCIDATA{Codepage=1252}',
-    `%TCIDATA{CSTFile=40 LaTeX ${cls}.cst}`, '', '\\input{tcilatex}', meta.preambleTeX || '',
-  ].join('\n');
+    `%TCIDATA{CSTFile=40 LaTeX ${cls}.cst}`, '', '\\input{tcilatex}', own ? '' : meta.preambleTeX || '',
+  ].join('\n').replace(/\n{3,}/g, '\n\n');
   return toLatex55(doc, { ...meta, preamble55: preamble, author55: meta.preamble55 ? meta.author55 : null }, { file55: true });
 }
 

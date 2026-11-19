@@ -189,7 +189,7 @@ export async function buildExams(doc, { versions = 1, seed = null, answers = tru
   for (let v = 0; v < versions; v++) {
     key.length = 0;
     const rnd = randomFrom(baseSeed + v * 7919);
-    if (versions > 1) out.push(schema.nodes.heading.create({ level: 1, nonum: true }, text(_t('第 {0} 份', v + 1))));
+    if (versions > 1) out.push(schema.nodes.heading.create({ level: 1, nonum: true }, text(_t('Version {0}', v + 1))));
     // the parts and questions of this version (a question with variants: one of them, at random)
     const plan = { texts: [], parts: [] };
     const payload = { seed: baseSeed + v * 7919, setup: top.statements, formulas: [], parts: [] };
@@ -238,11 +238,11 @@ export async function buildExams(doc, { versions = 1, seed = null, answers = tru
         const [qOut, answer] = renderQuestion(one.question, take(one.values), one.settings, rnd, numbered ? `${n}. ` : '');
         out.push(...qOut);
         // the answers: by the question's number (an unnumbered question with an answer: by its place)
-        if (numbered || answer.length) key.push(...labelled(numbered ? `${n}. ` : _t('（第 {0} 題，沒有編號）', n), answer.length ? answer : [para(text(_t('（沒有標準答案）')))]));
+        if (numbered || answer.length) key.push(...labelled(numbered ? `${n}. ` : _t('(Question {0}, no number)', n), answer.length ? answer : [para(text(_t('(no model answer)')))]));
       }
     });
     if (answers) {
-      out.push(schema.nodes.heading.create({ level: 2, nonum: true }, text(versions > 1 ? _t('第 {0} 份的答案', v + 1) : _t('答案'))), ...key.splice(0));
+      out.push(schema.nodes.heading.create({ level: 2, nonum: true }, text(versions > 1 ? _t('Answers for version {0}', v + 1) : _t('Answers'))), ...key.splice(0));
     }
   }
   return schema.nodes.doc.create(null, out.length ? out : [para()]);
@@ -278,7 +278,7 @@ function renderQuestion(q, next, settings, rnd, number) {
       out.push(...labelled(`(${LETTERS[i]}) `, c.blocks));
       if (c.correct) right.push(LETTERS[i]);
     });
-    if (res.input) out.push(para(text(_t('答：＿＿＿＿＿＿＿＿＿＿'))));
+    if (res.input) out.push(para(text(_t('Answer: __________'))));
     if (right.length) keyLine.push((many && r.statement ? `(${'abcdefghij'[sub]}) ` : '') + right.map((x) => `(${x})`).join(' '));
     if (r.statement) sub++;
   }

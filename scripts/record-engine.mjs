@@ -1,6 +1,6 @@
 // Records every request the editor sends to the SymPy engine, and its answer, while a test
 // runs:  OPENSW_RECORD=/tmp/rec.jsonl node --import ./scripts/record-engine.mjs test/plots4.mjs
-// (used to make the cases test/wolfram.wls checks Mathematica's answers against)
+// (used to make the cases test/wolfram_vs_sympy.wls checks Mathematica's answers against)
 import { appendFileSync } from 'node:fs';
 import { chromium } from 'playwright';
 

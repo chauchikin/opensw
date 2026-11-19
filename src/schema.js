@@ -21,7 +21,7 @@ const TABLE = tableNodes({
 TABLE.table.attrs = { colspec: { default: null }, after: { default: '' }, pos: { default: null }, inline: { default: false } };
 TABLE.table.toDOM = (n) => ['table', { class: 'sw-table' + (/\|/.test(n.attrs.colspec || '') ? ' ruled-v' : '') + (/hline|rule/.test(n.attrs.after) ? ' ruled-bottom' : '') }, ['tbody', 0]];
 // before: rules above this row (\hline, \cline{2-3}) as written
-TABLE.table_row.attrs = { before: { default: '' } };
+TABLE.table_row.attrs = { before: { default: '' }, space: { default: '' } }; // space: \\[9pt] after the row
 TABLE.table_row.toDOM = (n) => ['tr', /hline|rule|cline/.test(n.attrs.before) ? { class: 'ruled-top' } : {}, 0];
 
 // Document model. Block and inline kinds follow the tags Scientific Word uses
@@ -57,7 +57,7 @@ export const schema = new Schema({
       content: 'block+',
       attrs: { kind: { default: 'theorem' }, title: { default: null } }, // title: \begin{theorem}[title]
       defining: true,
-      toDOM: (n) => ['div', { class: 'env env-' + n.attrs.kind, 'data-label': envLabel(n.attrs.kind), 'data-title': n.attrs.title ? _t('（{0}）', n.attrs.title) : '' }, 0],
+      toDOM: (n) => ['div', { class: 'env env-' + n.attrs.kind, 'data-label': envLabel(n.attrs.kind), 'data-title': n.attrs.title ? _t(' ({0})', n.attrs.title) : '' }, 0],
     },
     // kind: itemize, or description (items with a term as label)
     bullet_list: {
@@ -129,7 +129,7 @@ export const schema = new Schema({
         const pic = a.src
           ? ['img', { src: a.src, style: size, alt: a.path }]
           : ['span', { class: 'image-missing', style: size || 'width:120px;height:80px;' },
-            (a.plot ? _t('圖形（5.5 的繪圖）') : _t('圖片')) + (a.path ? _t('：') + a.path.split('/').pop() : '')];
+            (a.plot ? _t('Plot (a 5.5 plot)') : _t('Picture')) + (a.path ? _t(': ') + a.path.split('/').pop() : '')];
         const cap = a.place === 'float' && a.caption ? [['span', { class: 'image-caption' }, a.caption]] : [];
         return ['span', { class: 'image place-' + a.place, title: a.path || '' }, ['span', { class: 'image-pic' }, pic], ...cap];
       },
@@ -142,7 +142,7 @@ export const schema = new Schema({
       attrs: { keys: { default: '' }, note: { default: null }, kind: { default: 'cite' } },
       // a citation shows its numbers from numbering.js (data-num)
       toDOM: (n) => (n.attrs.kind === 'nocite'
-        ? ['span', { class: 'cite cite-nocite', title: n.attrs.keys }, _t('［不顯示的引用：{0}］', n.attrs.keys)]
+        ? ['span', { class: 'cite cite-nocite', title: n.attrs.keys }, _t('[Hidden citation: {0}]', n.attrs.keys)]
         : ['span', { class: 'cite cite-cite', title: n.attrs.keys }]),
     },
     // A list of references written in the document (thebibliography); widest: the
@@ -165,7 +165,7 @@ export const schema = new Schema({
       group: 'block',
       atom: true,
       attrs: { style: { default: 'plain' }, files: { default: '' } },
-      toDOM: (n) => ['div', { class: 'bibtex' }, _t('參考文獻（BibTeX：{0}，樣式 {1}）', n.attrs.files, n.attrs.style)],
+      toDOM: (n) => ['div', { class: 'bibtex' }, _t('References (BibTeX: {0}, style {1})', n.attrs.files, n.attrs.style)],
     },
     // \index{entry}: an index entry (entry as written: "sub!subsub@sorted|see{..}")
     index_entry: {
@@ -173,7 +173,7 @@ export const schema = new Schema({
       inline: true,
       atom: true,
       attrs: { entry: { default: '' } },
-      toDOM: (n) => ['span', { class: 'index-entry', title: _t('索引：') + n.attrs.entry }],
+      toDOM: (n) => ['span', { class: 'index-entry', title: _t('Index: ') + n.attrs.entry }],
     },
     // A footnote or margin note (\footnote, \marginpar). Its text is inside it; the
     // editor shows only a mark and opens the text on click (noteview.js).
@@ -192,10 +192,10 @@ export const schema = new Schema({
       atom: true,
       attrs: { tex: { default: '' } },
       toDOM: (n) => (n.attrs.tex.startsWith('\\FRAME')
-        ? ['span', { class: 'tex-field frame', title: n.attrs.tex.slice(0, 300) }, _t('［5.5 的圖，這裡還不能顯示］')]
+        ? ['span', { class: 'tex-field frame', title: n.attrs.tex.slice(0, 300) }, _t('[A 5.5 picture that cannot be shown here yet]')]
         : SKIPS[n.attrs.tex.trim()] // vertical space as 5.5 shows it
           ? ['span', { class: 'tex-field vspace', title: n.attrs.tex }, SKIPS[n.attrs.tex.trim()]]
-          : ['span', { class: 'tex-field', title: _t('TeX 原始碼欄位') }, n.attrs.tex]),
+          : ['span', { class: 'tex-field', title: _t('TeX source field') }, n.attrs.tex]),
     },
     // HTML field (Insert > HTML Field): HTML used only when the document is exported as HTML
     html_field: {
@@ -203,7 +203,7 @@ export const schema = new Schema({
       inline: true,
       atom: true,
       attrs: { html: { default: '' } },
-      toDOM: (n) => ['span', { class: 'tex-field html-field', title: _t('HTML 欄位（只在匯出 HTML 時用）') }, n.attrs.html],
+      toDOM: (n) => ['span', { class: 'tex-field html-field', title: _t('HTML field (used only when exporting HTML)') }, n.attrs.html],
     },
     ...TABLE,
     // front matter written as a command with text: \address{..} \email{..} \keywords{..} ...
@@ -220,20 +220,20 @@ export const schema = new Schema({
       group: 'block',
       atom: true,
       attrs: { file: { default: '' }, tex: { default: '' } },
-      toDOM: (n) => ['div', { class: 'subdoc' }, _t('子文件：') + n.attrs.file],
+      toDOM: (n) => ['div', { class: 'subdoc' }, _t('Subdocument: ') + n.attrs.file],
     },
     // \tableofcontents, \listoffigures, \listoftables: made when typesetting
     toc: {
       group: 'block',
       atom: true,
       attrs: { kind: { default: 'tableofcontents' } },
-      toDOM: (n) => ['div', { class: 'toc' }, { tableofcontents: _t('目錄'), listoffigures: _t('圖目錄'), listoftables: _t('表目錄'), printindex: _t('索引') }[n.attrs.kind] + _t('（排版時產生）')],
+      toDOM: (n) => ['div', { class: 'toc' }, { tableofcontents: _t('Contents'), listoffigures: _t('List of Figures'), listoftables: _t('List of Tables'), printindex: _t('Index') }[n.attrs.kind] + _t(' (made when typesetting)')],
     },
     // \appendix: the chapters or sections after it are numbered A, B, ...
     appendix: {
       group: 'block',
       atom: true,
-      toDOM: () => ['div', { class: 'appendix-mark' }, _t('附錄（以下各節編號 A、B…）')],
+      toDOM: () => ['div', { class: 'appendix-mark' }, _t('Appendix (the sections below are numbered A, B…)')],
     },
     // A table or figure that LaTeX places where it fits (table/figure environment),
     // with an optional caption. env: table | figure; placement: [htbp]; centered: how
@@ -257,7 +257,7 @@ export const schema = new Schema({
       inline: true,
       atom: true,
       attrs: { key: {} },
-      toDOM: (n) => ['span', { class: 'marker', title: _t('標記：') + n.attrs.key, 'data-key': n.attrs.key }],
+      toDOM: (n) => ['span', { class: 'marker', title: _t('Marker: ') + n.attrs.key, 'data-key': n.attrs.key }],
     },
     // A cross-reference to a marker. kind: ref (the number), eqref (number in
     // parentheses) or pageref (the page, known only after typesetting).
@@ -266,7 +266,7 @@ export const schema = new Schema({
       inline: true,
       atom: true,
       attrs: { key: {}, kind: { default: 'ref' } },
-      toDOM: (n) => ['span', { class: 'xref xref-' + n.attrs.kind, title: _t('交叉引用：') + n.attrs.key, 'data-key': n.attrs.key }],
+      toDOM: (n) => ['span', { class: 'xref xref-' + n.attrs.kind, title: _t('Cross-reference: ') + n.attrs.key, 'data-key': n.attrs.key }],
     },
     hard_break: {
       group: 'inline',
@@ -298,17 +298,17 @@ export const schema = new Schema({
   },
 });
 
-const SKIPS = { '\\bigskip': _t('↕ 大間距'), '\\medskip': _t('↕ 中間距'), '\\smallskip': _t('↕ 小間距'), '\\newpage': _t('⤓ 換頁'), '\\pagebreak': _t('⤓ 換頁') };
-export const FRONT_LABELS = { address: _t('地址'), curraddr: _t('現職地址'), email: _t('電子郵件'), urladdr: _t('網址'), dedicatory: _t('獻詞'),
-  keywords: _t('關鍵詞'), subjclass: _t('分類'), translator: _t('譯者'), date: _t('日期') };
+const SKIPS = { '\\bigskip': _t('↕ Big skip'), '\\medskip': _t('↕ Medium skip'), '\\smallskip': _t('↕ Small skip'), '\\newpage': _t('⤓ New page'), '\\pagebreak': _t('⤓ New page') };
+export const FRONT_LABELS = { address: _t('Address'), curraddr: _t('Current address'), email: _t('Email'), urladdr: _t('URL'), dedicatory: _t('Dedication'),
+  keywords: _t('Keywords'), subjclass: _t('Subject classification'), translator: _t('Translator'), date: _t('Date') };
 
 const LABELS = {
-  theorem: _t('定理'), lemma: _t('引理'), corollary: _t('推論'), proposition: _t('命題'),
-  definition: _t('定義'), example: _t('例'), remark: _t('注'), proof: _t('證明'),
-  conjecture: _t('猜想'), exercise: _t('習題'), note: _t('注意'),
-  axiom: _t('公理'), case: _t('情形'), claim: _t('斷言'), conclusion: _t('結論'), condition: _t('條件'), criterion: _t('準則'),
-  notation: _t('記號'), problem: _t('問題'), solution: _t('解'), summary: _t('摘要'), centered: _t('置中'),
-  abstract: _t('摘要'), quote: _t('引文'), quotation: _t('引文'), verse: _t('詩'), flushleft: _t('靠左'), flushright: _t('靠右'),
+  theorem: _t('Theorem'), lemma: _t('Lemma'), corollary: _t('Corollary'), proposition: _t('Proposition'),
+  definition: _t('Definition'), example: _t('Example'), remark: _t('Remark'), proof: _t('Proof'),
+  conjecture: _t('Conjecture'), exercise: _t('Exercise'), note: _t('Note'),
+  axiom: _t('Axiom'), case: _t('Case'), claim: _t('Claim'), conclusion: _t('Conclusion'), condition: _t('Condition'), criterion: _t('Criterion'),
+  notation: _t('Notation'), problem: _t('Problem'), solution: _t('Solution'), summary: _t('Summary'), centered: _t('Centered'),
+  abstract: _t('Summary'), quote: _t('Quotation'), quotation: _t('Quotation'), verse: _t('Verse'), flushleft: _t('Flush left'), flushright: _t('Flush right'),
 };
 // LaTeX's own environments (not theorems): no \newtheorem, no number
 export const PLAIN_ENVS = new Set(['proof', 'centered', 'abstract', 'quote', 'quotation', 'verse', 'flushleft', 'flushright']);

@@ -25,10 +25,10 @@ const opensw = (el) => { try { return JSON.parse(el.getAttribute('data-opensw') 
 export async function readSci(data) {
   const zip = await JSZip.loadAsync(data);
   const file = zip.file('main.xhtml') || zip.file(/\.xhtml$/)[0];
-  if (!file) throw new Error(_t('這個 .sci 裡找不到 main.xhtml'));
+  if (!file) throw new Error(_t('main.xhtml is missing from this .sci'));
   const xml = await file.async('string');
   const dom = new DOMParser().parseFromString(xml, 'application/xml');
-  if (dom.querySelector('parsererror')) throw new Error(_t('main.xhtml 格式錯誤'));
+  if (dom.querySelector('parsererror')) throw new Error(_t('main.xhtml is malformed'));
 
   // pictures inside the zip -> blob URLs
   const images = {};

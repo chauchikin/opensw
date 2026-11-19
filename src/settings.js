@@ -11,13 +11,29 @@ export const DEFAULTS = {
   mathColor: '#c00000', // formulas on screen (5.5: red)
   htmlMath: 'mathml', // File > Export HTML: formulas as MathML, or LaTeX for MathJax
   pictureScale: 3, // Edit > Copy as Picture: pixels per screen pixel
-  engine: 'sympy', // Tools > Computation Engine: sympy, or mathematica (desktop app, Mathematica installed)
-  wolframKernel: '', // the console kernel (wolfram.exe); empty: found automatically
-  lang: 'auto', // the interface language (src/locales); auto: the system's language
+  engine: 'sympy', // Tools > Computation Engine: sympy, or the id of an engine in engine/engines.json (desktop app)
+  enginePrograms: {}, // engine id -> its program on this computer (wolfram.exe ...); none: found automatically
+  solvePrincipal: false, // Solve > Exact gives one solution, not every one (5.5: Engine Setup, Solve Options, Principal Value Only)
+  logBase10: false, // \log is base 10, not e (5.5: Computation Setup, General, Base for Log Function, Change from e to 10)
+  basis: ['x', 'y', 'z'], // the variables of grad, div, curl, ∇ (5.5: Compute > Vector Calculus > Set Basis Variables)
+  aiFolders: [], // folders where AI (MCP) may open and save files, besides the open document's
+  lang: 'en', // the interface language (src/locales); auto: the system's language
 };
 
 export function settings() {
-  try { return { ...DEFAULTS, ...JSON.parse(localStorage.getItem(KEY) || '{}') }; } catch (e) { return { ...DEFAULTS }; }
+  let s, basis;
+  try {
+    const stored = JSON.parse(localStorage.getItem(KEY) || '{}');
+    s = { ...DEFAULTS, ...stored };
+    basis = !stored.basis && localStorage.getItem('opensw-basis'); // 0.6.0 and before kept the basis variables apart
+  } catch (e) { return { ...DEFAULTS }; }
+  if (basis) s.basis = basis.split(',');
+  // 0.5.0 and before kept the Mathematica kernel as wolframKernel
+  if (s.wolframKernel !== undefined) {
+    s.enginePrograms = { mathematica: s.wolframKernel, ...s.enginePrograms };
+    delete s.wolframKernel;
+  }
+  return s;
 }
 
 export function saveSettings(s) {
