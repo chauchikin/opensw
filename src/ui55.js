@@ -1577,7 +1577,7 @@ export function setupUI(app) {
       [_t('Computation engine…'), null, engineInfo], [_t('Lean setup…'), null, () => leanSettings()], [_t('Connect AI…'), null, connectAi],
     ]],
     [_t('Window'), app.windows],
-    [_t('Help'), [[_t('Keyboard shortcuts'), 'F1', app.help], [_t('Full manual'), null, () => app.newDocument(readLatex(MANUAL).doc, { name: _t('opensw manual') })], [_t('How to use'), null, () => { $('#guide').hidden = false; $('#guide-close').onclick = () => { $('#guide').hidden = true; view.focus(); }; }], [_t('Talking to AI…'), null, talkingToAi]]],
+    [_t('Help'), [[_t('Keyboard shortcuts'), 'F1', app.help], [_t('Full manual'), null, () => app.openManual(MANUAL, { name: _t('opensw manual') })], [_t('How to use'), null, () => { $('#guide').hidden = false; $('#guide-close').onclick = () => { $('#guide').hidden = true; view.focus(); }; }], [_t('Talking to AI…'), null, talkingToAi]]],
   ];
 
   const popup = $('#popup');

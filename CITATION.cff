@@ -1,0 +1,14 @@
+cff-version: 1.2.0
+message: "If you use opensw in your work, please cite it as below."
+title: "opensw: an open-source math editor modelled on Scientific Word 5.5"
+type: software
+authors:
+  - name: "opensw contributors"
+repository-code: "https://github.com/chauchikin/opensw"
+license: MPL-2.0
+keywords:
+  - mathematics
+  - LaTeX
+  - editor
+  - Scientific Word
+  - computer algebra

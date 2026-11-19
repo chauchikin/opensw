@@ -7,6 +7,12 @@
 還有不少人在用 5.5 寫數學文件，可是它在現在的電腦上越來越難跑。
 opensw 想做的事很簡單：5.5 的檔案打得開、改得動、排得出來，用法跟 5.5 一樣。
 
+![opensw 開著範例文件的畫面](public/manual/zh-TW/window.png)
+
+![用計算選單畫的 2D 和 3D 圖](public/manual/zh-TW/plots.png)
+
+更多圖在說明文件裡（說明 > 完整說明文件）。
+
 ## 能做什麼
 
 - 打開 Scientific Word 5.x 的 `.tex` 和 6.x 的 `.sci`
@@ -25,7 +31,7 @@ opensw 想做的事很簡單：5.5 的檔案打得開、改得動、排得出來
 
 5.x 的指令遇到不認得的，會原樣留成 TeX 欄位，存檔和匯出都不會掉。
 
-每個選單的說明在程式裡：說明 > 完整說明文件（原文在 `src/helpdoc.js`）。
+每個選單的說明（有圖）在程式裡：說明 > 完整說明文件（原文在 `src/helpdoc.js`，圖在 `public/manual`）。
 
 ## 下載
 
@@ -58,15 +64,21 @@ npm test tables       # 只跑 test/tables.mjs
 
 ## 授權
 
-MIT，見 [LICENSE](LICENSE)。
+Mozilla Public License 2.0（MPL-2.0），見 [LICENSE](LICENSE)。開源的 Scientific Word 6 用的也是這一系列（MPL 1.1，條文允許改用 2.0）。
+
+簡單說：opensw 可以自由使用、修改、轉給別人，商業用途也可以。改了 opensw 的檔案再把程式給別人，改過的那些檔案要照 MPL-2.0 公開原始碼；自己新寫的檔案用什麼授權都可以。0.8.0 以前的版本是用 MIT 發布的。
 
 用到的元件有各自的授權：ProseMirror、MathLive、CortexJS Compute Engine（MIT）、SymPy、mpmath（BSD）、Pyodide（MPL-2.0）、Tauri（MIT／Apache-2.0）、Tectonic（MIT）。授權全文在 [THIRD-PARTY-NOTICES.txt](THIRD-PARTY-NOTICES.txt)，安裝檔裡也有一份。換了套件後用 `node scripts/licenses.mjs` 重新產生。
+
+## 引用 opensw
+
+在論文裡要引用 opensw 的話，按 GitHub 頁面右邊的「Cite this repository」，會給 APA 和 BibTeX 格式（資料在 [CITATION.cff](CITATION.cff)）。
 
 ## 致謝
 
 Scientific Word 是 MacKichan Software 做的。這麼多年來它讓很多人可以好好寫數學，opensw 的選單、快捷鍵和檔案格式都是照它來的，謝謝他們。
 
-opensw 的程式是重新寫的，沒有用 Scientific Word 的程式碼、圖示或範例檔。
+opensw 的程式是重新寫的，沒有用 Scientific Word 的程式碼、圖示或範例檔。6.x 的 `.sci` 格式怎麼讀寫，是看 Scientific Word 6 公開的原始碼（[ScientificWord/mozilla](https://github.com/ScientificWord/mozilla)）整理出來的。
 排 5.x 文件時會用到 5.x 的巨集檔（tcilatex 等）。附在 opensw 裡的只有檔案裡寫明可以自由複製和散布的那些，沒寫的都換成 opensw 自己寫的版本。電腦有裝 5.x 的話，會先用你自己那份。
 
 opensw 跟 MacKichan Software 沒有關係，也不是他們的產品。Scientific Word 是 MacKichan Software 的商標。

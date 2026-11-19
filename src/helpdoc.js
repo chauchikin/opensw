@@ -1,6 +1,7 @@
 // Help > Manual: opensw's own manual, written for opensw (not 5.5's help files). It opens as a
 // document, so it can be read, searched (Edit > Find), printed or exported like any other.
-// Other languages: src/locales/manual.<language>.tex.
+// Other languages: src/locales/manual.<language>.tex. Its pictures are public/manual/<language>/*.png,
+// made by scripts/manual-shots.mjs from the web version.
 import { LANG } from './i18n.js';
 
 const TRANSLATED = import.meta.env
@@ -19,7 +20,24 @@ opensw is a math editor rebuilt after Scientific Word 5.5. Its menus, shortcuts 
 \item Press F1 for the keyboard shortcuts. Search this manual with Edit \TEXTsymbol{>} Find (Ctrl+Q).
 \end{itemize}
 
+\subsection{The window}
+
+\includegraphics{manual/en/window.png}
+
+\emph{The window with File > Samples > A math sample open.}
+
+\begin{itemize}
+\item At the top: the menus and the toolbars. View \TEXTsymbol{>} Toolbars turns each toolbar on or off.
+\item On the right: buttons to insert notes, markers, cross references, links, index entries, TeX and HTML fields and exam formulas, and to go back and forth.
+\item At the bottom: the tag bar (item tag, section/body tag, text tag where the cursor is), and under it the status bar (Text or Math, the zoom, what an AI is doing).
+\item Formulas are red on screen; Tools \TEXTsymbol{>} User setup changes the color. Typesetting prints them black.
+\end{itemize}
+
 \section{File}
+
+\includegraphics{manual/en/menu-file.png}
+
+\emph{The File menu.}
 
 \subsection{Opening and saving}
 
@@ -71,6 +89,14 @@ A fragment is a saved piece of text and formulas that can be put into any docume
 \item Find (Ctrl+Q), Replace (Ctrl+W): in text and in formulas.
 \end{itemize}
 
+\includegraphics{manual/en/menu-edit.png}
+
+\emph{The Edit menu.}
+
+\includegraphics{manual/en/props.png}
+
+\emph{Properties of a formula (Ctrl+F5 with the cursor in it): its TeX, numbering and marker.}
+
 \section{Insert}
 
 \begin{itemize}
@@ -87,6 +113,14 @@ A fragment is a saved piece of text and formulas that can be put into any docume
 \item Spacing, unit names.
 \end{itemize}
 
+\includegraphics{manual/en/menu-insert.png}
+
+\emph{The Insert menu.}
+
+\includegraphics{manual/en/matrix.png}
+
+\emph{Insert > Matrix: rows, columns and brackets.}
+
 \section{View, Go, Tag}
 
 \begin{itemize}
@@ -97,22 +131,55 @@ A fragment is a saved piece of text and formulas that can be put into any docume
 \item Tag \TEXTsymbol{>} Appearance: the screen font, size and color of each tag; typesetting is not affected.
 \end{itemize}
 
+\includegraphics{manual/en/menu-view.png}
+
+\emph{The View menu.}
+
+\includegraphics{manual/en/review.png}
+
+\emph{View > Changes and LaTeX source after one sentence was added: the changed paragraph is tinted on both sides.}
+
+\includegraphics{manual/en/review-source.png}
+
+\emph{The LaTeX source tab: what saving writes. It can be read but not changed here.}
+
+\includegraphics{manual/en/review-list.png}
+
+\emph{The Changes and errors tab: accept or undo each change; typesetting errors; checking the steps of a derivation.}
+
+\includegraphics{manual/en/menu-tag.png}
+
+\emph{The Tag menu.}
+
+\includegraphics{manual/en/tag-appearance.png}
+
+\emph{Tag > Appearance: how each tag looks on screen.}
+
 \section{Compute}
 
 Put the cursor in a formula and choose an action from the Compute menu. The result follows the formula. Computing uses SymPy, which takes a few seconds to load the first time; in the desktop app, Tools > Computation engine can switch to Mathematica installed on this computer. Computing is opensw's own: 5.5 computed with MuPAD, which opensw does not have, so an answer may be written in a different (equal) form from 5.5's, and some commands may give more or fewer answers.
 
+\includegraphics{manual/en/menu-compute.png}
+
+\emph{The Compute menu, with the Calculus submenu open.}
+
 \begin{itemize}
 \item Evaluate (Ctrl+E), evaluate numerically, simplify, factor, expand, combine, rewrite.
+\item Check equality: whether the two sides of an equation are equal.
 \item Solve: exact, numeric, integer, recursion. Solve ODE: exact, numeric.
 \item Solve ODE \TEXTsymbol{>} Numeric solves an initial-value problem typed as a one-column matrix, one equation or initial value in each row (for example $y'=-y$ and $y(0)=1$; equations of any order, or a system of them: an equation of order $n$ in $y$ needs the initial values $y(x_0)$, $y'(x_0)$, \ldots, $y^{(n-1)}(x_0)$, as $y''+y=0$, $y(0)=1$, $y'(0)=0$). As in 5.5 it answers ${'`'}${'`'}Functions defined: $y$'': the solution becomes a function, so evaluating $y(1)$ afterwards gives a number, $y$ applied to a column of numbers gives a column of values, and plotting $y$ (Plot 2D \TEXTsymbol{>} Rectangular or ODE) draws the solution.
 \item Polynomials: partial fractions, collect by variable.
-\item Calculus: differentiate, integrate, integrate by parts, change variable, approximate integral, plot approximate integral, power series, find extrema, iterate, implicit differentiation.
+\item Calculus: differentiate, integrate, integrate by parts, change variable, approximate integral, plot approximate integral, power series, Padé approximant, find extrema, iterate, implicit differentiation.
 \item Vector calculus: gradient, divergence, curl, Laplacian, Hessian, Jacobian, Wronskian, scalar potential, vector potential. The basis variables are $x,y,z$ by default; Vector calculus \TEXTsymbol{>} Set basis variables (or Tools \TEXTsymbol{>} Computation engine) changes them, for $\nabla$ in Evaluate too: with $u,v,w$, $\nabla (cuv)$ is $(cv,cu,0)$.
 \item Simplex: maximize, minimize, feasibility, standardize, dual. Type a one-row matrix: the first entry is the objective, the others are constraints; all variables are taken as $\geq 0$.
 \item Statistics, Laplace transform, Fourier transform, matrices (determinant, inverse, eigenvalues, rank, null space…).
 \item Definitions: for example choose ${'`'}${'`'}New definition'' on $f(x)=x^{2}$; later computations use it. Defining a name with a letter subscript, such as $a_{i}=3i$, asks how to interpret the subscript, as 5.5 does: as a function argument ($a_{2}$ is then $6$, and $i$ on the right is the argument, not the imaginary unit), or as part of the name ($a_{2}$ stays $a_{2}$).
 \item Check with Lean: Lean 4 proves the equation (choose a Lean project folder in Tools \TEXTsymbol{>} Lean setup first).
 \end{itemize}
+
+\includegraphics{manual/en/compute.png}
+
+\emph{Ctrl+E puts the answer after the formula; Solve writes the solutions after it.}
 
 \subsection{Plots}
 
@@ -135,6 +202,14 @@ Put the cursor in a formula and choose Compute \TEXTsymbol{>} Plot 2D or Plot 3D
 \item 3D gradient, 3D vector field $[P,Q,R]$.
 \end{itemize}
 
+\includegraphics{manual/en/plots.png}
+
+\emph{Plot 2D > Rectangular and Plot 3D > Rectangular, each on the formula above it.}
+
+\includegraphics{manual/en/plot-props.png}
+
+\emph{A plot's properties (select it, Ctrl+F5): the formula, its color, another function, the ranges.}
+
 \section{Typeset}
 
 \begin{itemize}
@@ -144,6 +219,10 @@ Put the cursor in a formula and choose Compute \TEXTsymbol{>} Plot 2D or Plot 3D
 \end{itemize}
 
 \section{Tools}
+
+\includegraphics{manual/en/menu-tools.png}
+
+\emph{The Tools menu.}
 
 \subsection{Exam builder}
 
@@ -173,9 +252,34 @@ The exams open as a new document; the template stays in the Window menu. Not don
 \item Computation engine also holds the settings that change answers, as 5.5's computation setup: Solve gives the principal value only; the base for the log function changes from $e$ to $10$ ($\log x$ is then $\log_{10}x$, and Evaluate shows it so; $\ln$ stays the natural logarithm); the basis variables of vector calculus and $\nabla$ (default $x,y,z$).
 \end{itemize}
 
+\includegraphics{manual/en/user-setup.png}
+
+\emph{Tools > User setup.}
+
+\includegraphics{manual/en/engine.png}
+
+\emph{Tools > Computation engine: the engine and the settings that change answers.}
+
 \section{Window}
 
 Several documents can be open at once. Switch in the Window menu; Ctrl+F6 or Ctrl+Tab goes to the next one.
+
+\section{Help}
+
+\begin{itemize}
+\item Keyboard shortcuts (F1): the table of 5.5's shortcuts. F1 again closes it.
+\item Full manual: this document.
+\item How to use: a short guide on one page.
+\item Talking to AI: examples of what to ask an AI app (see ${'`'}${'`'}Letting AI help'').
+\end{itemize}
+
+\includegraphics{manual/en/shortcuts.png}
+
+\emph{Help > Keyboard shortcuts (F1).}
+
+\includegraphics{manual/en/guide.png}
+
+\emph{Help > How to use.}
 
 \section{5.5 files}
 
@@ -198,7 +302,9 @@ In the desktop app, an AI app such as Claude or ChatGPT can read the open docume
 
 The AI can open and save only in the open document's folder, Documents\textbackslash{}opensw (where it can save a new document without asking) and the folders allowed in Tools $>$ User Setup; anywhere else opensw asks you first. It saves only .tex and .sci files. The details for setting it up by hand are in docs/AI.md in the source code.
 
+On a computer where no AI app can be installed, or in a script, the same commands can be typed in a terminal with opensw-cli.exe, which is next to opensw.exe. For example, opensw-cli help lists the commands, and opensw-cli save saves the open document. They go to the open editor (it opens if it is not running), with the same folders allowed.
+
 \section{About}
 
-opensw is MIT licensed. Its code is written anew and uses no code, icons or help files from Scientific Word. Scientific Word is a trademark of MacKichan Software, which has nothing to do with opensw.
+opensw is licensed under the Mozilla Public License 2.0 (versions up to 0.8.0: MIT). Its code is written anew and uses no code, icons or help files from Scientific Word. Scientific Word is a trademark of MacKichan Software, which has nothing to do with opensw.
 `;

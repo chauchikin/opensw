@@ -11,7 +11,24 @@ opensw 是照 Scientific Word 5.5 重做的數學編輯器。選單、快捷鍵�
 \item 按 F1 看快捷鍵表。這份說明可以用 編輯 \TEXTsymbol{>} 尋找（Ctrl+Q）找字。
 \end{itemize}
 
+\subsection{畫面}
+
+\includegraphics{manual/zh-TW/window.png}
+
+\emph{開著 檔案 > 範例 > 數學範例 的畫面。}
+
+\begin{itemize}
+\item 最上面：選單和工具列。檢視 \TEXTsymbol{>} 工具列 可以開關每一列。
+\item 右邊：插入註解、標記、交叉引用、連結、索引項目、TeX 和 HTML 欄位、考卷公式的按鈕，還有往前、往後。
+\item 最下面：標籤列（游標所在地方的項目標籤、段落標籤、文字標籤），下面是狀態列（文字或數學、縮放比例、AI 在做什麼）。
+\item 公式在畫面上是紅色，工具 \TEXTsymbol{>} 使用者設定 可以改顏色；排版出來是黑色。
+\end{itemize}
+
 \section{檔案}
+
+\includegraphics{manual/zh-TW/menu-file.png}
+
+\emph{檔案選單。}
 
 \subsection{開檔和存檔}
 
@@ -63,6 +80,14 @@ opensw 是照 Scientific Word 5.5 重做的數學編輯器。選單、快捷鍵�
 \item 尋找（Ctrl+Q）、取代（Ctrl+W）：文字和公式裡都找。
 \end{itemize}
 
+\includegraphics{manual/zh-TW/menu-edit.png}
+
+\emph{編輯選單。}
+
+\includegraphics{manual/zh-TW/props.png}
+
+\emph{公式的屬性（游標在公式裡按 Ctrl+F5）：TeX、編號、標記。}
+
 \section{插入}
 
 \begin{itemize}
@@ -79,6 +104,14 @@ opensw 是照 Scientific Word 5.5 重做的數學編輯器。選單、快捷鍵�
 \item 間距、單位名稱。
 \end{itemize}
 
+\includegraphics{manual/zh-TW/menu-insert.png}
+
+\emph{插入選單。}
+
+\includegraphics{manual/zh-TW/matrix.png}
+
+\emph{插入 > 矩陣：列數、欄數、括號。}
+
 \section{檢視、前往、標籤}
 
 \begin{itemize}
@@ -89,22 +122,55 @@ opensw 是照 Scientific Word 5.5 重做的數學編輯器。選單、快捷鍵�
 \item 標籤 \TEXTsymbol{>} 外觀：改每個標籤在畫面上的字型、大小、顏色，不影響排版。
 \end{itemize}
 
+\includegraphics{manual/zh-TW/menu-view.png}
+
+\emph{檢視選單。}
+
+\includegraphics{manual/zh-TW/review.png}
+
+\emph{加了一句話之後的 檢視 > 改動與 LaTeX 源碼：改過的段落兩邊都有底色。}
+
+\includegraphics{manual/zh-TW/review-source.png}
+
+\emph{LaTeX 源碼分頁：存檔會寫出的內容，在這裡只能看不能改。}
+
+\includegraphics{manual/zh-TW/review-list.png}
+
+\emph{改動與錯誤分頁：每條改動可以接受或退回；排版錯誤；檢查推導的每一步。}
+
+\includegraphics{manual/zh-TW/menu-tag.png}
+
+\emph{標籤選單。}
+
+\includegraphics{manual/zh-TW/tag-appearance.png}
+
+\emph{標籤 > 外觀：每個標籤在畫面上的樣子。}
+
 \section{計算}
 
 游標放在公式裡，從計算選單選一個動作。結果接在公式後面。計算用的是 SymPy，第一次要載入幾秒；桌面版在 工具 > 計算引擎 可以改用這台電腦裝的 Mathematica。計算是 opensw 自己的功能：5.5 用的是 MuPAD，opensw 沒有，所以答案的寫法可能和 5.5 不同（值相等），有些指令給的答案也可能多一個或少一個。
 
+\includegraphics{manual/zh-TW/menu-compute.png}
+
+\emph{計算選單，打開了 微積分 子選單。}
+
 \begin{itemize}
 \item 計算（Ctrl+E）、數值計算、化簡、因式分解、展開、合併、改寫。
+\item 檢查是否相等：看等式兩邊是不是相等。
 \item 解：精確、數值、整數、遞迴。解常微分方程：精確、數值。
 \item 解常微分方程 > 數值：解一個起始值問題，打成一欄的矩陣，一列一條方程或一個起始值（例如 $y'=-y$ 和 $y(0)=1$；任何階的方程或方程組：$y$ 的 $n$ 階方程要有起始值 $y(x_0)$、$y'(x_0)$、\ldots、$y^{(n-1)}(x_0)$，例如 $y''+y=0$、$y(0)=1$、$y'(0)=0$）。和 5.5 一樣回答「已定義的函數：$y$」：解變成函數，之後計算 $y(1)$ 會得到數字，$y$ 作用在一欄數字上得到一欄函數值，畫 $y$（繪圖 2D > 直角座標或常微分方程）就畫出這個解。
 \item 多項式：部分分式、依變數整理。
-\item 微積分：微分、不定積分、分部積分、換變數、近似積分、畫近似積分圖、冪級數、求極值、迭代、隱函數微分。
+\item 微積分：微分、不定積分、分部積分、換變數、近似積分、畫近似積分圖、冪級數、Padé 近似、求極值、迭代、隱函數微分。
 \item 向量微積分：梯度、散度、旋度、拉普拉斯、黑塞矩陣、雅可比矩陣、朗斯基行列式、位勢、向量位勢。基底變數預設是 $x,y,z$；向量微積分 > 設定基底變數（或 工具 > 計算引擎）可以改，計算裡的 $\nabla$ 也用它：設成 $u,v,w$ 時，$\nabla (cuv)$ 是 $(cv,cu,0)$。
 \item 單形法：最大化、最小化、可行性、標準化、對偶。打成一行矩陣，第一列是目標函數，其他列是限制式，變數都當成 $\geq 0$。
 \item 統計、拉氏轉換、傅立葉轉換、矩陣（行列式、反矩陣、特徵值、秩、零空間⋯⋯）。
 \item 定義：例如 $f(x)=x^{2}$ 選「新定義」，之後的計算都會用到。定義帶字母下標的名稱（例如 $a_{i}=3i$）時，會和 5.5 一樣問下標怎麼解讀：函數的引數（這時 $a_{2}$ 是 $6$，右邊的 $i$ 是引數，不是虛數單位），或名稱的一部分（$a_{2}$ 還是 $a_{2}$）。
 \item 用 Lean 檢查：把等式交給 Lean 4 證明（要先在 工具 \TEXTsymbol{>} Lean 設定 選 Lean 專案資料夾）。
 \end{itemize}
+
+\includegraphics{manual/zh-TW/compute.png}
+
+\emph{按 Ctrl+E 答案接在公式後面；解方程把解寫在後面。}
 
 \subsection{繪圖}
 
@@ -127,6 +193,14 @@ opensw 是照 Scientific Word 5.5 重做的數學編輯器。選單、快捷鍵�
 \item 3D 梯度、3D 向量場 $[P,Q,R]$。
 \end{itemize}
 
+\includegraphics{manual/zh-TW/plots.png}
+
+\emph{繪圖 2D > 直角座標 和 繪圖 3D > 直角座標，各用在上面那條公式。}
+
+\includegraphics{manual/zh-TW/plot-props.png}
+
+\emph{繪圖的屬性（選取繪圖按 Ctrl+F5）：公式、顏色、再加一個函數、範圍。}
+
 \section{排版}
 
 \begin{itemize}
@@ -136,6 +210,10 @@ opensw 是照 Scientific Word 5.5 重做的數學編輯器。選單、快捷鍵�
 \end{itemize}
 
 \section{工具}
+
+\includegraphics{manual/zh-TW/menu-tools.png}
+
+\emph{工具選單。}
 
 \subsection{考卷產生器}
 
@@ -165,9 +243,34 @@ opensw 是照 Scientific Word 5.5 重做的數學編輯器。選單、快捷鍵�
 \item 計算引擎裡也有會改變答案的設定，和 5.5 的計算設定一樣：解只要主值；對數函數的底從 $e$ 改成 $10$（這時 $\log x$ 是 $\log_{10}x$，計算結果也這樣寫；$\ln$ 還是自然對數）；向量微積分和 $\nabla$ 的基底變數（預設 $x,y,z$）。
 \end{itemize}
 
+\includegraphics{manual/zh-TW/user-setup.png}
+
+\emph{工具 > 使用者設定。}
+
+\includegraphics{manual/zh-TW/engine.png}
+
+\emph{工具 > 計算引擎：選引擎，和會改變答案的設定。}
+
 \section{視窗}
 
 可以同時開好幾份文件。視窗選單切換，Ctrl+F6 或 Ctrl+Tab 換下一份。
+
+\section{說明}
+
+\begin{itemize}
+\item 快捷鍵（F1）：5.5 的快捷鍵表，再按一次 F1 關掉。
+\item 完整說明文件：就是這份文件。
+\item 使用說明：一頁的簡單說明。
+\item 跟 AI 說話：可以怎麼跟 AI 程式說的例子（見「讓 AI 幫忙」）。
+\end{itemize}
+
+\includegraphics{manual/zh-TW/shortcuts.png}
+
+\emph{說明 > 快捷鍵（F1）。}
+
+\includegraphics{manual/zh-TW/guide.png}
+
+\emph{說明 > 使用說明。}
 
 \section{5.5 的檔案}
 
@@ -190,6 +293,8 @@ opensw 是照 Scientific Word 5.5 重做的數學編輯器。選單、快捷鍵�
 
 AI 只能在目前文件的資料夾、文件\textbackslash{}opensw（新文件可以直接存在這裡，不用問）、和 工具 $>$ 使用者設定 允許的資料夾開檔存檔；其他地方 opensw 會先問你。它只能存 .tex 和 .sci。手動設定的方法在原始碼的 docs/AI.md。
 
+裝不了 AI 程式的電腦，或要寫腳本時，可以在命令列用 opensw-cli.exe 下一樣的指令，它在 opensw.exe 旁邊。例如 opensw-cli help 列出指令，opensw-cli save 存開著的文件。指令會傳給開著的編輯器（沒開會自動打開），能開、能存的資料夾也一樣。
+
 \section{關於}
 
-opensw 用 MIT 授權。程式是重新寫的，沒有用 Scientific Word 的程式碼、圖示或說明檔。Scientific Word 是 MacKichan Software 的商標，opensw 跟他們沒有關係。
+opensw 用 Mozilla Public License 2.0 授權（0.8.0 以前的版本是 MIT）。程式是重新寫的，沒有用 Scientific Word 的程式碼、圖示或說明檔。Scientific Word 是 MacKichan Software 的商標，opensw 跟他們沒有關係。

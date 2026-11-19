@@ -28,6 +28,13 @@ const words = ['開啟網址', '片段', '版面設定', '預覽', '選擇性貼
   '隱函數', '保角', '不等式', '常微分方程', '近似積分圖', '柱座標', '球座標', '管狀', '考卷產生器', '文件管理', '自動替換', '使用者設定', '匯出設定', 'Lean', 'MCP'];
 const missing = words.filter((w) => !r.text.includes(w));
 check(!missing.length, 'covers the features: ' + (missing.join(', ') || 'all'));
+// the pictures (public/manual/zh-TW) are loaded and shown
+await page.waitForFunction(() => [...document.querySelectorAll('.image img')].filter((i) => i.complete && i.naturalWidth > 0).length > 0, null, { timeout: 10000 }).catch(() => {});
+const pics = await page.evaluate(() => {
+  const all = []; window.swEditor.state.doc.descendants((n) => { if (n.type.name === 'image') all.push(n.attrs.path); });
+  return { all, shown: [...document.querySelectorAll('.image img')].filter((i) => i.complete && i.naturalWidth > 0).length };
+});
+check(pics.all.length >= 20 && pics.all.every((p) => p.startsWith('manual/zh-TW/')) && pics.shown === pics.all.length, `pictures shown: ${pics.shown} of ${pics.all.length}`);
 check(!errs.length, 'no page errors ' + errs);
 await b.close();
 console.log(fails ? `${fails} FAILED` : 'all passed');

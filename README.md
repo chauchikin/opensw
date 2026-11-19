@@ -7,6 +7,12 @@ An open-source math editor rebuilt after Scientific Word 5.5.
 Plenty of people still write their mathematics in 5.5, but it gets harder to run on today's computers.
 opensw aims at one thing: open 5.5 files, edit them, typeset them, and work the way 5.5 does.
 
+![The opensw window with a sample document](public/manual/en/window.png)
+
+![Plot 2D and Plot 3D from the Compute menu](public/manual/en/plots.png)
+
+More pictures are in the manual (Help > Full manual).
+
 ## What it does
 
 - Opens Scientific Word 5.x `.tex` files and 6.x `.sci` files
@@ -18,7 +24,7 @@ opensw aims at one thing: open 5.5 files, edit them, typeset them, and work the 
 - Demo problems: File > Samples has three demo documents (calculus, algebra and matrices, vectors and statistics and more); each problem names its menu command and gives the answer, to try the Compute menu on
 - Exam Builder: exams and answer keys made from a 5.5 exam template (.qiz)
 - Fragments, Open Location, Document Manager (pack into a .zip, open 5.5's wrapped .rap)
-- A manual for every menu: Help > Manual (source in `src/helpdoc.js`)
+- A manual for every menu, with pictures: Help > Full manual (source in `src/helpdoc.js`, pictures in `public/manual`)
 - Typesets to PDF (XeLaTeX, Chinese included; the Windows version bundles Tectonic and the usual TeX files, so it works offline); exports LaTeX, HTML and Markdown
 - Interface in English and Traditional Chinese (Tools > User Setup). The program is written in English; Chinese is the translation file `src/locales/zh-TW.json`; to add a language, see the top of `src/i18n.js`
 - In the desktop app, Claude or ChatGPT can work on the document: Tools > Connect AI sets it up in one step; what the AI changed is tinted, and Edit > Undo AI Changes takes it back in one step
@@ -57,15 +63,21 @@ npm test tables       # only test/tables.mjs
 
 ## License
 
-MIT, see [LICENSE](LICENSE).
+Mozilla Public License 2.0 (MPL-2.0), see [LICENSE](LICENSE). This is the same licence family as the open-source Scientific Word 6 (MPL 1.1, which allows moving to 2.0).
+
+In short: you may use, change and pass on opensw, also commercially. If you change one of opensw's files and give the program to others, that file's source stays open under MPL-2.0; files of your own can have any licence. Versions up to 0.8.0 were released under MIT.
 
 Components keep their own licenses: ProseMirror, MathLive, CortexJS Compute Engine (MIT), SymPy, mpmath (BSD), Pyodide (MPL-2.0), Tauri (MIT/Apache-2.0), Tectonic (MIT). The full texts are in [THIRD-PARTY-NOTICES.txt](THIRD-PARTY-NOTICES.txt), which also ships with the installer. Regenerate it with `node scripts/licenses.mjs` after changing dependencies.
+
+## Citing opensw
+
+GitHub's "Cite this repository" button (from [CITATION.cff](CITATION.cff)) gives the reference in APA and BibTeX.
 
 ## Acknowledgments
 
 Scientific Word was made by MacKichan Software. For many years it let people write mathematics well, and opensw follows its menus, shortcuts and file formats. Thank you.
 
-opensw's code is written from scratch. It uses no Scientific Word code, icons or sample files.
+opensw's code is written from scratch. It uses no Scientific Word code, icons or sample files. How the 6.x `.sci` format is read and written was worked out from the public source code of Scientific Word 6 ([ScientificWord/mozilla](https://github.com/ScientificWord/mozilla)).
 To typeset 5.x documents it uses 5.x's macro files (tcilatex and others). The ones shipped with opensw are only those whose files say they may be freely copied and distributed; the others are replaced by versions written for opensw. If 5.x is installed on your computer, your own copies are used first.
 
 opensw is not affiliated with MacKichan Software and is not one of its products. Scientific Word is a trademark of MacKichan Software.

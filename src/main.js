@@ -349,7 +349,7 @@ async function loadPictures(dir, files = null) {
   if (tr.docChanged) {
     const unchanged = view.state.doc.eq(loadedDoc);
     view.dispatch(tr.setMeta('addToHistory', false));
-    if (unchanged) loadedDoc = view.state.doc;
+    if (unchanged) { loadedDoc = view.state.doc; showTitle(); } // still unchanged: no * in the title
   }
 }
 // 5.x plots: drawn again from their settings (plots.js); the points come from the
@@ -377,7 +377,7 @@ async function renderPlots() {
     });
     const unchanged = view.state.doc.eq(loadedDoc);
     view.dispatch(tr.setMeta('addToHistory', false));
-    if (unchanged) loadedDoc = view.state.doc;
+    if (unchanged) { loadedDoc = view.state.doc; showTitle(); } // still unchanged: no * in the title
   }
 }
 const isPng = (b) => b && b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4e && b[3] === 0x47;
@@ -862,6 +862,17 @@ ui = setupUI({
   openPackage: (bytes, name) => confirmReplace(() => openPackage(bytes, name).catch((err) => toast(_t('Could not open the package: ') + (err.message || err)))),
   // a document made here (Tools > Exam Builder) opens in a window of its own
   newDocument: (doc, m) => { opening = true; setDoc(doc, m); },
+  // Help > Full manual: its pictures (manual/<language>/*.png) are files of the program (public/manual)
+  openManual: async (latex, m) => {
+    opening = true;
+    setDoc(readLatex(latex).doc, m);
+    const files = new Map();
+    for (const path of imagePaths()) {
+      if (!path.startsWith('manual/')) continue;
+      try { const r = await fetch('./' + path); if (r.ok) files.set(path, new Uint8Array(await r.arrayBuffer())); } catch (e) { /* not shipped */ }
+    }
+    if (files.size) await loadPictures(null, files);
+  },
   pdf: isDesktop ? pdf : null,
   newDoc: () => confirmReplace(() => openSample('blank')),
   closeDoc,

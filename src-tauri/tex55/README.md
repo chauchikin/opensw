@@ -7,7 +7,7 @@ typesets one, it copies these files next to the document. If Scientific Word
   carry the notice "This macro file is NOT proprietary and may be freely copied
   and distributed" (tcilatex.tex, the sw20*.sty styles, thmsupp.tex, tcibook.sty,
   ...).
-- Written for opensw (MIT license), in place of 5.5 files without that notice:
+- Written for opensw (MPL-2.0 license), in place of 5.5 files without that notice:
   thmsa.sty, thmsb.sty, thmsc.sty, thmsd.sty, thmdefs.sty (theorem numbering
   options), cmroman.tex, eulcmr.tex, ntroman.tex, tnroman.tex (font schemes;
   the Times ones use the psnfss Times fonts), ugmacs.tex, SLIDE.TEX, tcibook.cls,

@@ -114,8 +114,8 @@ const sections = []; // { title, entries: [{ name, version, license, url, texts:
 const line = '='.repeat(78);
 let out = `opensw — third-party software notices
 
-opensw is MIT licensed (see LICENSE). It ships software written by other people,
-each under its own licence. Those licences are reproduced below.
+opensw is licensed under the Mozilla Public License 2.0 (see LICENSE). It ships software
+written by other people, each under its own licence. Those licences are reproduced below.
 opensw 用了別人寫的開源軟體，以下是它們的授權全文。
 
 The TeX files Tectonic uses come from TeX Live; each file keeps the licence written in it
