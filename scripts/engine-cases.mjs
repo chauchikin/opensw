@@ -78,8 +78,18 @@ const CASES = [
   ['approxint', '\\int_0^1 x^2\\,dx', ["'trapezoid'", '4'], '0.34375'],
   ['iterate', '\\cos x', ['0', '2'], ['\\cos(1)', '\\cos 1']],
   // what 5.5 asks in a dialog, as params: the variable, the order, the unknowns; Pade
-  ['series', '\\frac{1}{1-t}', ['t', '3'], 't^3+O'],
-  ['series', '\\frac{1}{1-x}', ['x', '2', '2'], '(x-2)^2'],
+  ['series', '\\frac{1}{1-t}', ['t', '4'], 't^3+O'],
+  ['series', '\\frac{1}{1-x}', ['x', '3', '2'], '(x-2)^2'],
+  // Power Series' Number of terms counts from the lowest power, as in 5.5's help (MuPAD's series)
+  ['series', '(1-2t)^{-1/2}', ['t', '6'], '\\frac{63}{8}t^{5}+O(t^{6})'],
+  ['series', '\\frac{\\sin x}{x}', ['x', '10'], '\\frac{1}{362880}x^{8}+O(x^{10})'],
+  ['series', 'e^x\\sin x', ['x', '6'], '\\frac{1}{90}x^{6}+O(x^{7})'],
+  ['series', '\\ln x', ['x', '4', '1'], '\\frac{1}{4}(x-1)^{4}+O((x-1)^{5})'],
+  // ... and O moves past powers whose coefficient is 0: the answers of 5.5 itself (2026-11-19)
+  ['series', '\\sin x', ['x', '5'], '\\frac{1}{120}x^{5}+O(x^{7})'],
+  ['series', '\\sin^2 x', ['x', '5'], '\\frac{2}{45}x^{6}+O(x^{8})'],
+  ['series', '\\frac{\\sin x}{x}', ['x', '5'], '\\frac{1}{120}x^{4}+O(x^{6})'],
+  ['series', '\\frac{\\cos x}{x^4}', ['x', '3'], 'O(1)'],
   ['differentiate', 'x^2y^3', ['y'], '3x^2y^2'],
   ['integrate', 'xy', ['y'], ['\\frac{xy^2}{2}', '\\frac{1}{2}xy^2']],
   ['solve', '\\begin{pmatrix}p=aq\\\\0=q+1\\end{pmatrix}', ['p', 'q'], 'p=-a'],

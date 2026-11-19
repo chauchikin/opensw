@@ -32,7 +32,7 @@ const OPS = {
   changevar: ['F+p', 'value', '微積分 > 換變數（參數：u = g(x)）', 'Calculus > Change Variable (param: u = g(x))'],
   approxint: ['F+p', 'value', "微積分 > 近似積分（參數：'方法'、n）", "Calculus > Approximate Integral (params: 'method', n)"],
   iterate: ['F+p', 'value', '微積分 > 迭代（參數：起始值、次數）', 'Calculus > Iterate (params: start, count)'],
-  series: ['F', 'value', '微積分 > 冪級數（F+p：變數、最高次、展開點）', 'Calculus > Power Series (F+p: variable, highest power, point)'],
+  series: ['F', 'value', '微積分 > 冪級數（F+p：變數、項數、展開點；項數從最低次數起算，照 5.5）', 'Calculus > Power Series (F+p: variable, number of terms, point; terms counted from the lowest power, as in 5.5)'],
   pade: ['F', 'value', '微積分 > Padé 近似（F+p：m、n、變數、展開點；沒給是 [2/2]）', 'Calculus > Padé Approximant (F+p: m, n, variable, point; without them [2/2])'],
   extrema: ['F', 'solutions', '微積分 > 求極值', 'Calculus > Find Extrema'],
   implicitdiff: ['F', 'value', '微積分 > 隱函數微分（F+p：微分變數，沒給是 x）', 'Calculus > Implicit Differentiation (F+p: the differentiation variable, x if not given)'],

@@ -107,7 +107,7 @@ This table is made by `node scripts/engine-doc.mjs` from the two engines' code (
 | `changevar` | Calculus > Change Variable (param: u = g(x)) | F+p | value | ✓ | ✓ |
 | `approxint` | Calculus > Approximate Integral (params: 'method', n) | F+p | value | ✓ | ✓ |
 | `iterate` | Calculus > Iterate (params: start, count) | F+p | value | ✓ | ✓ |
-| `series` | Calculus > Power Series (F+p: variable, highest power, point) | F | value | ✓ | ✓ |
+| `series` | Calculus > Power Series (F+p: variable, number of terms, point; terms counted from the lowest power, as in 5.5) | F | value | ✓ | ✓ |
 | `pade` | Calculus > Padé Approximant (F+p: m, n, variable, point; without them [2/2]) | F | value | ✓ | ✓ |
 | `extrema` | Calculus > Find Extrema | F | solutions | ✓ | ✓ |
 | `implicitdiff` | Calculus > Implicit Differentiation (F+p: the differentiation variable, x if not given) | F | value | ✓ | ✓ |

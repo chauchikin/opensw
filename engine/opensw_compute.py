@@ -944,7 +944,7 @@ class PowerSeries(sp.Function):
                 continue
             minus = c.could_extract_minus_sign()
             c = -c if minus else c
-            power = "" if k == 0 else printer.parenthesize(u, 1000) + ("^{%d}" % k if k > 1 else "")
+            power = "" if k == 0 else (printer._print(u) if u.is_Symbol else printer.parenthesize(u, 1000)) + ("^{%d}" % k if k > 1 else "")
             coeff = printer._print(c) if k == 0 or c != 1 else ""
             if k and c.is_Add:
                 coeff = "\\left(%s\\right)" % coeff
@@ -953,17 +953,37 @@ class PowerSeries(sp.Function):
 
 
 def mupad_series(f, at=None, order=sp.Integer(5)):
-    """MuPAD's series(f, x = a, n): the terms up to (x - a)^(n-1) in powers of x - a, and O((x - a)^n)."""
+    """MuPAD's series(f, x = a, n), which 5.5's Power Series (Number of terms n) also uses: n powers
+    of x - a counted from the lowest one v, ending in O((x - a)^(v + n)), or further when the next
+    coefficients are 0. 5.5's help: sin(x)/x with 10 terms ends in O(x^10), Y3(x)/x (from x^-4)
+    with 5 terms in O(x)."""
     x, a = (at.lhs, at.rhs) if isinstance(at, sp.Equality) else (at, 0) if isinstance(at, sp.Symbol) else (main_variable(f), 0)
     if not (getattr(order, "is_Integer", False) and order > 0):
         raise Unsupported("The order of series must be a positive whole number")
     t = sp.Dummy("t")
-    s = sp.series(f.subs(x, a + t), t, 0, int(order)).removeO()
-    big_o = sp.Order((x - a) ** int(order), (x, a))
+    g = f.subs(x, a + t)
+    top = g.as_leading_term(t).as_coeff_exponent(t)[1] + int(order)  # v + n (v may be a fraction: sqrt(x))
+    # SymPy's own count can stop short (Y3(x)/x with n = 1 gives only -16/(pi x^4)), and it takes
+    # no n below 1: ask for more powers and keep the powers below top
+    def power(term):  # the power of t in one term (a log(t) factor counts as 0)
+        return sum((e for b, e in (f.as_base_exp() for f in sp.Mul.make_args(term)) if b == t), sp.S.Zero)
+
+    s = sp.expand(sp.series(g, t, 0, max(int(sp.ceiling(top)), 1) + 8).removeO())
+    # as 5.5 shows it, O moves past powers whose coefficient is 0, to the first term left out
+    # (checked on 5.5: sin x with 5 terms ends in O(x^7), cos x / x^4 with 3 terms in O(1));
+    # not past a term with log x (5.5's help: Y3(x)/x with 5 terms ends in O(x))
+    later = [term for term in sp.Add.make_args(s) if power(term) >= top]
+    if top.is_Integer and later:
+        nxt = min(power(term) for term in later)
+        with_log = any(lg.has(t) for term in later if power(term) == nxt for lg in term.atoms(sp.log))
+        if nxt.is_Integer and not with_log:
+            top = nxt
+    s = sp.Add(*[term for term in sp.Add.make_args(s) if power(term) < top])
+    big_o = sp.Order((x - a) ** top, (x, a))
     if not s.is_polynomial(t):  # negative powers: as SymPy writes it
-        return Shown(sp.Add(s.subs(t, x - a), big_o, evaluate=False))
+        return Shown(sp.Add(*sp.Add.make_args(s.subs(t, x - a)), big_o, evaluate=False))
     p = sp.Poly(s, t)
-    return PowerSeries(x - a, big_o, *[p.coeff_monomial(t ** k) for k in range(int(order))])
+    return PowerSeries(x - a, big_o, *[p.coeff_monomial(t ** k) for k in range(int(top))])
 
 
 # MuPAD commands written in a formula, which 5.5 gave to MuPAD as they are; also the ones 5.5's
@@ -1612,10 +1632,11 @@ def main_variable(e):
     return free[0]
 
 
-def power_series(e, var=None, order=5, point=0):
-    """The series up to (var - point)^order; var: x if present (main_variable)."""
+def power_series(e, var=None, terms=5, point=0):
+    """Calculus > Power Series as in 5.5: terms (Number of terms) powers of var - point, see
+    mupad_series; var: x if present (main_variable)."""
     e = last_side(e).doit()
-    return sp.series(e, var or main_variable(e), point, order + 1)
+    return mupad_series(e, sp.Eq(var or main_variable(e), point, evaluate=False), sp.Integer(terms))
 
 
 def pade(e, m, n, var=None, point=0):
@@ -2200,10 +2221,10 @@ def with_options(op, e, ps, words=()):
     symbols = [p for p in ps if isinstance(p, sp.Symbol)]
     numbers = [p for p in ps if not isinstance(p, sp.Symbol)]
     var = symbols[0] if symbols else None
-    if op == "series":  # params: [variable, order, point]
-        order = int(numbers[0]) if numbers else 5
+    if op == "series":  # params: [variable, number of terms, point]
+        terms = int(numbers[0]) if numbers else 5
         point = numbers[1] if len(numbers) > 1 else 0
-        return {"kind": "value", "latex": tex(power_series(e, var, order, point))}
+        return {"kind": "value", "latex": tex(power_series(e, var, terms, point))}
     if op == "differentiate":  # params: [variable, times]
         v = var or main_variable(last_side(e))
         return {"kind": "value", "latex": tex(sp.diff(last_side(e).doit(), v, int(numbers[0]) if numbers else 1))}

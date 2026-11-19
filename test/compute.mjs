@@ -35,7 +35,7 @@ check('Solve from the toolbar', r.result.length === 4 && r.result[2].latex === '
 // the rest of 5.5's Compute menu
 const cases = [
   ['partialfractions', '\\frac{1}{(x+1)(x+2)}', (x) => x.latex.replace(/\s/g, '') === '-\\frac{1}{x+2}+\\frac{1}{x+1}'],
-  ['series', '\\sin x', (x) => x.latex.includes('O\\left(x^{6}\\right)')],
+  ['series', '\\sin x', (x) => x.latex.includes('O\\left(x^{7}\\right)')], // 5 terms, as 5.5: x^6 is 0
   ['extrema', 'x^3-3x', (x) => x.solutions.join(';') === 'x=-1, f=2;x=1, f=-2'],
   ['numericsolve', '\\cos x=x', (x) => x.solutions[0] === 'x=0.73909'],
   ['ode', "y''+y=0", (x) => /C_\{1\} \\sin/.test(x.solutions[0])],

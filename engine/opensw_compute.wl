@@ -446,11 +446,30 @@ transform[f_, x_, y_, h_] := Switch[h,
   "FourierTransform", FourierTransform[f, x, y, FourierParameters -> {1, 1}],
   _, Expand[InverseFourierTransform[f, x, y, FourierParameters -> {1, 1}]]];
 
-(* MuPAD's series(f, x = a, n): the terms up to (x - a)^(n-1) in powers of x - a, and O((x - a)^n) *)
-mupadSeries[f_, at_, n_] := Module[{x, a},
+(* MuPAD's series(f, x = a, n), which 5.5's Power Series (Number of terms n) also uses: n powers
+   of x - a counted from the lowest one v, ending in O((x - a)^(v + n)), or further when the next
+   coefficients are 0. 5.5's help: Sin[x]/x with 10 terms ends in O(x^10), BesselY[3, x]/x (from
+   x^-4) with 5 terms in O(x). *)
+mupadSeries[f_, at_, n_] := Module[{x, a, top, k, more, later},
   {x, a} = Which[Head[at] === eq, List @@ at, isVar[at], {at, 0}, True, {mainVariable[f], 0}];
   If[!IntegerQ[n] || n < 1, unsupported["The order of series must be a positive whole number"]];
-  Series[f, {x, a, n - 1}]];
+  top = lowestPower[f, x, a] + n;
+  (* Series takes a whole-number order: with v a fraction (Sqrt[x]) it is rounded up, as SymPy's side does *)
+  k = Ceiling[top] - 1;
+  (* as 5.5 shows it, O moves past powers whose coefficient is 0, to the first term left out
+     (checked on 5.5: Sin[x] with 5 terms ends in O(x^7), Cos[x]/x^4 with 3 terms in O(1));
+     not past a term with Log[x] (BesselY above) *)
+  more = Series[f, {x, a, k + 8}];
+  If[IntegerQ[top] && Head[more] === SeriesData,
+    later = Select[Transpose[{(more[[4]] + Range[0, Length[more[[3]]] - 1])/more[[6]], more[[3]]}], #[[1]] > k && #[[2]] =!= 0 &];
+    If[later =!= {} && IntegerQ[later[[1, 1]]] && FreeQ[later[[1, 2]], Log[z_ /; !FreeQ[z, x]]], k = later[[1, 1]] - 1]];
+  Series[f, {x, a, k}]];
+
+(* the lowest power of x - a in f's series (0 when f does not depend on x); a SeriesData keeps
+   no leading zero coefficients, so it is nmin / den once some coefficient is there *)
+lowestPower[f_, x_, a_] := Module[{k = 0, s},
+  While[s = Series[f, {x, a, k}]; Head[s] === SeriesData && s[[3]] === {} && k < 100, k += 5];
+  If[Head[s] === SeriesData, s[[4]]/s[[6]], 0]];
 
 (* MuPAD's nextprime: the smallest prime >= n *)
 nextprime[n_?NumericQ] /; Im[n] == 0 := NextPrime[Ceiling[n] - 1];
@@ -832,7 +851,7 @@ texE[s_SeriesData] := Module[{x = s[[1]], a = s[[2]], cs = s[[3]], n0 = s[[4]], 
         term = texE[If[p == 0, c, c * Inactive[Power][u, p]]];
         out = out <> If[out == "" || StringStartsQ[term, "-"], "", "+"] <> term]],
     {i, Length[cs]}];
-  out <> If[out == "", "", "+"] <> "O\\left(" <> texE[Inactive[Power][u, n1 / den]] <> "\\right)"];
+  out <> If[out == "", "", "+"] <> "O\\left(" <> If[n1 == 0, "1", texE[Inactive[Power][u, n1 / den]]] <> "\\right)"];
 texE[Inactive[Power][b_, 1]] := paren[b, 31];
 texE[Inactive[Power][b_, n_]] := paren[b, 31] <> "^{" <> texE[n] <> "}";
 texE[contfracOut[terms_, more_]] := Module[{out = texE[Last[terms]] <> If[more == 1, "+..", ""]},
@@ -1633,7 +1652,7 @@ operations = <|
   "combine" -> (combine55[lastSide[#]] &),
   "rewrite_exp" -> (rewriteExp[lastSide[#]] &),
   "rewrite_sincos" -> (rewriteSinCos[lastSide[#]] &),
-  "series" -> (With[{f = lastSide[#]}, Series[f, {mainVariable[f], 0, 5}]] &),
+  "series" -> (mupadSeries[lastSide[#], None, 5] &),
   "pade" -> (With[{f = lastSide[#]}, Factor[Together[PadeApproximant[f, {mainVariable[f], 0, {2, 2}}]]]] &),
   "differentiate" -> (With[{f = lastSide[#]}, D[f, mainVariable[f]]] &),
   "integrate" -> (With[{f = lastSide[#]}, Integrate[f, mainVariable[f]]] &),
@@ -1675,7 +1694,7 @@ withParams[j_] := If[paramsQ[j], {j["expr"], param /@ Lookup[j, "params", {}]}, 
 lpItems[j_] := expr /@ itemsJson[j];
 
 (* operations whose params choose what 5.5 asks in a dialog: the variable, the order, the unknowns
-   series [variable, order, point]; differentiate [variable, times]; integrate [variable];
+   series [variable, number of terms, point]; differentiate [variable, times]; integrate [variable];
    pade [m, n, variable, point]; partialfractions [variable]; solve, numericsolve [unknowns...,
    and the word 'principal': 5.5's Principal Value Only] *)
 optionOps = {"series", "differentiate", "integrate", "solve", "numericsolve", "pade", "partialfractions"};
@@ -1686,7 +1705,7 @@ withOptions[op_, j_] := Module[{e, words, ps, syms, nums, v, at},
   syms = Select[ps, isVar]; nums = Select[ps, NumericQ];
   v = If[syms === {}, If[MemberQ[{"solve", "numericsolve", "partialfractions"}, op], None, mainVariable[lastSide[e]]], First[syms]];
   Switch[op,
-    "series", value[Series[lastSide[e], {v, If[Length[nums] > 1, nums[[2]], 0], If[nums === {}, 5, First[nums]]}]],
+    "series", value[mupadSeries[lastSide[e], eq[v, If[Length[nums] > 1, nums[[2]], 0]], If[nums === {}, 5, First[nums]]]],
     "differentiate", value[D[lastSide[e], {v, If[nums === {}, 1, First[nums]]}]],
     "integrate", value[Integrate[lastSide[e], v]],
     "partialfractions", value[partialFractions[lastSide[e], v]],

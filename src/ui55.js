@@ -1274,7 +1274,7 @@ export function setupUI(app) {
     if (!mv) { app.toast(_t('Put the cursor in a formula to compute')); return; }
     const { variables } = await formulaInfo(mv.latex).catch(() => ({ variables: [] }));
     askCompute('series', _t('Power series'), `<p>${_t('Expand in powers of')} ${varField(variables, guessVariable(variables))} ${_t('about')} <input id="d-a" size="5" value="0"></p>
-      <p>${_t('Highest power')} <input id="d-n" size="4" value="5"></p>`, (d) => [field(d, '#d-v') || 'x', field(d, '#d-n') || '5', field(d, '#d-a') || '0']);
+      <p>${_t('Number of terms')} <input id="d-n" size="4" value="5"></p>`, (d) => [field(d, '#d-v') || 'x', field(d, '#d-n') || '5', field(d, '#d-a') || '0']);
   }
   // 5.5 asks the differentiation variable; the other letters are functions of it
   async function implicitDialog() {

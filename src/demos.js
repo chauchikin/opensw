@@ -46,7 +46,7 @@ export const DEMOS = [
         title: 'Series and extrema',
         problems: [
           { op: 'evaluate', latex: '\\sum_{n=1}^{\\infty}\\frac{1}{n^{2}}', how: EVAL, answer: '\\frac{\\pi^{2}}{6}', expect: ['\\frac{\\pi^2}{6}', '\\frac{1}{6}\\pi^2'] },
-          { op: 'series', latex: '\\cos x', params: ['x', '6'], how: CALC('Power series…'), answer: '1-\\frac{x^{2}}{2}+\\frac{x^{4}}{24}-\\frac{x^{6}}{720}+O\\left(x^{7}\\right)', expect: ['\\frac{x^4}{24}', '\\frac{1}{24}x^4'] },
+          { op: 'series', latex: '\\cos x', params: ['x', '7'], how: CALC('Power series…'), answer: '1-\\frac{x^{2}}{2}+\\frac{x^{4}}{24}-\\frac{x^{6}}{720}+O\\left(x^{8}\\right)', expect: ['\\frac{x^4}{24}', '\\frac{1}{24}x^4'] },
           { op: 'extrema', latex: 'x^{3}-3x', how: CALC('Find extrema'), answer: 'x=-1\\ (f=2),\\quad x=1\\ (f=-2)', expect: 'x=1' },
         ],
       },

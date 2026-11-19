@@ -30,8 +30,8 @@ check('a defined function differentiated', !r.latex.includes('w') && r.latex.inc
 r = await compute('\\left.\\frac{x+y+\\beta}{bx-ay-\\alpha}\\right|_{x=0}', 'simplify');
 check('evaluate at x = 0', r.latex?.includes('\\beta') && !r.latex.includes('x'), r);
 await call('compute', { latex: '0', op: 'cleardefs' });
-r = await compute('\\frac{1}{1-t+x}', 'series', ['t', '3']);
-check('series in t up to t^3', r.latex.includes('O\\left(t^{4}\\right)'), r);
+r = await compute('\\frac{1}{1-t+x}', 'series', ['t', '4']);
+check('series in t, 4 terms: up to t^3', r.latex.includes('O\\left(t^{4}\\right)'), r);
 r = await compute('\\begin{pmatrix}p_0=-\\frac12\\\\p_1=-\\frac12-\\frac12q_1\\\\0=-\\frac{b}{4}-\\frac12q_1\\end{pmatrix}', 'solve', ['p_0', 'p_1', 'q_1']);
 check('solve for the chosen unknowns', r.solutions?.length === 1 && r.solutions[0].includes('q_{1}=- \\frac{1}{2} b'), r);
 r = await compute('\\frac{x+y+\\beta}{bx-ay-\\alpha}', 'pade', ['1', '1', 'x']);
@@ -50,8 +50,8 @@ const menu = async (...items) => {
 };
 await enter(0);
 await menu('Compute', 'Calculus', 'Power series…');
-check('Power series asks the variable and the highest power', await page.isVisible('#dialog #d-v') && await page.isVisible('#dialog #d-n'));
-await page.fill('#d-v', 't'); await page.fill('#d-n', '2');
+check('Power series asks the variable and the number of terms', await page.isVisible('#dialog #d-v') && await page.isVisible('#dialog #d-n'));
+await page.fill('#d-v', 't'); await page.fill('#d-n', '3');
 await page.click('#dialog-ok');
 await page.waitForFunction(() => /O\\\\left\(t\^\{?3/.test(JSON.stringify(window.swEditor.state.doc.toJSON())), null, { timeout: 30000 }).catch(() => {});
 r = await call('formulas');

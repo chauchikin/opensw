@@ -107,7 +107,7 @@ LaTeX 照 Scientific Word 5.5 的樣子寫：矩陣用 `pmatrix`（或 `\left(\b
 | `changevar` | 微積分 > 換變數（參數：u = g(x)） | F+p | value | ✓ | ✓ |
 | `approxint` | 微積分 > 近似積分（參數：'方法'、n） | F+p | value | ✓ | ✓ |
 | `iterate` | 微積分 > 迭代（參數：起始值、次數） | F+p | value | ✓ | ✓ |
-| `series` | 微積分 > 冪級數（F+p：變數、最高次、展開點） | F | value | ✓ | ✓ |
+| `series` | 微積分 > 冪級數（F+p：變數、項數、展開點；項數從最低次數起算，照 5.5） | F | value | ✓ | ✓ |
 | `pade` | 微積分 > Padé 近似（F+p：m、n、變數、展開點；沒給是 [2/2]） | F | value | ✓ | ✓ |
 | `extrema` | 微積分 > 求極值 | F | solutions | ✓ | ✓ |
 | `implicitdiff` | 微積分 > 隱函數微分（F+p：微分變數，沒給是 x） | F | value | ✓ | ✓ |

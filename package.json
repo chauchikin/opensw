@@ -1,6 +1,6 @@
 {
   "name": "opensw",
-  "version": "0.8.0",
+  "version": "0.8.1",
   "description": "An open-source math editor modelled on Scientific Word 5.5",
   "private": true,
   "license": "MPL-2.0",

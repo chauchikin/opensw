@@ -94,6 +94,7 @@ async fn typeset(app: tauri::AppHandle, tex: String, name: String, files: Option
         .join("typeset");
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     let stem = safe_stem(&name);
+    let own_pdf = dir.join(format!("{}.pdf", pdf_stem(&name)));
     let tex_path = dir.join(format!("{stem}.tex"));
     // a Scientific Word 5.x document loads 5.x's macro files (\input{tcilatex}): put them next to it
     if tex.contains("\\input{tcilatex}")
@@ -121,6 +122,10 @@ async fn typeset(app: tauri::AppHandle, tex: String, name: String, files: Option
     let pdf = tauri::async_runtime::spawn_blocking(move || run_engine(&dir, &stem, tectonic.as_deref(), tex_cache.as_deref()))
         .await
         .map_err(|e| e.to_string())??;
+    // TeX ran under the plain ASCII name; the PDF gets the document's own name, so that
+    // Chinese names do not all turn into ____ and overwrite each other. If that file is
+    // locked (open in a PDF viewer), the ASCII one is kept.
+    let pdf = if own_pdf != pdf && std::fs::rename(&pdf, &own_pdf).is_ok() { own_pdf } else { pdf };
 
     app.opener()
         .open_path(pdf.to_string_lossy(), None::<&str>)
@@ -272,6 +277,17 @@ fn safe_stem(name: &str) -> String {
         .map(|c| if c.is_ascii_alphanumeric() || c == '-' || c == '_' { c } else { '_' })
         .collect();
     if s.is_empty() { "document".to_string() } else { s }
+}
+
+/// The document's own name for its PDF: only the characters Windows forbids in file names
+/// are replaced.
+fn pdf_stem(name: &str) -> String {
+    let s: String = name
+        .chars()
+        .map(|c| if c.is_control() || "<>:\"/\\|?*".contains(c) { '_' } else { c })
+        .collect();
+    let s = s.trim_end_matches(['.', ' ']);
+    if s.is_empty() { "document".to_string() } else { s.to_string() }
 }
 
 fn bundled_tectonic(app: &tauri::AppHandle) -> Option<PathBuf> {
@@ -432,7 +448,15 @@ pub fn run() {
 
 #[cfg(test)]
 mod tests {
-    use super::{Path, copy_macro_files, inside, rename_file, run_engine, safe_stem, tex_errors};
+    use super::{Path, copy_macro_files, inside, pdf_stem, rename_file, run_engine, safe_stem, tex_errors};
+
+    #[test]
+    fn pdf_stem_should_keep_chinese_names() {
+        assert_eq!(pdf_stem("ADM縮放示範"), "ADM縮放示範");
+        assert_ne!(pdf_stem("ADM縮放示範"), pdf_stem("兩頭ADM找奇異曲線"));
+        assert_eq!(pdf_stem("a/b:c?. "), "a_b_c_");
+        assert_eq!(pdf_stem(""), "document");
+    }
 
     #[test]
     fn safe_stem_should_replace_spaces_and_dots() {

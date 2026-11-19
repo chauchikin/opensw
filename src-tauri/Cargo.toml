@@ -1,6 +1,6 @@
 [package]
 name = "opensw"
-version = "0.8.0"
+version = "0.8.1"
 description = "opensw: an open-source math editor modelled on Scientific Word 5.5"
 authors = ["opensw contributors"]
 license = "MPL-2.0"

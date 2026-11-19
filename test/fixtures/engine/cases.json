@@ -372,14 +372,62 @@
  {
   "op": "series",
   "latex": "\\frac{1}{1-t}",
-  "json": "{\"expr\":[\"Divide\",1,[\"Add\",[\"Negate\",\"t\"],1]],\"params\":[\"t\",3]}",
+  "json": "{\"expr\":[\"Divide\",1,[\"Add\",[\"Negate\",\"t\"],1]],\"params\":[\"t\",4]}",
   "expect": "t^3+O"
  },
  {
   "op": "series",
   "latex": "\\frac{1}{1-x}",
-  "json": "{\"expr\":[\"Divide\",1,[\"Add\",[\"Negate\",\"x\"],1]],\"params\":[\"x\",2,2]}",
+  "json": "{\"expr\":[\"Divide\",1,[\"Add\",[\"Negate\",\"x\"],1]],\"params\":[\"x\",3,2]}",
   "expect": "(x-2)^2"
+ },
+ {
+  "op": "series",
+  "latex": "(1-2t)^{-1/2}",
+  "json": "{\"expr\":[\"Divide\",1,[\"Sqrt\",[\"Add\",[\"Multiply\",-2,\"t\"],1]]],\"params\":[\"t\",6]}",
+  "expect": "\\frac{63}{8}t^{5}+O(t^{6})"
+ },
+ {
+  "op": "series",
+  "latex": "\\frac{\\sin x}{x}",
+  "json": "{\"expr\":[\"Divide\",[\"Sin\",\"x\"],\"x\"],\"params\":[\"x\",10]}",
+  "expect": "\\frac{1}{362880}x^{8}+O(x^{10})"
+ },
+ {
+  "op": "series",
+  "latex": "e^x\\sin x",
+  "json": "{\"expr\":[\"Multiply\",[\"Sin\",\"x\"],[\"Power\",\"ExponentialE\",\"x\"]],\"params\":[\"x\",6]}",
+  "expect": "\\frac{1}{90}x^{6}+O(x^{7})"
+ },
+ {
+  "op": "series",
+  "latex": "\\ln x",
+  "json": "{\"expr\":[\"Ln\",\"x\"],\"params\":[\"x\",4,1]}",
+  "expect": "\\frac{1}{4}(x-1)^{4}+O((x-1)^{5})"
+ },
+ {
+  "op": "series",
+  "latex": "\\sin x",
+  "json": "{\"expr\":[\"Sin\",\"x\"],\"params\":[\"x\",5]}",
+  "expect": "\\frac{1}{120}x^{5}+O(x^{7})"
+ },
+ {
+  "op": "series",
+  "latex": "\\sin^2 x",
+  "json": "{\"expr\":[\"Power\",[\"Sin\",\"x\"],2],\"params\":[\"x\",5]}",
+  "expect": "\\frac{2}{45}x^{6}+O(x^{8})"
+ },
+ {
+  "op": "series",
+  "latex": "\\frac{\\sin x}{x}",
+  "json": "{\"expr\":[\"Divide\",[\"Sin\",\"x\"],\"x\"],\"params\":[\"x\",5]}",
+  "expect": "\\frac{1}{120}x^{4}+O(x^{6})"
+ },
+ {
+  "op": "series",
+  "latex": "\\frac{\\cos x}{x^4}",
+  "json": "{\"expr\":[\"Divide\",[\"Cos\",\"x\"],[\"Power\",\"x\",4]],\"params\":[\"x\",3]}",
+  "expect": "O(1)"
  },
  {
   "op": "differentiate",
@@ -2028,7 +2076,7 @@
  {
   "op": "series",
   "latex": "\\cos x",
-  "json": "{\"expr\":[\"Cos\",\"x\"],\"params\":[\"x\",6]}",
+  "json": "{\"expr\":[\"Cos\",\"x\"],\"params\":[\"x\",7]}",
   "expect": [
    "\\frac{x^4}{24}",
    "\\frac{1}{24}x^4"
