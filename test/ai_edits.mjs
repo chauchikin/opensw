@@ -16,7 +16,7 @@ const menu = async (top, item) => {
   await page.locator(`.menu-list button:has(> span:text-is("${item}"))`).filter({ visible: true }).first().click();
 };
 
-await page.goto('http://localhost:4173/?lang=en'); await page.waitForTimeout(600);
+await page.goto(`http://localhost:${process.env.OPENSW_PORT || 4173}/?lang=en`); await page.waitForTimeout(600);
 await call('set', { latex: 'First paragraph.\n\nSecond paragraph.\n\nThird paragraph.' });
 // a person's own edit first, so there is something that is not the AI's
 await page.click('.ProseMirror p:last-child'); await page.keyboard.press('End'); await page.keyboard.type(' Mine.');
@@ -67,7 +67,7 @@ check('Tools > Connect AI on the web: desktop app only', /desktop app/.test(awai
 await page.click('#dialog-cancel');
 
 // Chinese
-await page.goto('http://localhost:4173/?lang=zh-TW'); await page.waitForTimeout(600);
+await page.goto(`http://localhost:${process.env.OPENSW_PORT || 4173}/?lang=zh-TW`); await page.waitForTimeout(600);
 await call('insert', { latex: '新的一段。' });
 check('Chinese: AI 正在修改', /AI 正在修改/.test(await bar()) && /復原 AI 的修改/.test(await bar()), await bar());
 await menu('說明', '跟 AI 說話…');

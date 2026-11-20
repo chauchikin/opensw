@@ -126,6 +126,7 @@ fn start_editor() -> Result<(), String> {
     if let Some(file) = control_file() {
         let _ = std::fs::remove_file(file); // stale file from an editor that did not close cleanly
     }
+    keep_own_pipes();
     // its own stdin/stdout must not mix into the MCP stream
     std::process::Command::new(exe)
         .stdin(Stdio::null())
@@ -143,6 +144,28 @@ fn start_editor() -> Result<(), String> {
     }
     Err("The editor did not open within 30 seconds".to_string())
 }
+
+/// A script that runs opensw-cli (or an AI app that runs `opensw --mcp`) reads its output through
+/// pipes, and Windows hands every inheritable handle of this program to a program it starts: the
+/// editor would hold those pipes open, and the script would wait until the editor is closed. So
+/// this program's own input and output are made not inheritable before the editor is started.
+#[cfg(windows)]
+fn keep_own_pipes() {
+    use std::os::windows::io::{AsRawHandle, RawHandle};
+    unsafe extern "system" {
+        fn SetHandleInformation(handle: RawHandle, mask: u32, flags: u32) -> i32;
+    }
+    const HANDLE_FLAG_INHERIT: u32 = 1;
+    for handle in [std::io::stdin().as_raw_handle(), std::io::stdout().as_raw_handle(), std::io::stderr().as_raw_handle()] {
+        if !handle.is_null() {
+            // SAFETY: the handle is this process's own standard handle, open for the whole run;
+            // the call only changes its inherit flag (it fails harmlessly on a console handle)
+            unsafe { SetHandleInformation(handle, HANDLE_FLAG_INHERIT, 0) };
+        }
+    }
+}
+#[cfg(not(windows))]
+fn keep_own_pipes() {}
 
 #[cfg(test)]
 mod tests {

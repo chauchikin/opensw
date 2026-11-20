@@ -83,10 +83,66 @@ fn inside(dir: &Path, name: &str) -> Option<PathBuf> {
     Some(out)
 }
 
-/// Typesets LaTeX to PDF and opens the PDF in the system viewer.
+/// The names in the {...} groups of a TeX text that could be files: no spaces, no TeX characters;
+/// a list (\bibliography{a,b}) gives each of its names.
+fn brace_names(tex: &str) -> Vec<&str> {
+    let mut out = Vec::new();
+    let mut rest = tex;
+    while let Some(open) = rest.find('{') {
+        rest = &rest[open + 1..];
+        let end = rest.find(['{', '}']).unwrap_or(rest.len());
+        if rest[end..].starts_with('}') {
+            out.extend(
+                rest[..end]
+                    .split(',')
+                    .map(str::trim)
+                    .filter(|n| !n.is_empty() && n.len() <= 200 && !n.contains(|c: char| c.is_whitespace() || "\\$#%^&~*?\"<>|=".contains(c))),
+            );
+        }
+        rest = &rest[end..];
+    }
+    out
+}
+
+/// A document can name files that are in its own folder (\lstinputlisting{prog.py},
+/// \input{chapter1}, \bibliography{refs} ...). The TeX is typeset in another folder, so those
+/// files are copied next to it: every {...} that names a file in the document's folder, also
+/// with .tex or .bib added (\input and \bibliography leave them out). The .tex files found are
+/// looked through in the same way. At most 200 files, none over 64 MB; one that cannot be copied is left out.
+fn copy_named_files(tex: &str, from: &Path, to: &Path) -> usize {
+    let mut tried = std::collections::HashSet::new();
+    let mut texts = vec![tex.to_string()];
+    let mut copied = 0;
+    while let Some(text) = texts.pop() {
+        for name in brace_names(&text) {
+            for ext in ["", ".tex", ".bib"] {
+                let rel = format!("{name}{ext}");
+                if copied >= 200 || !tried.insert(rel.clone()) {
+                    continue;
+                }
+                let (Some(source), Some(target)) = (inside(from, &rel), inside(to, &rel)) else { continue };
+                // (a file over 64 MB is not something TeX reads in: left where it is)
+                if !source.metadata().is_ok_and(|m| m.is_file() && m.len() <= 64 << 20) || target.parent().is_some_and(|p| std::fs::create_dir_all(p).is_err()) || std::fs::copy(&source, &target).is_err() {
+                    continue;
+                }
+                copied += 1;
+                if rel.ends_with(".tex")
+                    && let Ok(inner) = std::fs::read_to_string(&source)
+                {
+                    texts.push(inner);
+                }
+            }
+        }
+    }
+    copied
+}
+
+/// Typesets LaTeX to PDF and opens the PDF in the system viewer (mode "open", the default),
+/// sends it to the printer ("print": Typeset > Print PDF) or only makes it ("none": Compile PDF).
 /// Uses xelatex when it is installed, otherwise the bundled Tectonic engine.
+/// folder: the document's own folder, for the files it names there (copy_named_files).
 #[tauri::command]
-async fn typeset(app: tauri::AppHandle, tex: String, name: String, files: Option<Vec<TexFile>>) -> Result<Typeset, String> {
+async fn typeset(app: tauri::AppHandle, tex: String, name: String, files: Option<Vec<TexFile>>, folder: Option<String>, mode: Option<String>) -> Result<Typeset, String> {
     let dir = app
         .path()
         .app_cache_dir()
@@ -105,6 +161,10 @@ async fn typeset(app: tauri::AppHandle, tex: String, name: String, files: Option
         for folder in installed_sw5_macro_folders() {
             copy_macro_files(&folder, &dir)?;
         }
+    }
+    // (before the TeX itself and the pictures are written: those win over a file of the same name)
+    if let Some(folder) = folder.as_deref().map(Path::new).filter(|f| f.is_dir() && *f != dir) {
+        copy_named_files(&tex, folder, &dir);
     }
     std::fs::write(&tex_path, tex).map_err(|e| e.to_string())?;
     for f in files.unwrap_or_default() {
@@ -127,11 +187,36 @@ async fn typeset(app: tauri::AppHandle, tex: String, name: String, files: Option
     // locked (open in a PDF viewer), the ASCII one is kept.
     let pdf = if own_pdf != pdf && std::fs::rename(&pdf, &own_pdf).is_ok() { own_pdf } else { pdf };
 
-    app.opener()
-        .open_path(pdf.to_string_lossy(), None::<&str>)
-        .map_err(|e| format!("The PDF was made ({}) but cannot be opened: {e}", pdf.display()))?;
+    match mode.as_deref() {
+        Some("none") => {}
+        Some("print") => print_pdf(&pdf)?,
+        _ => app
+            .opener()
+            .open_path(pdf.to_string_lossy(), None::<&str>)
+            .map_err(|e| format!("The PDF was made ({}) but cannot be opened: {e}", pdf.display()))?,
+    }
     let errors = tex_errors(&std::fs::read_to_string(&log).unwrap_or_default());
     Ok(Typeset { pdf: pdf.to_string_lossy().into_owned(), errors })
+}
+
+/// Typeset > Print PDF: the PDF goes to the default printer, through the program that opens PDFs
+/// (Windows: its "print" verb; elsewhere lp)
+fn print_pdf(pdf: &Path) -> Result<(), String> {
+    #[cfg(windows)]
+    let status = {
+        use std::os::windows::process::CommandExt;
+        let quoted = pdf.to_string_lossy().replace('\'', "''");
+        Command::new("powershell")
+            .args(["-NoProfile", "-Command", &format!("Start-Process -FilePath '{quoted}' -Verb Print")])
+            .creation_flags(0x0800_0000) // CREATE_NO_WINDOW
+            .status()
+    };
+    #[cfg(not(windows))]
+    let status = Command::new("lp").arg(pdf).status();
+    match status {
+        Ok(s) if s.success() => Ok(()),
+        _ => Err(format!("The PDF was made ({}) but could not be sent to the printer", pdf.display())),
+    }
 }
 
 /// A typeset PDF, and the errors TeX met on the way (the PDF comes out anyway, as in 5.5,
@@ -142,20 +227,34 @@ struct Typeset {
     errors: Vec<String>,
 }
 
-/// "! Undefined control sequence." with the line it was on ("l.42 ... \dfrac"), at most 20
+/// "! Undefined control sequence." with the line it was on ("l.42 ... \dfrac"). A message TeX gave
+/// many times comes once, with how often (" [12 times]") and the first place, so that one kind of
+/// error on every line does not hide the others; at most 20 different ones. First of all the
+/// fonts the document asks for that are not on this computer (the lines export.js makes TeX
+/// write: "opensw-no-font: name").
 fn tex_errors(log: &str) -> Vec<String> {
     let lines: Vec<&str> = log.lines().collect();
-    let mut out = Vec::new();
+    let mut found: Vec<(String, String, usize)> = Vec::new(); // message, place, times
+    let mut add = |msg: String, at: String| match found.iter_mut().find(|f| f.0 == msg) {
+        Some(f) => f.2 += 1,
+        None => found.push((msg, at, 1)),
+    };
+    for line in &lines {
+        if let Some(font) = line.strip_prefix("opensw-no-font: ") {
+            add(format!("The font \"{}\" is not installed on this computer; the default font is used instead.", font.trim()), String::new());
+        }
+    }
     for (i, line) in lines.iter().enumerate() {
         if let Some(msg) = line.strip_prefix("! ") {
             let at = lines[i + 1..].iter().take(8).find(|l| l.starts_with("l.")).map(|l| format!(" ({})", l.trim())).unwrap_or_default();
-            out.push(format!("{msg}{at}"));
-            if out.len() == 20 {
-                break;
-            }
+            add(msg.to_string(), at);
         }
     }
-    out
+    found
+        .into_iter()
+        .take(20)
+        .map(|(msg, at, times)| if msg.starts_with("The font \"") || times == 1 { format!("{msg}{at}") } else { format!("{msg} [{times} times]{at}") })
+        .collect()
 }
 
 /// File > Open Location: the bytes at a web address. curl (part of Windows 10 and later,
@@ -448,7 +547,7 @@ pub fn run() {
 
 #[cfg(test)]
 mod tests {
-    use super::{Path, copy_macro_files, inside, pdf_stem, rename_file, run_engine, safe_stem, tex_errors};
+    use super::{Path, brace_names, copy_macro_files, copy_named_files, inside, pdf_stem, rename_file, run_engine, safe_stem, tex_errors};
 
     #[test]
     fn pdf_stem_should_keep_chinese_names() {
@@ -490,6 +589,47 @@ mod tests {
         let log = "This is XeTeX\n! Undefined control sequence.\n<recently read> \\dfrac \n                \nl.21 $w=\\dfrac\n                  {x}{y}$\nmore\n! Missing $ inserted.\n";
         assert_eq!(tex_errors(log), vec!["Undefined control sequence. (l.21 $w=\\dfrac)", "Missing $ inserted."]);
         assert!(tex_errors("no errors here").is_empty());
+    }
+
+    #[test]
+    fn tex_errors_should_give_a_repeated_message_once_and_missing_fonts_first() {
+        let log = "! Missing $ inserted.\nl.5 a_b\n! Missing $ inserted.\nl.9 c_d\nopensw-no-font: Noto Serif CJK TC\nopensw-no-font: Noto Serif CJK TC\n! Undefined control sequence.\nl.12 \\foo\n";
+        assert_eq!(
+            tex_errors(log),
+            vec![
+                "The font \"Noto Serif CJK TC\" is not installed on this computer; the default font is used instead.",
+                "Missing $ inserted. [2 times] (l.5 a_b)",
+                "Undefined control sequence. (l.12 \\foo)"
+            ]
+        );
+    }
+
+    #[test]
+    fn brace_names_should_give_what_could_be_file_names() {
+        assert_eq!(
+            brace_names("\\lstinputlisting[language=C]{prog1.wls} \\bibliography{refs, more} \\frac{a b}{x^2} \\section{Intro} {\\bf x} \\input{parts/ch1}"),
+            vec!["prog1.wls", "refs", "more", "Intro", "parts/ch1"]
+        );
+    }
+
+    #[test]
+    fn copy_named_files_should_copy_the_files_the_document_names_in_its_folder() {
+        let base = std::env::temp_dir().join(format!("opensw-named-{}", std::process::id()));
+        let (from, to) = (base.join("doc"), base.join("typeset"));
+        std::fs::create_dir_all(from.join("parts")).unwrap();
+        std::fs::create_dir_all(&to).unwrap();
+        std::fs::write(from.join("prog1.wls"), "Print[1]").unwrap();
+        std::fs::write(from.join("refs.bib"), "@book{a}").unwrap();
+        std::fs::write(from.join("parts").join("ch1.tex"), "\\lstinputlisting{out.txt}").unwrap();
+        std::fs::write(from.join("out.txt"), "1").unwrap();
+        std::fs::write(from.join("other.txt"), "not named").unwrap();
+        let tex = "\\lstinputlisting{prog1.wls} \\bibliography{refs} \\input{parts/ch1} \\input{../secret} \\section{other}";
+        assert_eq!(copy_named_files(tex, &from, &to), 4);
+        for f in ["prog1.wls", "refs.bib", "parts/ch1.tex", "out.txt"] {
+            assert!(inside(&to, f).unwrap().is_file(), "{f}");
+        }
+        assert!(!to.join("other.txt").exists());
+        std::fs::remove_dir_all(&base).unwrap();
     }
 
     #[test]

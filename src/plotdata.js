@@ -1,6 +1,6 @@
 // The points of a plot, for plots.js to draw: the values come from the computation engine
 // (compute.js), the shapes (contour lines, surfaces, arrows ...) are made here.
-import { plotPoints, plotGrid, plotValues, odePoints } from './compute.js';
+import { plotPoints, plotGrid, plotValues, odePoints, nameOf } from './compute.js';
 import { plotKind, components, splitRelation } from './plots.js';
 import { odeRows } from './mathjson.js';
 import { _t } from './i18n.js';
@@ -29,7 +29,7 @@ async function curveData(kind, plot, c) {
   const v1 = c.variable || plot.variable || 'x';
   const v2 = plot.variable2 || 'y';
   const v3 = plot.variable3 || 'z';
-  const at = (latex) => plotPoints(latex, v1, c.range[0], c.range[1], c.n);
+  const at = (latex) => plotPoints(latex, v1, c.range[0], c.range[1], c.n, c.subs);
   const parts = components(c.latex);
   switch (kind) {
     case 'rect': case 'log': case 'loglog': return at(c.latex);
@@ -45,19 +45,19 @@ async function curveData(kind, plot, c) {
     case 'implicit': {
       const { f } = difference(c.latex);
       const n = cap(Math.max(c.grid[0] || 0, 80), 20, 120);
-      const r = await plotValues([f], [v1, v2], [c.range, c.range2], [n, n]);
+      const r = await plotValues([f], [v1, v2], [c.range, c.range2], [n, n], { subs: c.subs });
       return { segs: contour(r.axes, rows(r.values[0], n + 1, n + 1)) };
     }
     case 'inequality': {
       const { f, rel } = difference(c.latex);
       const n = cap(c.grid[0] || 120, 20, 120);
-      const r = await plotValues([f], [v1, v2], [c.range, c.range2], [n, n]);
+      const r = await plotValues([f], [v1, v2], [c.range, c.range2], [n, n], { subs: c.subs });
       const holds = (v) => v != null && (rel === '<' ? v < 0 : rel === '<=' ? v <= 0 : rel === '>' ? v > 0 : v >= 0);
       return { cells: region(r.axes, rows(r.values[0], n + 1, n + 1), holds, c.range, c.range2) };
     }
     case 'vector': case 'gradient': {
       const n = cap(c.grid[0] || (kind === 'vector' ? 20 : 10), 2, 40);
-      const r = await plotValues(kind === 'vector' ? parts : [c.latex], [v1, v2], [c.range, c.range2], [n - 1, n - 1], { grad: kind === 'gradient' });
+      const r = await plotValues(kind === 'vector' ? parts : [c.latex], [v1, v2], [c.range, c.range2], [n - 1, n - 1], { subs: c.subs, grad: kind === 'gradient' });
       const arrows = [];
       r.axes[0].forEach((x, i) => r.axes[1].forEach((y, j) => {
         const k = i * n + j;
@@ -71,9 +71,9 @@ async function curveData(kind, plot, c) {
       const lines = cap(c.grid[0] || 11, 2, 40);
       const pts = 40;
       const paths = [];
-      const across = await plotValues([c.latex], [re, im], [c.range, c.range2], [lines - 1, pts - 1], { complex: v1 });
+      const across = await plotValues([c.latex], [re, im], [c.range, c.range2], [lines - 1, pts - 1], { subs: c.subs, complex: v1 });
       for (let i = 0; i < lines; i++) paths.push({ x: across.values[0].slice(i * pts, (i + 1) * pts), y: across.values[1].slice(i * pts, (i + 1) * pts) });
-      const along = await plotValues([c.latex], [re, im], [c.range, c.range2], [pts - 1, lines - 1], { complex: v1 });
+      const along = await plotValues([c.latex], [re, im], [c.range, c.range2], [pts - 1, lines - 1], { subs: c.subs, complex: v1 });
       for (let j = 0; j < lines; j++) {
         const idx = Array.from({ length: pts }, (_, i) => i * lines + j);
         paths.push({ x: idx.map((k) => along.values[0][k]), y: idx.map((k) => along.values[1][k]) });
@@ -86,7 +86,7 @@ async function curveData(kind, plot, c) {
       return { paths: Object.keys(r.y).sort().map((name, k) => ({ x: r.x, y: r.y[name], color: k ? PALETTE[k % PALETTE.length] : null })) };
     }
     case 'surface': {
-      if (parts.length === 1) return plotGrid(c.latex, [plot.variable, plot.variable2], c.range, c.range2, 24, 24);
+      if (parts.length === 1) return plotGrid(c.latex, [plot.variable, plot.variable2], c.range, c.range2, 24, 24, c.subs);
       return { mesh: await mesh(parts, [v1, v2], c, (p) => p) };
     }
     case 'cylindrical': case 'spherical': {
@@ -101,12 +101,12 @@ async function curveData(kind, plot, c) {
     case 'implicit3': {
       const { f } = difference(c.latex);
       const n = cap(Math.max(c.grid[0] || 0, 16), 4, 22);
-      const r = await plotValues([f], [v1, v2, v3], [c.range, c.range2, c.range3], [n, n, n]);
+      const r = await plotValues([f], [v1, v2, v3], [c.range, c.range2, c.range3], [n, n, n], { subs: c.subs });
       return { tris: marchingTetrahedra(r.axes, r.values[0]), box: [c.range, c.range2, c.range3] };
     }
     case 'vector3': case 'gradient3': {
       const n = cap(c.grid[0] || 6, 2, 10);
-      const r = await plotValues(kind === 'vector3' ? parts : [c.latex], [v1, v2, v3], [c.range, c.range2, c.range3], [n - 1, n - 1, n - 1], { grad: kind === 'gradient3' });
+      const r = await plotValues(kind === 'vector3' ? parts : [c.latex], [v1, v2, v3], [c.range, c.range2, c.range3], [n - 1, n - 1, n - 1], { subs: c.subs, grad: kind === 'gradient3' });
       const arrows = [];
       let k = 0;
       for (const x of r.axes[0]) {
@@ -129,7 +129,7 @@ async function curveData(kind, plot, c) {
 async function approxBoxes(c, v1, curve) {
   const n = cap(c.boxes || 10, 1, 200);
   const k = 8;
-  const s = await plotPoints(c.latex, v1, c.range[0], c.range[1], n * k);
+  const s = await plotPoints(c.latex, v1, c.range[0], c.range[1], n * k, c.subs);
   const type = String(c.boxType || 'left').toLowerCase();
   const boxes = [];
   const polys = [];
@@ -190,7 +190,7 @@ function region([xs, ys], F, holds, [xa, xb], [ya, yb]) {
 async function mesh(three, vars, c, to) {
   const n = cap(c.grid[0] || 25, 4, 40) - 1;
   const m = cap(c.grid[1] || 25, 4, 40) - 1;
-  const r = await plotValues(three, vars, [c.range, c.range2], [n, m]);
+  const r = await plotValues(three, vars, [c.range, c.range2], [n, m], { subs: c.subs });
   return Array.from({ length: n + 1 }, (_, i) => Array.from({ length: m + 1 }, (_, j) => {
     const p = r.values.map((a) => a[i * (m + 1) + j]);
     return p.every((v) => v != null) ? to(p) : null;
@@ -201,7 +201,7 @@ async function mesh(three, vars, c, to) {
 async function tube(three, radius, v, c) {
   const n = cap(c.grid[0] || 50, 8, 120);
   const around = cap(c.grid[1] || 8, 6, 24);
-  const r = await plotValues([...three, radius], [v], [c.range], [n]);
+  const r = await plotValues([...three, radius], [v], [c.range], [n], { subs: c.subs });
   const C = r.axes[0].map((_, i) => [r.values[0][i], r.values[1][i], r.values[2][i]]);
   const R = r.values[3];
   const sub = (a, b) => a.map((x, k) => x - b[k]);
@@ -260,3 +260,19 @@ function marchingTetrahedra([xs, ys, zs], F) {
   return tris;
 }
 
+
+// An animated plot (5.5's Plot 2D/3D Animated): the plot at each frame's value of the animation
+// parameter (plots.js animFrames says how many), put in for the parameter's symbol after the
+// formula is read, so \sin tx stays sin(t x) -> [{ value, data }]
+export async function plotFrames(plot, count, onFrame) {
+  const a = plot.anim;
+  const name = await nameOf(a.param, 't');
+  const frames = [];
+  for (let k = 0; k < count; k++) {
+    const value = a.range[0] + ((a.range[1] - a.range[0]) * k) / Math.max(1, count - 1);
+    const at = { ...plot, curves: plot.curves.map((c) => ({ ...c, subs: { [name]: value } })) };
+    frames.push({ value, data: await plotData(at) });
+    onFrame?.(k + 1, count);
+  }
+  return frames;
+}

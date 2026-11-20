@@ -8,7 +8,7 @@ const page = await b.newPage({ viewport: { width: 1024, height: 900 } });
 const errs = [];
 page.on('pageerror', (e) => errs.push(e.message));
 page.on('console', (m) => m.type() === 'error' && errs.push(m.text()));
-await page.goto('http://localhost:4173/?lang=zh-TW');
+await page.goto(`http://localhost:${process.env.OPENSW_PORT || 4173}/?lang=zh-TW`);
 await page.waitForTimeout(600);
 for (const f of files) {
   const name = path.basename(f, '.tex');

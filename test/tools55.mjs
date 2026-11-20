@@ -12,7 +12,7 @@ const b = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium-124
 const ctx = await b.newContext({ viewport: { width: 1200, height: 900 }, acceptDownloads: true });
 const page = await ctx.newPage();
 const errs = []; page.on('pageerror', (e) => errs.push(e.message));
-await page.goto('http://localhost:4173/?lang=zh-TW'); await page.waitForTimeout(600);
+await page.goto(`http://localhost:${process.env.OPENSW_PORT || 4173}/?lang=zh-TW`); await page.waitForTimeout(600);
 const call = (cmd, args) => page.evaluate(([c, a]) => window.sw.call(c, a), [cmd, args]);
 const menu = async (top, ...items) => {
   await page.click(`.menu-top:has-text("${top}")`);

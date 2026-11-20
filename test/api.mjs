@@ -3,7 +3,7 @@ import { chromium } from 'playwright';
 const b = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium-1243/chrome-linux64/chrome' });
 const page = await b.newPage();
 const errs = []; page.on('pageerror', (e) => errs.push(e.message));
-await page.goto('http://localhost:4173/?lang=zh-TW'); await page.waitForTimeout(600);
+await page.goto(`http://localhost:${process.env.OPENSW_PORT || 4173}/?lang=zh-TW`); await page.waitForTimeout(600);
 let fails = 0;
 const check = (name, ok, detail) => { if (!ok) fails++; console.log(ok ? 'ok  ' : 'FAIL', name, detail === undefined ? '' : JSON.stringify(detail).slice(0, 200)); };
 const call = (cmd, args) => page.evaluate(([c, a]) => window.sw.call(c, a), [cmd, args]);

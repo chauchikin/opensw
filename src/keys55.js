@@ -115,6 +115,7 @@ export const HELP_ROWS = [
   [_t('Negate the symbol on the left'), _t('Ctrl+N (= becomes ≠, ∈ becomes ∉…)')],
   [_t('Find / Replace'), _t('Ctrl+Q / Ctrl+W')],
   [_t('Compute (cursor in a formula)'), 'Ctrl+E'],
+  [_t('New definition / Interpret (cursor in a formula)'), _t('Ctrl+= / Ctrl+?')],
   [_t('Formula properties (edit the TeX)'), 'Ctrl+F5'],
   [_t('Open / Close / Print (typeset PDF)'), _t('Ctrl+O / Ctrl+F4 / Ctrl+P')],
   [_t('Undo'), 'Ctrl+Z'],

@@ -63,6 +63,152 @@ function tree(toks) {
 }
 const text = (items) => items.map((t) => (typeof t === 'string' ? t : t.open + text(t.items) + t.close)).join('');
 
+// ---------- how 5.5 reads a formula (Compute > Interpret shows it) ----------
+// From 5.5's help (trigarg.tex, dm1-3.tex), written out here as brackets the parser reads the same way:
+// 1. A trigtype function (sin .. csc, sinh .. csch, arcsin .. arccsch, log, ln) without brackets takes as
+//    its argument what follows while it is multiplied: up to a + or −, a relation, a comma, and also up
+//    to another function (sin x cos x, sin x e^x, sin x/cos x are products and quotients of two):
+//    sin x(a+b) is sin(x(a+b)), sin x(cos(ax+b)) is sin(x cos(ax+b)), sin x/2 is sin(x/2),
+//    sin xy/2 is sin(xy/2).
+// 2. Brackets right after it are its argument: sin(x)(a+cos b) is (sin x)(a+cos b), sin(x)/2 is (sin x)/2,
+//    except when a letter or number follows them: sin(a+b)x is sin((a+b)x).
+// 3. / divides by the one factor after it only: 1/3x+4 is (1/3)x+4, 1/3(x+4) is (1/3)(x+4), 1/(3x)+4 is
+//    1/(3x)+4 (the parser would read 1/(3x)).
+const TRIGTYPE_NAMES = new Set(['sin', 'cos', 'tan', 'cot', 'sec', 'csc', 'sinh', 'cosh', 'tanh', 'coth', 'sech', 'csch',
+  'arcsin', 'arccos', 'arctan', 'arccot', 'arcsec', 'arccsc', 'arcsinh', 'arccosh', 'arctanh', 'arccoth', 'arcsech', 'arccsch', 'log', 'ln']);
+// other names applied to what follows (they end a trigtype function's argument)
+const OTHER_FUNCTIONS = new Set(['exp', 'det', 'gcd', 'lim', 'max', 'min', 'sup', 'inf', 'Pr', 'arg', 'deg', 'dim', 'hom', 'ker', 'lg',
+  'liminf', 'limsup', 'sum', 'prod', 'int', 'iint', 'iiint', 'oint', 'coprod', 'bigcup', 'bigcap', 'Re', 'Im']);
+const NAME_COMMANDS = /^\\(operatorname|mathrm|func|text|textrm|mathit|mbox)$/;
+const BRACE_ARGS = { '\\frac': 2, '\\dfrac': 2, '\\tfrac': 2, '\\binom': 2, '\\dbinom': 2, '\\tbinom': 2, '\\sqrt': 1, '\\overline': 1, '\\bar': 1,
+  '\\hat': 1, '\\tilde': 1, '\\vec': 1, '\\dot': 1, '\\ddot': 1, '\\mathbf': 1, '\\boldsymbol': 1, '\\mathcal': 1, '\\mathbb': 1 };
+const SPACING = /^\\(,|;|:|!| |quad|qquad|enspace|thinspace)$/;
+const MULTIPLY = /^(\\cdot|\\times|\*|\\ast)$/;
+const isSpace = (t) => typeof t === 'string' && /^\s+$/.test(t);
+const isBracket = (t) => t && typeof t === 'object' && t.open !== '{' && !/^\\begin/.test(t.open);
+const nameOf = (items, i) => { // the function's name at items[i] (\sin, \operatorname{arcsinh}), or null
+  const t = items[i];
+  if (typeof t !== 'string') return null;
+  if (/^\\[A-Za-z]+$/.test(t) && !NAME_COMMANDS.test(t)) return t.slice(1);
+  if (NAME_COMMANDS.test(t) && items[i + 1] && typeof items[i + 1] === 'object' && items[i + 1].open === '{') return text(items[i + 1].items).replace(/\\_/g, '_').trim();
+  return null;
+};
+const isTrigtype = (items, i) => TRIGTYPE_NAMES.has(nameOf(items, i));
+// the factor starting at i (spaces skipped before it) -> { start, end, kind } with kind 'function',
+// 'bracket', 'e' (e^x: the exponential function), 'atom', or null at an operator, a relation, the end
+function factorAt(items, i) {
+  while (isSpace(items[i])) i++;
+  const start = i;
+  const t = items[i];
+  if (t === undefined) return null;
+  let kind;
+  if (isBracket(t)) { kind = 'bracket'; i++; } else if (typeof t === 'object') { kind = 'atom'; i++; } else if (/^\d$|^\.$/.test(t)) {
+    kind = 'atom';
+    while (/^[\d.]$/.test(items[i] || '')) i++;
+  } else if (/^[A-Za-z]$/.test(t)) { kind = t === 'e' && /^\s*\^/.test(text(items.slice(i + 1, i + 3))) ? 'e' : 'atom'; i++; } else if (NAME_COMMANDS.test(t)) {
+    const name = nameOf(items, i);
+    i += 2;
+    kind = name && (TRIGTYPE_NAMES.has(name) || OTHER_FUNCTIONS.has(name)) ? 'function'
+      : name && !/^unit_/.test(name) && (() => { let k = i; while (isSpace(items[k])) k++; return isBracket(items[k]); })() ? 'function' : 'atom';
+  } else if (/^\\[A-Za-z]+$/.test(t)) {
+    const name = t.slice(1);
+    if (TRIGTYPE_NAMES.has(name) || OTHER_FUNCTIONS.has(name)) kind = 'function';
+    else if (SPACING.test(t) || MULTIPLY.test(t) || /^\\(div|left|right|le|leq|ge|geq|ne|neq|pm|mp|to|quad|qquad|infty|partial|nabla)$/.test(t) && !/^\\(infty)$/.test(t)) return t === '\\infty' ? { start, end: i + 1, kind: 'atom' } : null;
+    else kind = 'atom';
+    i++;
+    for (let n = BRACE_ARGS[t] || 0; n > 0; n--) {
+      while (isSpace(items[i])) i++;
+      if (items[i] === '[' && t === '\\sqrt') { while (i < items.length && items[i] !== ']') i++; i++; n++; continue; }
+      if (items[i] !== undefined) i++;
+    }
+  } else return null;
+  // ^.. _.. ' ! after it
+  for (;;) {
+    let k = i;
+    while (isSpace(items[k])) k++;
+    if ((items[k] === '^' || items[k] === '_') && items[k + 1] !== undefined) { i = k + 2; while (isSpace(items[i - 1]) && items[i] !== undefined) i++; continue; }
+    if (items[k] === "'" || items[k] === '!') { i = k + 1; continue; }
+    break;
+  }
+  return { start, end: i, kind };
+}
+// a function at i with its ^.. _.. -> the index after them
+function afterFunction(items, i) {
+  const f = factorAt(items, i);
+  return f ? f.end : i + 1;
+}
+const wrap = (items) => ({ open: '\\left(', items, close: '\\right)' });
+function trigArguments(items, inIntegral) {
+  items = items.map((t) => (typeof t === 'string' ? t : { ...t, items: trigArguments(t.items, inIntegral) }));
+  const out = [];
+  for (let i = 0; i < items.length;) {
+    const f = factorAt(items, i);
+    if (!f || f.kind !== 'function' || !isTrigtype(items, f.start)) {
+      const end = f ? f.end : i + 1;
+      out.push(...items.slice(i, end));
+      i = end;
+      continue;
+    }
+    out.push(...items.slice(i, f.end));
+    let k = f.end;
+    const first = factorAt(items, k);
+    if (!first || first.kind === 'function') { i = k; continue; } // sin e^x: e^x is its argument (the first factor always is)
+    // the argument: first .. end
+    let end = first.end;
+    const allowed = (g) => g && (g.kind === 'atom' || g.kind === 'bracket') && !(inIntegral && items[g.start] === 'd' && /^[A-Za-z]$|^\\[A-Za-z]+$/.test(items[g.start + 1] || ''));
+    if (first.kind === 'bracket') {
+      const next = factorAt(items, end);
+      if (!(next && next.kind === 'atom' && !(inIntegral && items[next.start] === 'd'))) { out.push(...items.slice(k, end)); i = end; continue; } // 2.
+    }
+    for (;;) {
+      let j = end;
+      while (isSpace(items[j])) j++;
+      const op = typeof items[j] === 'string' && (MULTIPLY.test(items[j]) || items[j] === '/' || items[j] === '\\div') ? j + 1 : j;
+      const g = factorAt(items, op);
+      if (!allowed(g)) break;
+      end = g.end;
+    }
+    const arg = items.slice(first.start, end);
+    out.push(...items.slice(k, first.start), arg.length === 1 && isBracket(arg[0]) ? arg[0] : wrap(arg));
+    i = end;
+  }
+  return out;
+}
+// 3.: a / b c -> \frac{a}{b} c, a being the factors before the / back to a + − relation or comma
+const ENDS_LEFT = (t) => typeof t === 'string' && (/^[+\-=<>,;&]$/.test(t) || /^\\(\\|le|leq|ge|geq|ne|neq|pm|mp|to|quad|qquad|equiv|approx|sim|in|subset|cup|cap|wedge|vee|rightarrow|Rightarrow|leftrightarrow|mid)$/.test(t));
+function slashes(items) {
+  items = items.map((t) => (typeof t === 'string' ? t : { ...t, items: slashes(t.items) }));
+  if (!items.includes('/') && !items.includes('\\div')) return items;
+  const out = [];
+  for (let i = 0; i < items.length; i++) {
+    const t = items[i];
+    if (t !== '/' && t !== '\\div') { out.push(t); continue; }
+    // the right side: one factor (d/dx: dx), a function with its argument
+    const r = factorAt(items, i + 1);
+    if (!r) { out.push(t); continue; }
+    let end = r.end;
+    if (r.kind === 'function') { const a = factorAt(items, end); if (a) end = a.end; } else if (items[r.start] === 'd' || items[r.start] === '\\partial') {
+      const v = factorAt(items, end);
+      if (v && v.kind === 'atom' && v.start === end) end = v.end;
+    }
+    let s = out.length;
+    while (s > 0 && !ENDS_LEFT(out[s - 1])) s--;
+    while (s < out.length && isSpace(out[s])) s++;
+    const left = out.splice(s);
+    if (!left.length) { out.push(...left, t); continue; }
+    const right = items.slice(r.start, end);
+    out.push('\\frac', { open: '{', items: left, close: '}' }, { open: '{', items: right, close: '}' });
+    i = end - 1;
+  }
+  return out;
+}
+export function reading55(tex) {
+  if (!/\\(sin|cos|tan|cot|sec|csc|arc|sinh|cosh|tanh|coth|log|ln|operatorname)|\/|\\div/.test(tex)) return tex;
+  const t = tree(tokens(tex.replace(/(\d\.?)\s*\\,\s*(?=\d)/g, '$1')));
+  if (!t) return tex;
+  return text(slashes(trigArguments(t, /\\i*int|\\oint/.test(tex))));
+}
+
 // the parts of a formula that end at a relation, a comma or a column: the extent of a mod
 const SEPARATOR = /^(=|<|>|,|;|&|\\\\|\\(le|leq|ge|geq|ne|neq|equiv|quad|qquad))$/;
 const MOD = '\\OPENSWMOD';
@@ -189,6 +335,9 @@ function closeBrackets(items) {
 }
 
 export function notation55(tex) {
+  return reading55(notationParts(tex));
+}
+function notationParts(tex) {
   // layout only: no meaning for computing
   tex = tex.replace(/\\(displaystyle|textstyle|scriptstyle|scriptscriptstyle|limits|nolimits|bigskip|medskip|smallskip)(?![A-Za-z])/g, '')
     .replace(/\\[vh]space\*?\s*\{[^{}]*\}/g, '');

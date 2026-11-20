@@ -1,6 +1,16 @@
 {
-  "about": "Computation engines on the user's computer, besides the built-in SymPy (desktop app only). How to add one: ENGINE.md. A file name here is in this folder (engine/); program: where to look for the program, the newest version found is used (* is any folder name), a bare name is looked for on the PATH. In args and load, {adapter} is the adapter file's full path and {adapter64} the same in base64; in call, {op} is the operation and {data} the request in base64.",
+  "about": "Computation engines that are programs on the user's computer (desktop app only): python is SymPy by the Python that comes with opensw (without it SymPy runs in Pyodide, as in a browser), the others are programs the user has. How to add one: ENGINE.md. A file name here is in this folder (engine/); program: where to look for the program, the newest version found is used (* is any folder name), a bare name is looked for on the PATH, {engine} at the start is this folder (a program that comes with opensw). In args and load, {adapter} is the adapter file's full path and {adapter64} the same in base64; in call, {op} is the operation and {data} the request in base64.",
   "engines": [
+    {
+      "id": "python",
+      "name": "SymPy",
+      "program": ["{engine}/python/python.exe"],
+      "example": "C:\\Python313\\python.exe",
+      "args": ["{adapter}"],
+      "adapter": "opensw_stdio.py",
+      "load": "",
+      "call": "{op} {data}"
+    },
     {
       "id": "mathematica",
       "name": "Mathematica",

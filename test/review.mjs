@@ -20,12 +20,12 @@ await page.addInitScript((text) => {
     invoke: async (cmd, args) => {
       if (cmd === 'read_file') { if (files.has(args.path)) return files.get(args.path); throw new Error('no such file'); }
       if (cmd === 'write_file') { window.shell.writes.push({ path: args.path, data: args.data }); files.set(args.path, args.data); return null; }
-      if (cmd === 'typeset') return { pdf: 'C:\\cache\\R.pdf', errors: ['Undefined control sequence. (l.30 Fourth paragraph \\badmacro)', 'Missing $ inserted.'] };
+      if (cmd === 'typeset') return { pdf: 'C:\\cache\\R.pdf', errors: ['Undefined control sequence. (l.30 Fourth paragraph \\badmacro)', 'Missing $ inserted. [3 times] (l.9 a_b)', 'The font "Noto Serif CJK TC" is not installed on this computer; the default font is used instead.'] };
       return null;
     },
   };
 }, file);
-await page.goto('http://localhost:4173/?lang=en'); await page.waitForTimeout(800);
+await page.goto(`http://localhost:${process.env.OPENSW_PORT || 4173}/?lang=en`); await page.waitForTimeout(800);
 let fails = 0;
 const check = (name, ok, detail) => { if (!ok) fails++; console.log(ok ? 'ok  ' : 'FAIL', name, ok ? '' : JSON.stringify(detail ?? '').slice(0, 300)); };
 const call = (cmd, args) => page.evaluate(([c, a]) => window.sw.call(c, a), [cmd, args]);
@@ -73,13 +73,14 @@ check('Accept keeps it and stops showing it', (await count('#rv-list [data-hunk]
 // typesetting errors in plain words, with their block
 await call('typeset'); await page.waitForTimeout(400);
 const er = await page.locator('#rv-list .rv-error').allTextContents();
-check('typesetting errors in plain words', er.length === 2 && /A command TeX does not know: \\badmacro/.test(er[0]) && /block 6/.test(er[0]) && /outside a formula/.test(er[1]), er);
+check('typesetting errors in plain words', er.length === 3 && /A command TeX does not know: \\badmacro/.test(er[0]) && /block 6/.test(er[0]) && /outside a formula/.test(er[1]), er);
+check('... a repeated one says how often; a font that is not installed is named', /\(3 times; the first place is shown\)/.test(er[1]) && /The font Noto Serif CJK TC is not installed/.test(er[2]), er);
 
 // derivation steps: (x+1)^2 = x^2+2x+1 proved, = x^2+1 not equal with a point, sqrt(x^2) = x not equal
 await page.click('#rv-check');
 await page.waitForFunction(() => !document.querySelector('#rv-check')?.disabled, null, { timeout: 120000 });
 const steps = await page.evaluate(() => [...document.querySelectorAll('#rv-list [data-step]')].map((e) => e.textContent));
-const summary = await page.locator('#rv-list .rv-none').last().textContent();
+const summary = await page.locator('#rv-list .rv-none', { hasText: 'steps checked' }).last().textContent();
 check('derivation: 3 steps, 1 proved', /3 steps checked: 1 proved equal/.test(summary), summary);
 check('... x^2+2x+1 = x^2+1 is not equal, with the point', steps.some((s) => /Not equal/.test(s) && /x\^\{2\}\+2x\+1/.test(s) && /at x=/.test(s)), steps);
 check('... sqrt(x^2) = x is not equal (x < 0)', steps.some((s) => /Not equal/.test(s) && /sqrt/.test(s)), steps);
@@ -93,7 +94,7 @@ await page.keyboard.press('Control+Shift+D'); await page.waitForTimeout(300);
 check('Ctrl+Shift+D closes it again: no tints', !(await visible('#rv-left')) && (await count('.rv-changed')) === 0 && (await visible('#scroller')));
 
 // zh-TW
-await page.goto('http://localhost:4173/?lang=zh-TW'); await page.waitForTimeout(600);
+await page.goto(`http://localhost:${process.env.OPENSW_PORT || 4173}/?lang=zh-TW`); await page.waitForTimeout(600);
 check('Chinese labels', await page.evaluate(() => document.querySelector('#rv-tabs').textContent.includes('LaTeX 源碼') && document.querySelector('#rv-left').textContent.includes('原檔')));
 
 check('no page errors', errs.length === 0, errs);

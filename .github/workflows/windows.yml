@@ -40,6 +40,14 @@ jobs:
         run: |
           src-tauri/texwarm/build-cache.sh "$PWD/src-tauri/bin/tectonic.exe" "$PWD/src-tauri/texcache"
           du -sh src-tauri/texcache
+      # the Python that runs SymPy in the desktop app, with Giac beside it (src-tauri/python);
+      # the app finds it as engine/python (engine/engines.json, "python")
+      - name: Bundle Python with SymPy and Giac
+        run: node scripts/bundle-python.mjs
+      # FriCAS, asked for the indefinite integrals Giac does not find (src-tauri/fricas); the engine
+      # finds it as engine/fricas (engine/opensw_fricas.py)
+      - name: Bundle FriCAS
+        run: node scripts/bundle-fricas.mjs
       # opensw-cli.exe: the editor's commands from a terminal or a script (src-tauri/src/cli.rs);
       # built first so the installer can carry it next to opensw.exe
       - name: Build opensw-cli
@@ -47,7 +55,7 @@ jobs:
         run: cargo build --release --bin opensw-cli --manifest-path src-tauri/Cargo.toml
       - name: Build installer
         shell: bash
-        run: npx tauri build --config '{"bundle":{"resources":{"bin/tectonic.exe":"bin/tectonic.exe","texcache/":"texcache/","target/release/opensw-cli.exe":"opensw-cli.exe"}}}'
+        run: npx tauri build --config '{"bundle":{"resources":{"bin/tectonic.exe":"bin/tectonic.exe","texcache/":"texcache/","target/release/opensw-cli.exe":"opensw-cli.exe","python/":"engine/python/","fricas/":"engine/fricas/"}}}'
       # the portable version: no installing; the program and its files in one folder, zipped
       # (it needs Microsoft Edge WebView2, which Windows 10 and 11 already have)
       - name: Portable zip
@@ -61,7 +69,9 @@ jobs:
           Copy-Item src-tauri/bin/tectonic.exe portable/opensw/bin/
           Copy-Item -Recurse src-tauri/texcache portable/opensw/texcache
           New-Item -ItemType Directory -Force portable/opensw/engine | Out-Null
-          Copy-Item engine/engines.json, engine/opensw_compute.wl portable/opensw/engine/
+          Copy-Item engine/engines.json, engine/opensw_compute.wl, engine/*.py portable/opensw/engine/
+          Copy-Item -Recurse src-tauri/python portable/opensw/engine/python
+          Copy-Item -Recurse src-tauri/fricas portable/opensw/engine/fricas
           Copy-Item LICENSE portable/opensw/LICENSE.txt
           Copy-Item THIRD-PARTY-NOTICES.txt portable/opensw/
           Set-Content portable/opensw/README.txt "opensw $ver portable: put the whole folder anywhere and run opensw.exe (opensw-cli.exe help: the commands from a terminal).`r`nIt needs Microsoft Edge WebView2 (Windows 10 and 11 have it). Settings and fragments are kept in this computer's user folder.`r`n`r`nopensw $ver 免安裝版：整個資料夾放到任何地方，執行 opensw.exe（opensw-cli.exe help：在終端機下指令）。`r`n需要 Microsoft Edge WebView2（Windows 10、11 都有）。設定和片段存在這台電腦的使用者資料夾。" -Encoding utf8
@@ -76,6 +86,9 @@ jobs:
           gh release create "$GITHUB_REF_NAME" -R "$GITHUB_REPOSITORY" --title "opensw ${GITHUB_REF_NAME#v}" \
             --notes "Windows: \`opensw_${GITHUB_REF_NAME#v}_x64-setup.exe\` is the installer, \`opensw_${GITHUB_REF_NAME#v}_x64-portable.zip\` the portable version (right-click it and choose Extract All first). Windows：安裝檔和免安裝版（免安裝版要先按右鍵「解壓縮全部」）。" \
             *.exe ../../../../../portable/*.zip SHA256SUMS.txt
+      # a branch on GitHub takes no file over 100 MB, so an installer or zip over 90 MB goes up as
+      # pieces of 90 MB (name.part00, name.part01, ...), which scripts/install-windows.ps1 joins again
+      # (by hand on Windows: copy /b name.part00+name.part01 name); SHA256SUMS.txt is of the whole files
       - name: Publish to branch sw-next-build
         if: "!startsWith(github.ref, 'refs/tags/')"
         shell: bash
@@ -83,6 +96,12 @@ jobs:
           mkdir out && cp src-tauri/target/release/bundle/nsis/*.exe out/ && cp portable/*.zip out/
           cd out
           sha256sum *.exe *.zip > SHA256SUMS.txt
+          for f in *.exe *.zip; do
+            if [ "$(stat -c %s "$f")" -gt $((90 * 1024 * 1024)) ]; then
+              split -b 90m -d -a 2 "$f" "$f.part"
+              rm "$f"
+            fi
+          done
           echo "built from ${GITHUB_SHA} at $(date -u +%Y-%m-%dT%H:%MZ)" > BUILD.txt
           git init -q -b sw-next-build
           git -c user.name=github-actions -c user.email=actions@github.com add .

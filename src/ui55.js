@@ -6,16 +6,16 @@ import { wrapInList, liftListItem } from 'prosemirror-schema-list';
 import { undo, redo } from 'prosemirror-history';
 import { Selection, AllSelection, TextSelection, NodeSelection } from 'prosemirror-state';
 import { toPx } from './graphics.js';
-import { parsePlot, drawable, plotSpecial, plotKind, components, splitRelation, PLOTTYPE, DIMS } from './plots.js';
+import { parsePlot, drawable, plotSpecial, plotKind, components, splitRelation, PLOTTYPE, DIMS, ANIM_DEFAULT } from './plots.js';
 import { odeRows } from './mathjson.js';
-import { isTemplate, buildExams } from './exam.js';
+import { isTemplate, buildExams, examSettings } from './exam.js';
 import { settings, saveSettings } from './settings.js';
 import { MANUAL } from './helpdoc.js';
 import { stripComments, readLatex, decode55 } from './tex55.js';
 import { Slice } from 'prosemirror-model';
 import { schema } from './schema.js';
 import { insertMath } from './mathview.js';
-import { compute, isEngineLoaded, formulaJson, formulaInfo, numericStarts } from './compute.js';
+import { compute, isEngineLoaded, formulaJson, formulaInfo, numericStarts, pythonProblem } from './compute.js';
 import { leanTheorem, leanVerdict } from './lean.js';
 import { isDesktop, leanCheck } from './desktop.js';
 import { formulaPng, imagePng, copyPng } from './copyimage.js';
@@ -23,6 +23,9 @@ import { ICONS } from './icons.js';
 import { setupTables } from './tables55.js';
 import { GREEK, SYMBOL_PREFIX, TEMPLATES, actionFor, HELP_ROWS, FKEYS, COMBINING, NEGATE, NEGATE_TEXT } from './keys55.js';
 import { _t, LANGUAGES } from './i18n.js';
+import { ACTIONS55 } from './c55.js';
+import { plot55For, applyPlot55, frameOf } from './plot55.js';
+import { setupMenus55 } from './menus55.js';
 
 
 // ---------- symbols ([shown, LaTeX]) ----------
@@ -599,6 +602,19 @@ export function setupUI(app) {
     $('#d-pre').value = text;
     $('#dialog-body').onkeydown = null;
   }
+  // an animated plot's own settings (5.5: Plot Properties > Variables, Intervals, and Animation)
+  const animRows = (plot) => (!plot.anim ? '' : `<p>${_t('Animation variable')} <input id="d-av" size="4" value="${escHtml(plot.anim.param)}"> ${_t('from')} <input id="d-aa" size="5" value="${plot.anim.range[0]}"> ${_t('to')} <input id="d-ab" size="5" value="${plot.anim.range[1]}"></p>
+    <p>${_t('Frames per second')} <input id="d-fps" size="3" value="${plot.anim.fps}">　${_t('Time from')} <input id="d-ts" size="3" value="${plot.anim.start}"> ${_t('to')} <input id="d-te" size="3" value="${plot.anim.end}"> ${_t('seconds')}</p>`);
+  function readAnim(d, plot) {
+    if (!plot.anim) return true;
+    const v = (id) => +d.querySelector(id).value;
+    const name = d.querySelector('#d-av').value.trim();
+    const [a, b, fps, t0, t1] = [v('#d-aa'), v('#d-ab'), v('#d-fps'), v('#d-ts'), v('#d-te')];
+    if (!name || !(a < b) || !(t0 < t1)) { app.toast(_t('Ranges must go from small to large')); return false; }
+    if (!(fps >= 1)) { app.toast(_t('At least 1 frame per second')); return false; }
+    plot.anim = { ...plot.anim, param: name, range: [a, b], fps: Math.round(fps), start: t0, end: t1 };
+    return true;
+  }
   // Properties of the other kinds of plot: the formulas, the variables' ranges, the grid,
   // and what the kind has of its own (a tube's radius, the boxes of an approximate integral)
   function otherPlotProperties(pos, node, plot, kind) {
@@ -615,7 +631,8 @@ export function setupUI(app) {
       : kind === 'approx' ? `<p>${_t('Method')} <select id="d-m">${[['left', _t('Left endpoints')], ['midpoint', _t('Midpoints')], ['right', _t('Right endpoints')], ['upper', _t('Upper sum')], ['lower', _t('Lower sum')], ['trapezoid', _t('Trapezoid')]]
         .map(([v, l]) => `<option value="${v}"${String(c0.boxType || 'left').toLowerCase().startsWith(v.slice(0, 3)) ? ' selected' : ''}>${l}</option>`).join('')}</select>
         ${_t('Subintervals')} <input id="d-n" size="4" value="${c0.boxes || 10}"></p>` : '';
-    dialog(_t('Plot properties'), rows + rangeRows + gridRow + own, (d) => {
+    dialog(_t('Plot properties'), rows + rangeRows + gridRow + own + animRows(plot), (d) => {
+      if (!readAnim(d, plot)) return;
       const rs = [];
       for (let i = 0; i < dims; i++) {
         const lo = +d.querySelector(`#d-a${i}`).value; const hi = +d.querySelector(`#d-b${i}`).value;
@@ -664,7 +681,8 @@ export function setupUI(app) {
     dialog(_t('Plot properties'), `${rows}<p>${_t('Add function')} <input id="d-fnew" size="26" placeholder="${escHtml(_t('{0} (may be empty)', hint))}"></p>
       <p>${_t('{0} from', rect ? 'x' : escHtml(v1))} <input id="d-x0" size="5" value="${x0}"> ${_t('to')} <input id="d-x1" size="5" value="${x1}"></p>
       ${kind === 'polar' || kind === 'param' ? '' : `<p>${_t('{0} from', kind === 'surface' ? escHtml(v2) : 'y')} <input id="d-y0" size="5" value="${y0}"> ${_t('to')} <input id="d-y1" size="5" value="${y1}">${rect ? _t('(empty = automatic)') : ''}</p>`}
-      ${rect ? `<p>${_t('Axis scale')} <select id="d-scale">${[['rect', _t('Normal')], ['log', _t('Logarithmic (y)')], ['loglog', _t('Log-log')]].map(([v, l]) => `<option value="${v}"${v === kind ? ' selected' : ''}>${l}</option>`).join('')}</select></p>` : ''}`, (d) => {
+      ${rect ? `<p>${_t('Axis scale')} <select id="d-scale">${[['rect', _t('Normal')], ['log', _t('Logarithmic (y)')], ['loglog', _t('Log-log')]].map(([v, l]) => `<option value="${v}"${v === kind ? ' selected' : ''}>${l}</option>`).join('')}</select></p>` : ''}${animRows(plot)}`, (d) => {
+      if (!readAnim(d, plot)) return;
       const num = (id) => { const v = d.querySelector(id)?.value.trim(); return v == null || v === '' ? null : +v; };
       const nx0 = num('#d-x0'); const nx1 = num('#d-x1'); const ny0 = num('#d-y0'); const ny1 = num('#d-y1');
       if (!(nx0 < nx1)) { app.toast(_t('Ranges must go from small to large')); return; }
@@ -708,17 +726,34 @@ export function setupUI(app) {
     const used = new Set();
     view.state.doc.descendants((n) => { if (n.type.name === 'image') used.add(n.attrs.path); });
     do path = `opensw-plot-${++plotCount}.wmf`; while (used.has(path));
-    const special = `\\special{language "Scientific Word";type "MAPLEPLOT";width 3in;height 2in;depth 0pt;display "USEDEF";plot_snapshots TRUE;`
-      + `xmin "-5";xmax "5";xviewmin "-5";xviewmax "5";viewset"X";rangeset"X";plottype 4;axesstyle "normal";numpoints 100;`
-      + `var1name \\TEXUX{$${v}$};function \\TEXUX{$${f}$};linecolor "red";linestyle 1;linethickness 1;lineAttributes "Solid";`
-      + `var1range "-5,5";num-x-gridlines 100;curveColor "[flat::RGB:0x00ff0000]";curveStyle "Line";valid_file "T";tempfilename '${path}';}`;
-    const frame = `\\FRAME{dtbpFX}{3in}{2in}{0pt}{}{}{Plot}{${special}}`;
-    const node = schema.nodes.image.create({ path, width: 288, height: 192, texw: '3in', texh: '2in', place: 'display', frame, name: 'Plot', plot: true });
+    // the defaults of Compute > Settings (Plot Layout, 2D Plots, the Rectangular intervals)
+    const s55 = plot55For(app.meta());
+    const fr = frameOf(s55);
+    const [a, b, n] = s55.intervals.rect[0];
+    const p2 = s55.p2;
+    const hex = p2.color.replace('#', '');
+    const thick = { thin: 1, medium: 2, thick: 3 }[p2.thickness] || 1;
+    const attr = { solid: 'Solid', dash: 'Dash', dot: 'Dots', dashdot: 'DashDot' }[p2.lineStyle] || 'Solid';
+    const named = { ff0000: 'red', '000000': 'black', '0000ff': 'blue', '008000': 'green' }[hex];
+    const special = `\\special{language "Scientific Word";type "MAPLEPLOT";width ${fr.texw};height ${fr.texh};depth ${fr.depth};display "USEDEF";plot_snapshots ${s55.behavior.snapshots ? 'TRUE' : 'FALSE'};`
+      + `xmin "${a}";xmax "${b}";xviewmin "${a}";xviewmax "${b}";viewset"X";rangeset"X";plottype 4;axesstyle "${p2.axes}";numpoints 100;`
+      + `var1name \\TEXUX{$${v}$};function \\TEXUX{$${f}$};${named ? `linecolor "${named}";` : ''}linestyle 1;linethickness ${thick};lineAttributes "${attr}";`
+      + `var1range "${a},${b}";num-x-gridlines ${n};curveColor "[flat::RGB:0x00${hex}]";curveStyle "${p2.style === 'point' ? 'Point' : 'Line'}";`
+      + `${p2.style === 'point' ? `pointStyle "${p2.marker}";` : ''}${p2.discontinuity ? `discAdjust ${p2.adjust === 'always' ? 'TRUE' : 'FALSE'};` : ''}valid_file "T";tempfilename '${path}';}`;
+    const frame = `\\FRAME{${fr.flags}}{${fr.texw}}{${fr.texh}}{${fr.depth}}{}{}{Plot}{${special}}`;
+    const node = schema.nodes.image.create({ path, width: fr.width, height: fr.height, texw: fr.texw, texh: fr.texh, place: fr.place, frame, name: 'Plot', plot: true });
     mv.exit(1);
     view.dispatch(view.state.tr.replaceSelectionWith(node).scrollIntoView());
     view.focus();
+    if (s55.behavior.dialogFirst) { propertiesFirst(path); return; }
     status(_t('Plotting… (the first time loads the computation engine, which takes a few seconds)'));
     app.renderPlots().finally(() => status(''));
+  }
+  // Plot Behavior, Display Plot Properties Dialog Before Plotting: the new plot's Properties first
+  function propertiesFirst(path) {
+    let at = null;
+    view.state.doc.descendants((n, pos) => { if (at == null && n.type.name === 'image' && n.attrs.path === path) at = pos; });
+    if (at != null) plotProperties(at, view.state.doc.nodeAt(at));
   }
   // the variables of a formula: single letters (not e, i) and Greek letters (not \pi)
   const varsOf = (f) => [...new Set([...f.matchAll(/\\(alpha|beta|gamma|theta|vartheta|phi|varphi|rho|psi|omega|tau|sigma|lambda|mu|xi|eta|zeta)(?![a-zA-Z])|(?<![\\a-zA-Z])([a-zA-Z])(?![a-zA-Z])/g)]
@@ -735,13 +770,20 @@ export function setupUI(app) {
     // r = f(θ), z = f(x, y): draw the right side (an implicit plot, an inequality and an ODE keep it all)
     if (eq.length > 1 && !['implicit', 'implicit3', 'ode'].includes(kind)) f = eq[eq.length - 1].trim();
     const parts = components(f).length;
-    const vs = varsOf(f).sort();
+    // Plot 2D/3D Animated: the animation parameter (t) is not one of the plot's variables
+    const anim = extra.anim ? { ...ANIM_DEFAULT, range: [...ANIM_DEFAULT.range] } : null;
+    const vs = varsOf(f).filter((v) => !anim || v !== anim.param).sort();
     const two = (d1, d2) => (vs.length >= 2 ? vs.slice(0, 2) : vs[0] === d2 ? [d1, d2] : [vs[0] || d1, d2]);
     const red = '#ff0000';
     const five = [-5, 5];
     const need = (ok, msg) => { if (!ok) app.toast(msg); return ok; };
     let plot;
     switch (kind) {
+      case 'rect': { // (Plot 2D > Rectangular itself is plot2d)
+        const v = vs.includes('x') ? 'x' : vs[0] || 'x';
+        plot = { plottype: 4, axes: 'normal', variable: v, view: { x: five, y: null }, range: five, curves: [{ latex: f, color: red, width: 1, range: five, n: 100 }] };
+        break;
+      }
       case 'surface': {
         const [v1, v2] = two('x', 'y');
         if (!need(parts === 1 || parts === 3, _t('A 3D rectangular plot needs one formula f(x, y), or a parametric (x(s,t), y(s,t), z(s,t))'))) return;
@@ -824,15 +866,23 @@ export function setupUI(app) {
       }
       default: return;
     }
+    if (anim) plot.anim = anim;
+    // the defaults of Compute > Settings (Plot Layout, 2D/3D Plots, the intervals and animation times)
+    const s55 = plot55For(app.meta());
+    applyPlot55(plot, kind, s55, { range: kind === 'approx' || kind === 'ode' });
+    const fr = frameOf(s55);
     let path;
     const used = new Set();
     view.state.doc.descendants((n) => { if (n.type.name === 'image') used.add(n.attrs.path); });
     do path = `opensw-plot-${++plotCount}.wmf`; while (used.has(path));
-    const frame = `\\FRAME{dtbpFX}{3in}{2in}{0pt}{}{}{Plot}{${plotSpecial(plot, { width: '3in', height: '2in', path })}}`;
-    const node = schema.nodes.image.create({ path, width: 288, height: 192, texw: '3in', texh: '2in', place: 'display', frame, name: 'Plot', plot: true });
+    let special = plotSpecial(plot, { width: fr.texw, height: fr.texh, path });
+    if (!s55.behavior.snapshots) special = special.replace('plot_snapshots TRUE;', 'plot_snapshots FALSE;');
+    const frame = `\\FRAME{${fr.flags}}{${fr.texw}}{${fr.texh}}{${fr.depth}}{}{}{Plot}{${special}}`;
+    const node = schema.nodes.image.create({ path, width: fr.width, height: fr.height, texw: fr.texw, texh: fr.texh, place: fr.place, frame, name: 'Plot', plot: true });
     mv.exit(1);
     view.dispatch(view.state.tr.replaceSelectionWith(node).scrollIntoView());
     view.focus();
+    if (s55.behavior.dialogFirst) { propertiesFirst(path); return; }
     status(_t('Plotting… (the first time loads the computation engine, which takes a few seconds)'));
     app.renderPlots().finally(() => status(''));
   }
@@ -1001,14 +1051,23 @@ export function setupUI(app) {
     }
     dialog(_t('Exam builder'), `<p>${_t('Number of versions')} <input id="d-n" size="4" value="1"></p>
       <p>${_t('Random seed')} <input id="d-seed" size="10" placeholder="${_t('empty = different every time')}"></p>
-      <p><label><input id="d-key" type="checkbox" checked> ${_t('With answers')}</label></p>`, async (d) => {
+      <p><label><input id="d-key" type="checkbox" checked> ${_t('With answers')}</label></p>
+      <p><label><input id="d-quiz" type="checkbox"> ${_t('Online quiz: one version as a web page (.html) to answer in a browser')}</label></p>`, async (d) => {
       const versions = Math.round(+d.querySelector('#d-n').value);
       if (!(versions >= 1 && versions <= 50)) { app.toast(_t('The number of versions must be 1 to 50')); return; }
       const sv = d.querySelector('#d-seed').value.trim();
+      const seed = sv === '' ? null : Math.round(+sv) || 0;
       status(isEngineLoaded() ? _t('Making exams…') : _t('Making exams… (the first time loads the computation engine, which takes a few seconds)'));
       try {
-        const exams = await buildExams(view.state.doc, { versions, seed: sv === '' ? null : Math.round(+sv) || 0, answers: d.querySelector('#d-key').checked });
-        app.newDocument(exams, { name: (app.meta().name || _t('Exam')) + _t('(generated exams)') });
+        const template = view.state.doc;
+        const name = app.meta().name || _t('Exam');
+        if (d.querySelector('#d-quiz').checked) { // (before the template leaves the screen: its pictures go into the page)
+          const key = [];
+          const quizDoc = await buildExams(template, { seed, quiz: key });
+          await app.saveQuizHtml(quizDoc, key, examSettings(template), name + _t('(online quiz)'));
+        }
+        const exams = await buildExams(template, { versions, seed, answers: d.querySelector('#d-key').checked });
+        app.newDocument(exams, { name: name + _t('(generated exams)') }, { keepPictures: true });
         app.toast(_t('Made {0} exams (a new document; the template is still in the Window menu)', versions));
       } catch (err) { app.toast(_t('Could not make them: ') + (err.message || err)); } finally { status(''); }
     });
@@ -1211,7 +1270,11 @@ export function setupUI(app) {
     status(isEngineLoaded() ? _t('Computing…') : _t('Computing… (the first time loads the computation engine, which takes a few seconds)'));
     try {
       const r = await compute(op, mv.latex, params);
-      if (op === 'define') { status(''); app.toast(_t('Defined: later computations will use it')); return; }
+      if (op === 'define') {
+        status(''); app.toast(_t('Defined: later computations will use it'));
+        if (plot55For(app.meta()).behavior.recompute) app.redrawPlots?.(); // Compute > Settings > Plot Behavior
+        return;
+      }
       if (r.kind === 'value') {
         mv.enter(false);
         mv.mf.insert(' = ' + r.latex, { format: 'latex', selectionMode: 'after' });
@@ -1239,10 +1302,6 @@ export function setupUI(app) {
       status('');
     } finally { computing = false; }
   }
-  const COMPUTE_ITEMS = [[_t('Compute'), 'Ctrl+E', 'evaluate'], [_t('Evaluate numerically'), null, 'numeric'], [_t('Simplify'), null, 'simplify'],
-    [_t('Factor'), null, 'factor'], [_t('Expand'), null, 'expand'], '-', [_t('Solve (exact)'), null, 'solve'], [_t('Check equality'), null, 'check']];
-  const MATRIX_ITEMS = [[_t('Determinant'), 'determinant'], [_t('Inverse'), 'inverse'], [_t('Transpose'), 'transpose'], [_t('Eigenvalues'), 'eigenvalues'],
-    [_t('Rank'), 'rank'], [_t('Reduced row echelon form'), 'rref'], [_t('Null space'), 'nullspace'], [_t('Trace'), 'trace'], [_t('Characteristic polynomial'), 'charpoly'], [_t('Adjugate'), 'adjugate']];
   // Insert > Unit Name: 5.x writes units as \unit{..} (upright, a thin space before)
   const UNITS = [[_t('meter m'), 'm'], [_t('centimeter cm'), 'cm'], [_t('kilometer km'), 'km'], [_t('second s'), 's'], [_t('minute min'), 'min'], [_t('hour h'), 'h'], [_t('gram g'), 'g'],
     [_t('kilogram kg'), 'kg'], [_t('newton N'), 'N'], [_t('joule J'), 'J'], [_t('watt W'), 'W'], [_t('pascal Pa'), 'Pa'], [_t('hertz Hz'), 'Hz'], [_t('ampere A'), 'A'],
@@ -1327,20 +1386,20 @@ export function setupUI(app) {
       app.toast(_t('Basis variables: ') + v.join(', '));
     });
   }
-  // the rest of 5.5's Compute menu: [submenu, [[item, op or action], ...]]
-  const COMPUTE_SUBMENUS = [
-    [_t('Rewrite'), [[_t('As exponential'), 'rewrite_exp'], [_t('As sin and cos'), 'rewrite_sincos']]],
-    [_t('Solution'), [[_t('Exact'), () => solveOp('solve')], [_t('Numeric'), () => solveOp('numericsolve')], [_t('Integer'), 'integersolve'], [_t('Recursion'), 'recursion']]],
-    [_t('Solve ODE'), [[_t('Exact'), 'ode'], [_t('Numeric'), 'odenumeric']]],
-    [_t('Polynomials'), [[_t('Partial fractions'), 'partialfractions'], [_t('Collect by variable'), 'collect']]],
-    [_t('Calculus'), [[_t('Differentiate'), () => calculusOp('differentiate', _t('Differentiate'))], [_t('Integrate (indefinite)'), () => calculusOp('integrate', _t('Integrate (indefinite)'))], [_t('Integrate by parts…'), byParts], [_t('Change variable…'), changeVariable],
-      [_t('Approximate integral…'), approxIntegral], [_t('Plot approximate integral…'), plotApproxIntegral], [_t('Power series…'), seriesDialog], [_t('Padé approximant…'), padeDialog], [_t('Find extrema'), 'extrema'], [_t('Iterate…'), iterateDialog], [_t('Implicit differentiation…'), implicitDialog]]],
-    [_t('Vector calculus'), [[_t('Gradient'), 'gradient'], [_t('Divergence'), 'divergence'], [_t('Curl'), 'curl'], [_t('Laplacian'), 'laplacian'], [_t('Hessian'), 'hessian'],
-      [_t('Jacobian'), 'jacobian'], [_t('Wronskian'), 'wronskian'], [_t('Scalar potential'), 'potential'], [_t('Vector potential'), 'vectorpotential'], [_t('Set basis variables…'), setBasis]]],
-    [_t('Simplex'), [[_t('Maximize'), 'maximize'], [_t('Minimize'), 'minimize'], [_t('Feasibility'), 'feasible'], [_t('Standardize'), 'standardize'], [_t('Dual'), 'dual']]],
-    [_t('Statistics'), [[_t('Mean'), 'mean'], [_t('Median'), 'median'], [_t('Variance'), 'variance'], [_t('Standard deviation'), 'stddev']]],
-    [_t('Transforms'), [[_t('Laplace transform'), 'laplace'], [_t('Inverse Laplace transform'), 'inverselaplace'], [_t('Fourier transform'), 'fourier']]],
-  ];
+  // Compute > Matrices, as 5.5 lists them
+  const MATRICES55 = [[_t('Adjugate'), 'adjugate'], [_t('Characteristic Polynomial'), 'charpoly'], [_t('Cholesky Decomposition'), 'cholesky'], [_t('Column Basis'), 'colbasis'],
+    [_t('Concatenate'), 'concat'], [_t('Condition Number'), 'condition'], [_t('Definiteness Tests'), 'definiteness'], [_t('Determinant'), 'determinant'], [_t('Eigenvalues'), 'eigenvalues'],
+    [_t('Eigenvectors'), 'eigenvectors'], [_t('Fill Matrix...'), 'fillmatrix'], [_t('Fraction-Free Gaussian Elimination'), 'ffgauss'], [_t('Gaussian Elimination'), 'gauss'],
+    [_t('Hermite Normal Form'), 'hermite'], [_t('Hermitian Transpose'), 'htranspose'], [_t('Inverse'), 'inverse'], [_t('Jordan Form'), 'jordan'], [_t('Minimum Polynomial'), 'minpoly'],
+    [_t('Norm'), 'norm'], [_t('Nullspace Basis'), 'nullspace'], [_t('Orthogonality Test'), 'orthogonal'], [_t('Permanent'), 'permanent'], [_t('PLU Decomposition'), 'plu'],
+    [_t('QR Decomposition'), 'qr'], [_t('Random Matrix...'), 'randommatrix'], [_t('Rank'), 'rank'], [_t('Rational Canonical Form'), 'rationalcanonical'], [_t('Reduced Row Echelon Form'), 'rref'],
+    [_t('Reshape...'), 'reshape'], [_t('Row Basis'), 'rowbasis'], [_t('Singular Values'), 'singularvalues'], [_t('Smith Normal Form'), 'smith'], [_t('Spectral Radius'), 'spectralradius'],
+    [_t('Stack'), 'stack'], [_t('SVD'), 'svd'], [_t('Trace'), 'trace'], [_t('Transpose'), 'transpose']];
+  // an item of src/c55*.js (a dialog first, a picture ...) or else compute the formula with op
+  const ctx55 = () => ({ app, _t, dialog, askCompute, runCompute, currentMath, formulaInfo, varField, guessVariable, field, escHtml, settings, saveSettings,
+    plotOther, plot2d, plotApproxIntegral, definitions, engineInfo, status, toast: (t) => app.toast(t) });
+  const act55 = (op, otherwise) => () => (ACTIONS55[op] ? ACTIONS55[op](ctx55()) : otherwise ? otherwise() : runCompute(op));
+  setTimeout(() => ACTIONS55.__init?.(ctx55())); // the parts' own setup (src/c55_defsmisc.js: Compute > Settings, definitions kept with a document)
   const VECTOR_OPS = new Set(['gradient', 'divergence', 'curl', 'laplacian', 'hessian', 'jacobian', 'wronskian', 'potential', 'vectorpotential']);
   const computeAction = (op) => (typeof op === 'function' ? op : () => runCompute(op, VECTOR_OPS.has(op) ? basis() : undefined));
   // Compute > Definitions: x = 3 or f(x) = x^2 is used by every later computation
@@ -1359,7 +1418,7 @@ export function setupUI(app) {
     }
     try {
       const r = await compute(op, '0');
-      if (op === 'cleardefs') app.toast(_t('All definitions cleared'));
+      if (op === 'cleardefs') { app.toast(_t('All definitions cleared')); if (plot55For(app.meta()).behavior.recompute) app.redrawPlots?.(); }
       else app.toast(r.solutions.length ? _t('Current definitions: ') + r.solutions.join(_t('; ')) : _t('No definitions yet'));
     } catch (e) { app.toast(e.message); }
   }
@@ -1385,15 +1444,20 @@ export function setupUI(app) {
   view.dom.spellcheck = localStorage.getItem('opensw-spell') === '1';
   // Tools > Computation Engine: SymPy (built in) or an engine on this computer (desktop app;
   // engine/engines.json, e.g. Mathematica). Choosing loads the engine and shows its version.
+  // In the desktop app SymPy is run by the Python that comes with it (the engine "python";
+  // in Pyodide when that cannot be started: the dialog then says so), or by another Python.
   async function engineInfo() {
     const s = settings();
     const list = isDesktop ? await (await import('./desktop.js')).engineList().catch(() => []) : [];
     const radio = (v, label, off) => `<p><label><input type="radio" name="d-eng" value="${v}"${s.engine === v ? ' checked' : ''}${off ? ' disabled' : ''}> ${label}</label></p>`;
-    const outside = list.map((e) => `${radio(escHtml(e.id), _t('{0} (must be installed on this computer)', escHtml(e.name)))}
-      <p style="margin-left:2em">${_t('Program location (empty: found automatically)')}<br><input data-eng="${escHtml(e.id)}" size="46"
-        value="${escHtml(s.enginePrograms[e.id] || '')}" placeholder="${escHtml(e.example ? _t('e.g. {0}', e.example) : '')}"></p>`).join('');
-    dialog(_t('Computation engine'), `${radio('sympy', _t('SymPy (built in, runs in Pyodide, no internet needed)'))}
-      ${isDesktop ? outside : radio('mathematica', _t('Mathematica (desktop app only)'), true)}
+    const location = (e, label) => `<p style="margin-left:2em">${label}<br><input data-eng="${escHtml(e.id)}" size="46"
+        value="${escHtml(s.enginePrograms[e.id] || '')}" placeholder="${escHtml(e.example ? _t('e.g. {0}', e.example) : '')}"></p>`;
+    const python = list.filter((e) => e.id === 'python').map((e) => location(e, _t('Python location (empty: the one that comes with opensw)'))
+      + (pythonProblem() ? `<p style="margin-left:2em">${escHtml(pythonProblem())}</p>` : '')).join('');
+    const outside = list.filter((e) => e.id !== 'python').map((e) => radio(escHtml(e.id), _t('{0} (must be installed on this computer)', escHtml(e.name)))
+      + location(e, _t('Program location (empty: found automatically)'))).join('');
+    dialog(_t('Computation engine'), `${radio('sympy', isDesktop ? _t('SymPy (built in, no internet needed)') : _t('SymPy (built in, runs in Pyodide, no internet needed)'))}
+      ${isDesktop ? python + outside : radio('mathematica', _t('Mathematica (desktop app only)'), true)}
       <p>${_t('With another engine chosen, the Compute menu, plots and the Exam Builder use it first, and SymPy for what it cannot do. The first computation waits a few seconds for it to load.')}</p>
       <p><label><input id="d-pv" type="checkbox"${s.solvePrincipal ? ' checked' : ''}> ${_t('Solve: principal value only (one solution, not every solution)')}</label></p>
       <p><label><input id="d-log" type="checkbox"${s.logBase10 ? ' checked' : ''}> ${_t('Base for log function: change from e to 10 (log x is the logarithm to base 10)')}</label></p>
@@ -1409,7 +1473,7 @@ export function setupUI(app) {
       status(_t('Loading the computation engine…'));
       try {
         const r = await compute('version', '0');
-        app.toast(_t('Computation engine: ') + r.solutions.join(_t(', ')));
+        app.toast(pythonProblem() || _t('Computation engine: ') + r.solutions.join(_t(', ')));
       } catch (e) { app.toast(e.message); } finally { status(''); }
     });
   }
@@ -1482,19 +1546,6 @@ export function setupUI(app) {
       dialog(_t('Check with Lean'), `<p>${v.ok ? '✓ ' : ''}${escHtml(v.message)}</p><p>${_t('The statement checked (x, y and so on are any real numbers):')}</p>${shown}`, () => {});
     } catch (e) { app.toast(String(e.message || e)); } finally { status(''); }
   }
-  // File > Document Info
-  function documentInfo() {
-    const doc = view.state.doc;
-    const count = {};
-    doc.descendants((n) => { count[n.type.name] = (count[n.type.name] || 0) + 1; });
-    const words = (doc.textContent.match(/[A-Za-z0-9]+|[\u3400-\u9fff]/g) || []).length;
-    const meta = app.meta();
-    const rows = [[_t('File name'), meta.name || _t('(untitled)')], [_t('Source'), meta.preamble55 ? _t('Scientific Word 5.x (.tex)') : app.path() && /\.sci$/i.test(app.path()) ? _t('Scientific Word 6 (.sci)') : _t('New document')],
-      [_t('Document class'), meta.documentclass || 'article'], [_t('Words (Chinese counted by character, English by word)'), words], [_t('Paragraphs'), count.paragraph || 0], [_t('Section titles'), count.heading || 0],
-      [_t('Formula'), (count.math_inline || 0) + (count.math_display || 0)], [_t('Table'), count.table || 0], [_t('Pictures and plots'), count.image || 0],
-      [_t('Footnote'), count.note || 0], [_t('TeX field'), count.tex_field || 0]];
-    dialog(_t('Document info'), '<table class="info">' + rows.map(([k, v]) => `<tr><td>${k}</td><td>${escHtml(String(v))}</td></tr>`).join('') + '</table>', () => {});
-  }
   // Typeset > Options: the document class of a document not from 5.x
   function typesetOptions() {
     const meta = app.meta();
@@ -1509,75 +1560,161 @@ export function setupUI(app) {
   // ---------- menus ----------
   // [label, shortcut, action] ; '-' = separator ; [label, null, [submenu...]]
   const sym = (list) => list.map(([s, l]) => [s, null, () => mathInsert(l)]);
+  // Help > Contents: the manual
+  const openManual = () => app.openManual(MANUAL, { name: _t('opensw manual') });
+  // the items of 5.5's menus (other than Compute) that need more than a line here: src/menus55.js
+  const m55 = setupMenus55({ app, view, dialog, escHtml, currentMath, mathInsert, mathAction, space, markerKeys, markerPos, jumpTo, followLink,
+    history: () => ({ back: goneBack, forward: goneForward }), goHistory, functionKey: (code) => functionKey(code), ALL_TAGS, stripComments,
+    OPERATORS, BRACKETS, NAMES, DECORATIONS, UNITS, applyView, applyLooks, openManual,
+    findText: (q) => { $('#find-text').value = q; findNext(); } });
   const MENUS = [
+    // 5.5's menus in its order and words (sw550ENUS.dll menu 10); what opensw adds comes after a line at the end
     [_t('File'), [
-      [_t('New'), null, app.newDoc], [_t('Open…'), 'Ctrl+O', app.open], [_t('Open location…'), null, openLocation], [_t('Close'), 'Ctrl+F4', app.closeDoc], [_t('Save'), null, app.save], [_t('Save as…'), null, app.saveAs], [_t('Save as .sci…'), null, app.saveAsSci], '-',
-      [_t('Import fragment…'), null, importFragment], [_t('Save as fragment…'), null, saveFragment], [_t('Import picture…'), null, app.importPicture], '-',
-      [_t('Export LaTeX…'), null, app.exportLatex], [_t('Export HTML…'), null, app.exportHtml], [_t('Export Word (.docx)…'), null, app.exportDocx], [_t('Export for AI (Markdown)…'), null, app.exportMd], '-',
-      [_t('Recent files'), null, app.recent],
-      [_t('Samples'), null, app.samples.map(([id, label]) => [label, null, () => app.openSample(id)])], [_t('Document info'), null, documentInfo], '-',
-      [_t('Page setup…'), null, pageSetupDialog], [_t('Preview (no typesetting, printable)'), null, app.preview], [_t('Typeset PDF'), 'Ctrl+P', app.pdf],
+      [_t('New...'), null, app.newDoc], [_t('Open...'), 'Ctrl+O', app.open], [_t('Open Location...'), null, openLocation], [_t('Close'), 'Ctrl+F4', app.closeDoc], '-',
+      [_t('Save'), null, app.save], [_t('Save As...'), null, app.saveAs], [_t('Save All'), null, app.saveAll], [_t('Export Document...'), null, m55.exportDocument], '-',
+      [_t('Import Fragment...'), null, importFragment], [_t('Import Picture...'), null, app.importPicture], [_t('Import Contents...'), null, app.importContents], [_t('Import Non-SWP/SW LaTeX...'), null, app.open], '-',
+      [_t('Save Fragment...'), null, saveFragment], [_t('Export as Picture...'), null, m55.exportPicture], '-',
+      [_t('Document Info...'), null, m55.documentInfo], [_t('Style...'), null, m55.styleDialog], '-',
+      [_t('Page Setup...'), null, pageSetupDialog], [_t('Preview...'), null, m55.previewWindow], [_t('Print...'), null, app.preview], '-',
+      [_t('Recent File'), null, app.recent], '-',
+      [_t('Exit'), 'Alt+F4', app.exit], '-',
+      [_t('Save as .sci…'), null, app.saveAsSci], [_t('Export LaTeX…'), null, app.exportLatex], [_t('Export HTML…'), null, app.exportHtml], [_t('Export Word (.docx)…'), null, app.exportDocx], [_t('Export for AI (Markdown)…'), null, app.exportMd],
+      [_t('Samples'), null, app.samples.map(([id, label]) => [label, null, () => app.openSample(id)])], [_t('Typeset PDF'), 'Ctrl+P', app.pdf],
     ]],
     [_t('Edit'), [
-      [_t('Undo'), 'Ctrl+Z', () => run(undo)], [_t('Redo'), null, () => run(redo)], [_t('Undo AI Changes'), null, () => app.undoAi()], '-',
-      [_t('Cut'), 'Ctrl+X', () => document.execCommand('cut')], [_t('Copy'), 'Ctrl+C', () => document.execCommand('copy')],
-      [_t('Paste'), 'Ctrl+V', paste], [_t('Paste special…'), null, pasteSpecial], [_t('Copy as picture'), null, copyAsPicture], '-', [_t('Properties (formula, table, picture)…'), 'Ctrl+F5', properties], '-',
+      [_t('Undo'), 'Ctrl+Z', () => run(undo)], [_t('Properties...'), 'Ctrl+F5', properties], '-',
+      [_t('Cut'), 'Ctrl+X', () => document.execCommand('cut')], [_t('Copy'), 'Ctrl+C', () => document.execCommand('copy')], [_t('Paste'), 'Ctrl+V', paste], [_t('Paste Special...'), null, pasteSpecial], '-',
+      [_t('Delete'), 'Del', m55.deleteSelection], [_t('Select All'), 'Ctrl+A', () => run((s, d) => { d(s.tr.setSelection(new AllSelection(s.doc))); return true; })], '-',
+      [_t('Copy Picture'), null, copyAsPicture], [_t('Copy as Internal Format'), null, m55.copyInternal], '-',
+      [_t('Find...'), 'Ctrl+Q', () => openFind(false)], [_t('Replace...'), 'Ctrl+W', () => openFind(true)], '-',
+      [_t('Redo'), null, () => run(redo)], [_t('Undo AI Changes'), null, () => app.undoAi()], '-',
       [_t('Insert row…'), null, tables.insertRows], [_t('Insert column…'), null, tables.insertColumns],
       [_t('Delete row'), null, tables.deleteRow], [_t('Delete column'), null, tables.deleteColumn], [_t('Delete table'), null, tables.deleteTable],
-      [_t('Merge cells'), null, tables.mergeCells], [_t('Split cell'), null, tables.splitCell], '-',
-      [_t('Find…'), 'Ctrl+Q', () => openFind(false)], [_t('Replace…'), 'Ctrl+W', () => openFind(true)], '-', [_t('Select all'), 'Ctrl+A', () => run((s, d) => { d(s.tr.setSelection(new AllSelection(s.doc))); return true; })],
+      [_t('Merge cells'), null, tables.mergeCells], [_t('Split cell'), null, tables.splitCell],
     ]],
     [_t('Insert'), [
       [_t('Math'), 'Ctrl+M', toggleMath], '-',
       [_t('Fraction'), 'Ctrl+F', () => mathAction('fraction')], [_t('Radical'), 'Ctrl+R', () => mathAction('radical')],
-      [_t('Superscript'), 'Ctrl+H', () => mathAction('superscript')], [_t('Subscript'), 'Ctrl+L', () => mathAction('subscript')],
-      [_t('Display'), 'Ctrl+D', display], '-',
-      [_t('Operators'), null, sym(OPERATORS)], [_t('Brackets'), null, BRACKETS.map(([s, a]) => [s, null, () => mathAction(a)])],
-      [_t('Matrix…'), null, insertMatrix], [_t('Table…'), null, tables.insertTable], [_t('Math name'), null, sym(NAMES)], [_t('Binomial'), null, () => mathAction('binomial')],
-      [_t('Decoration'), null, DECORATIONS.map(([s, a]) => [s, null, () => mathAction(a)])], '-',
-      [_t('Marker…'), null, insertMarker], [_t('Cross reference…'), null, insertRef], [_t('Table caption'), null, tables.addCaption], [_t('Note…'), null, insertNote], '-',
-      [_t('Exam formula…'), null, insertFormula], [_t('Citation…'), null, insertCitation], [_t('Index entry…'), null, insertIndexEntry], [_t('Hypertext link…'), null, insertLink], [_t('TeX field…'), null, insertTexField], [_t('HTML field…'), null, insertHtmlField], '-',
-      [_t('Spacing'), null, SPACES.map(([s, a]) => [s, null, () => (a.startsWith('\\') ? mathInsert(a) : space(a))])],
+      [_t('Superscript'), 'Ctrl+H', () => mathAction('superscript')], [_t('Subscript'), 'Ctrl+L', () => mathAction('subscript')], [_t('Display'), 'Ctrl+D', display], '-',
+      [_t('Operator...'), null, m55.operatorDialog], [_t('Brackets...'), null, m55.bracketsDialog], [_t('Matrix...'), null, insertMatrix], [_t('Math Name...'), null, m55.mathNameDialog],
+      [_t('Binomial...'), null, m55.binomialDialog], [_t('Label...'), null, m55.labelDialog], [_t('Decoration...'), null, m55.decorationDialog], [_t('Unit Name...'), null, m55.unitNameDialog], '-',
+      [_t('Spacing'), null, [[_t('Horizontal Space...'), null, m55.hspaceDialog], [_t('Vertical Space...'), null, m55.vspaceDialog], [_t('Rule...'), null, m55.ruleDialog], [_t('Break...'), null, m55.breakDialog]]],
+      [_t('Table...'), null, tables.insertTable], '-',
+      [_t('Note...'), null, insertNote], [_t('Formula...'), null, insertFormula], '-',
+      [_t('Hypertext Link...'), null, insertLink], [_t('Marker...'), null, insertMarker], '-',
+      [_t('HTML Field...'), null, insertHtmlField],
+      [_t('Typeset Object'), null, [[_t('Index Entry...'), null, insertIndexEntry], [_t('Cross Reference...'), null, insertRef], [_t('Citation...'), null, insertCitation],
+        [_t('Bibliography...'), null, m55.bibliographyDialog], [_t('TeX Field...'), null, insertTexField], [_t('Subdocument...'), null, m55.subdocDialog],
+        [_t('Hypertext Target...'), null, m55.hypertargetDialog], [_t('Hypertext Reference...'), null, m55.hyperrefDialog]]], '-',
+      [_t('Table caption'), null, tables.addCaption],
+      [_t('Operators'), null, sym(OPERATORS)], [_t('Brackets'), null, BRACKETS.map(([sy, ac]) => [sy, null, () => mathAction(ac)])], [_t('Math name'), null, sym(NAMES)],
+      [_t('Decoration'), null, DECORATIONS.map(([sy, ac]) => [sy, null, () => mathAction(ac)])],
       [_t('Unit name'), null, UNITS.map(([l, u]) => [l, null, () => mathInsert(`\\unit{${u}}`)])],
     ]],
     [_t('View'), [
-      [_t('Zoom in'), 'Ctrl+=', () => app.zoomStep(1)], [_t('Zoom out'), null, () => app.zoomStep(-1)], '-',
-      ['200%', null, () => app.setZoom(2)], ['100%', null, () => app.setZoom(1)], '-',
-      ...VIEW_TOGGLES.map(([cls, l]) => [() => (isShown(cls) ? '✓ ' : '　') + l, null, () => toggleView(cls)]), '-',
-      [() => (app.reviewShown?.() ? '✓ ' : '　') + _t('Changes and LaTeX source'), 'Ctrl+Shift+D', () => app.toggleReview?.()], '-',
-      [_t('Toolbars…'), null, () => toolbarsDialog()],
+      [() => (m55.isShown('invisibles') ? '✓ ' : '　') + _t('Invisibles'), null, () => m55.toggleShown('invisibles')],
+      [() => (isShown('helpers') ? '✓ ' : '　') + _t('Helper Lines'), null, () => toggleView('helpers')],
+      [() => (m55.isShown('inputboxes') ? '✓ ' : '　') + _t('Input Boxes'), null, () => m55.toggleShown('inputboxes')],
+      [() => (isShown('index') ? '✓ ' : '　') + _t('Index Entries'), null, () => toggleView('index')],
+      [() => (isShown('markers') ? '✓ ' : '　') + _t('Markers'), null, () => toggleView('markers')], '-',
+      [() => (m55.isShown('statusbar') ? '✓ ' : '　') + _t('Status Bar'), null, () => m55.toggleShown('statusbar')], [_t('Toolbars...'), null, () => toolbarsDialog()], '-',
+      ['200%', null, () => app.setZoom(2)], ['100%', null, () => app.setZoom(1)], [_t('Custom...'), null, m55.customZoom], '-',
+      [_t('Refresh'), 'Esc', m55.refreshView], '-',
+      [_t('Zoom in'), 'Ctrl+=', () => app.zoomStep(1)], [_t('Zoom out'), null, () => app.zoomStep(-1)],
+      [() => (isShown('texfields') ? '✓ ' : '　') + _t('TeX field'), null, () => toggleView('texfields')],
+      [() => (app.reviewShown?.() ? '✓ ' : '　') + _t('Changes and LaTeX source'), 'Ctrl+Shift+D', () => app.toggleReview?.()],
     ]],
-    [_t('Go'), [[_t('Previous section'), null, () => goSection(-1)], [_t('Next section'), null, () => goSection(1)], '-', [_t('Marker…'), null, goMarker], [_t('Link'), null, followLink], '-',
-      [_t('Previous position'), null, () => goHistory(-1)], [_t('Next position'), null, () => goHistory(1)]]],
+    [_t('Go'), [[_t('Previous Section'), null, () => goSection(-1)], [_t('Next Section'), null, () => goSection(1)],
+      [_t('Links'), null, [[_t('Contents'), null, () => m55.goLink('contents')], [_t('Index'), null, () => m55.goLink('index')], [_t('Beginning Document'), null, () => m55.goLink('begin')],
+        [_t('End Document'), null, () => m55.goLink('end')], [_t('Next Document'), null, () => m55.goLink('next')], [_t('Previous Document'), null, () => m55.goLink('previous')],
+        [_t('Parent Document'), null, () => m55.goLink('parent')], [_t('Top Document'), null, () => m55.goLink('top')], [_t('Bibliography'), null, () => m55.goLink('bibliography')],
+        [_t('Glossary'), null, () => m55.goLink('glossary')], [_t('Author'), null, () => m55.goLink('author')], [_t('Copyright'), null, () => m55.goLink('copyright')],
+        [_t('Disclaimer'), null, () => m55.goLink('disclaimer')], [_t('Editor'), null, () => m55.goLink('editor')], [_t('Publisher'), null, () => m55.goLink('publisher')],
+        [_t('Trademark'), null, () => m55.goLink('trademark')]]], '-',
+      [_t('To Marker...'), null, goMarker], [_t('To Paragraph...'), null, m55.toParagraph], '-',
+      [_t('View History...'), null, m55.viewHistory], [_t('History Back'), null, () => goHistory(-1)], [_t('History Forward'), null, () => goHistory(1)], '-',
+      [_t('Link'), null, followLink]]],
     [_t('Tag'), [
+      [_t('Appearance...'), null, appearanceDialog], [_t('Function Keys...'), null, functionKeysDialog], [_t('Apply...'), null, m55.applyTag], '-',
       ...FKEY_NAMES.map((k) => [() => tagName(fkeys()[k]), k, () => functionKey(fkeys()[k])]), '-',
       [_t('Item tag'), null, ITEM_TAGS.slice(1).map(([v, l]) => [l, null, () => setItemTag(v)])],
       [_t('Section/body tag'), null, BLOCK_TAGS.map(([v, l]) => [l, null, () => setBlockTag(v)])],
-      [_t('Text tag'), null, TEXT_TAGS.map(([v, l]) => [l, null, () => setTextTag(v)])], '-',
-      [_t('Function keys…'), null, functionKeysDialog], [_t('Appearance…'), null, appearanceDialog],
+      [_t('Text tag'), null, TEXT_TAGS.map(([v, l]) => [l, null, () => setTextTag(v)])],
     ]],
+    // 5.5's Compute menu item by item, in 5.5's order and words (sw550ENUS.dll, menu 21);
+    // what opensw adds comes after a line at the end of a submenu
     [_t('Compute'), [
-      ...COMPUTE_ITEMS.map((it) => (it === '-' ? it : [it[0], it[1], () => (it[2] === 'solve' ? solveOp('solve') : runCompute(it[2]))])), [_t('Combine'), null, () => runCompute('combine')], '-',
-      ...COMPUTE_SUBMENUS.map(([label, items]) => [label, null, items.map(([l, op]) => [l, null, computeAction(op)])]),
-      [_t('Matrices'), null, MATRIX_ITEMS.map(([l, op]) => [l, null, () => runCompute(op)])], '-',
-      [_t('Definition'), null, [[_t('New definition'), null, () => definitions('define')], [_t('Show definitions'), null, () => definitions('showdefs')], [_t('Clear definitions'), null, () => definitions('cleardefs')]]],
-      [_t('Plot 2D'), null, [[_t('Rectangular'), null, plot2d], [_t('Polar'), null, () => plotOther('polar')], [_t('Implicit'), null, () => plotOther('implicit')],
-        [_t('Parametric'), null, () => plotOther('param')], [_t('Conformal'), null, () => plotOther('conformal')], [_t('Gradient'), null, () => plotOther('gradient')],
-        [_t('Vector field'), null, () => plotOther('vector')], [_t('Inequality'), null, () => plotOther('inequality')], [_t('ODE'), null, () => plotOther('ode')]]],
+      [_t('Evaluate'), 'Ctrl+E', () => runCompute('evaluate')], [_t('Evaluate Numerically'), null, () => runCompute('numeric')], [_t('Simplify'), null, () => runCompute('simplify')],
+      [_t('Combine'), null, [[_t('Exponentials'), null, act55('combine_exp')], [_t('Logs'), null, act55('combine_log')], [_t('Powers'), null, act55('combine_powers')],
+        [_t('Trig Functions'), null, act55('combine_trig')], [_t('Arctan'), null, act55('combine_arctan')], [_t('Hyperbolic Trig Functions'), null, act55('combine_hyp')], '-',
+        [_t('All of them (opensw)'), null, () => runCompute('combine')]]],
+      [_t('Factor'), null, () => runCompute('factor')], [_t('Expand'), null, () => runCompute('expand')],
+      [_t('Rewrite'), null, [[_t('Rational'), null, act55('rewrite_rational')], [_t('Float'), null, act55('rewrite_float')], '-',
+        [_t('Exponential'), null, act55('rewrite_exp')], [_t('Factorial'), null, act55('rewrite_factorial')], [_t('Gamma'), null, act55('rewrite_gamma')], [_t('Logarithm'), null, act55('rewrite_log')], '-',
+        [_t('Sin and Cos'), null, act55('rewrite_sincos')], [_t('Sinh and Cosh'), null, act55('rewrite_sinhcosh')], [_t('Sin'), null, act55('rewrite_sin')], [_t('Cos'), null, act55('rewrite_cos')], [_t('Tan'), null, act55('rewrite_tan')], '-',
+        [_t('Arcsin'), null, act55('rewrite_arcsin')], [_t('Arccos'), null, act55('rewrite_arccos')], [_t('Arctan'), null, act55('rewrite_arctan')], [_t('Arccot'), null, act55('rewrite_arccot')], '-',
+        [_t('Polar'), null, act55('rewrite_polar')], [_t('Rectangular'), null, act55('rewrite_rectangular')], '-', [_t('Normal Form'), null, act55('rewrite_normal')], '-',
+        [_t('Equations as Matrix'), null, act55('eqs_to_matrix')], [_t('Matrix as Equations'), null, act55('matrix_to_eqs')]]],
+      [_t('Check Equality'), null, () => runCompute('check')],
+      [_t('Solve'), null, [[_t('Exact'), null, () => solveOp('solve')], [_t('Integer'), null, () => runCompute('integersolve')], [_t('Numeric'), null, () => solveOp('numericsolve')], [_t('Recursion'), null, () => runCompute('recursion')]]],
+      [_t('Polynomials'), null, [[_t('Collect...'), null, act55('collect')], [_t('Divide'), null, act55('divide')], [_t('Partial Fractions'), null, act55('partialfractions')],
+        [_t('Roots'), null, act55('roots')], [_t('Sort'), null, act55('sort')], [_t('Companion Matrix'), null, act55('companion')]]], '-',
+      [_t('Calculus'), null, [[_t('Integrate by Parts...'), null, byParts], [_t('Change Variable...'), null, changeVariable], [_t('Partial Fractions'), null, act55('partialfractions')], '-',
+        [_t('Approximate Integral...'), null, approxIntegral], [_t('Plot Approximate Integral'), null, plotApproxIntegral], [_t('Plot Approximate Integral Animated'), null, act55('plotapproxint_anim')], '-',
+        [_t('Find Extrema'), null, () => runCompute('extrema')], [_t('Iterate...'), null, iterateDialog], [_t('Implicit Differentiation...'), null, implicitDialog], '-',
+        [_t('Differentiate'), null, () => calculusOp('differentiate', _t('Differentiate'))], [_t('Integrate (indefinite)'), null, () => calculusOp('integrate', _t('Integrate (indefinite)'))], [_t('Padé approximant…'), null, padeDialog]]],
+      [_t('Power Series...'), null, seriesDialog],
+      [_t('Solve ODE'), null, [[_t('Exact'), null, () => runCompute('ode')], [_t('Laplace'), null, act55('odelaplace')], [_t('Numeric'), null, () => runCompute('odenumeric')], [_t('Series'), null, act55('odeseries')]]],
+      [_t('Transforms'), null, [[_t('Fourier'), null, () => runCompute('fourier')], [_t('Inverse Fourier'), null, act55('inversefourier')], [_t('Laplace'), null, () => runCompute('laplace')], [_t('Inverse Laplace'), null, () => runCompute('inverselaplace')]]],
+      [_t('Vector Calculus'), null, [[_t('Gradient'), null, computeAction('gradient')], [_t('Divergence'), null, computeAction('divergence')], [_t('Curl'), null, computeAction('curl')], [_t('Laplacian'), null, computeAction('laplacian')], '-',
+        [_t('Jacobian'), null, computeAction('jacobian')], [_t('Hessian'), null, computeAction('hessian')], '-', [_t('Wronskian'), null, computeAction('wronskian')], '-',
+        [_t('Scalar Potential'), null, computeAction('potential')], [_t('Vector Potential'), null, computeAction('vectorpotential')], '-', [_t('Set Basis Variables...'), null, setBasis]]], '-',
+      [_t('Matrices'), null, MATRICES55.map(([l, op]) => [l, null, act55(op)])],
+      [_t('Simplex'), null, [[_t('Dual'), null, () => runCompute('dual')], [_t('Feasible?'), null, () => runCompute('feasible')], [_t('Maximize'), null, () => runCompute('maximize')],
+        [_t('Minimize'), null, () => runCompute('minimize')], [_t('Standardize'), null, () => runCompute('standardize')]]], '-',
+      [_t('Statistics'), null, [[_t('Fit Curve to Data...'), null, act55('fitcurve')], [_t('Random Numbers...'), null, act55('randomnumbers')], '-',
+        [_t('Mean'), null, act55('mean')], [_t('Median'), null, act55('median')], [_t('Mode'), null, act55('mode')], '-',
+        [_t('Correlation'), null, act55('correlation')], [_t('Covariance'), null, act55('covariance')], [_t('Geometric Mean'), null, act55('geomean')], [_t('Harmonic Mean'), null, act55('harmonicmean')],
+        [_t('Mean Deviation'), null, act55('meandev')], [_t('Moment...'), null, act55('moment')], [_t('Quantile...'), null, act55('quantile')], [_t('Standard Deviation'), null, act55('stddev')], [_t('Variance'), null, act55('variance')]]], '-',
+      [_t('Plot 2D'), null, [[_t('Rectangular'), null, plot2d], [_t('Polar'), null, () => plotOther('polar')], [_t('Implicit'), null, () => plotOther('implicit')], [_t('Inequality'), null, () => plotOther('inequality')],
+        [_t('Parametric'), null, () => plotOther('param')], '-', [_t('Conformal'), null, () => plotOther('conformal')], [_t('Gradient'), null, () => plotOther('gradient')], [_t('Vector Field'), null, () => plotOther('vector')], '-',
+        [_t('ODE'), null, () => plotOther('ode')]]],
       [_t('Plot 3D'), null, [[_t('Rectangular'), null, () => plotOther('surface')], [_t('Cylindrical'), null, () => plotOther('cylindrical')], [_t('Spherical'), null, () => plotOther('spherical')],
-        [_t('Implicit'), null, () => plotOther('implicit3')], [_t('Tube'), null, () => plotOther('tube')], [_t('Gradient'), null, () => plotOther('gradient3')],
-        [_t('Vector field'), null, () => plotOther('vector3')]]], '-',
+        [_t('Implicit'), null, () => plotOther('implicit3')], [_t('Tube'), null, () => plotOther('tube')], '-', [_t('Gradient'), null, () => plotOther('gradient3')], [_t('Vector Field'), null, () => plotOther('vector3')]]], '-',
+      [_t('Plot 2D Animated'), null, [[_t('Rectangular'), null, act55('anim_rect')], [_t('Polar'), null, act55('anim_polar')], [_t('Implicit'), null, act55('anim_implicit')], [_t('Inequality'), null, act55('anim_inequality')],
+        [_t('Parametric'), null, act55('anim_param')], '-', [_t('Conformal'), null, act55('anim_conformal')], [_t('Gradient'), null, act55('anim_gradient')], [_t('Vector Field'), null, act55('anim_vector')]]],
+      [_t('Plot 3D Animated'), null, [[_t('Rectangular'), null, act55('anim_surface')], [_t('Cylindrical'), null, act55('anim_cylindrical')], [_t('Spherical'), null, act55('anim_spherical')],
+        [_t('Implicit'), null, act55('anim_implicit3')], [_t('Tube'), null, act55('anim_tube')], '-', [_t('Gradient'), null, act55('anim_gradient3')], [_t('Vector Field'), null, act55('anim_vector3')]]], '-',
+      [_t('Definitions'), null, [[_t('New Definition'), 'Ctrl+=', () => definitions('define')], [_t('Undefine'), null, act55('undefine')], [_t('Show Definitions...'), null, () => definitions('showdefs')],
+        [_t('Clear Definitions'), null, () => definitions('cleardefs')], [_t('Save Definitions'), null, act55('savedefs')], [_t('Restore Definitions'), null, act55('restoredefs')], [_t('Define MuPAD Name...'), null, act55('mupadname')]]], '-',
+      [_t('Settings...'), null, act55('settings55', engineInfo)], '-',
+      [_t('Interpret'), 'Ctrl+?', act55('interpret')], '-',
       [_t('Check with Lean'), null, leanCheckFormula],
     ]],
-    [_t('Typeset'), [[_t('Typeset PDF'), 'Ctrl+P', app.pdf], [_t('Preamble…'), null, editPreamble], [_t('Options…'), null, typesetOptions], [_t('Export LaTeX…'), null, app.exportLatex]]],
+    // Typeset (sw550ENUS.dll menu 23; the DVI items are not here: opensw makes PDF only)
+    [_t('Typeset'), [
+      [_t('Front Matter...'), null, m55.frontMatter], [_t('Preamble...'), null, editPreamble], [_t('Bibliography Choice...'), null, m55.bibliographyChoice],
+      [_t('Options and Packages...'), null, m55.optionsPackages], [_t('Output Choice...'), null, m55.outputChoice], '-',
+      [_t('Preview PDF...'), 'Ctrl+P', app.pdf], [_t('Print PDF...'), null, app.pdf && (() => app.typesetAs('print'))], [_t('Compile PDF...'), null, app.pdf && (() => app.typesetAs('none'))], '-',
+      [_t('Tools'), null, [[_t('Run BibTeX'), null, app.pdf && (() => app.typesetAs('none', _t('BibTeX ran while compiling')))], [_t('Run MakeIndex'), null, app.pdf && (() => app.typesetAs('none', _t('MakeIndex ran while compiling')))]]],
+      [_t('General Settings...'), null, m55.generalSettings], [_t('Expert Settings...'), null, m55.expertSettings], '-',
+      [_t('Options…'), null, typesetOptions], [_t('Export LaTeX…'), null, app.exportLatex],
+    ]],
     [_t('Tools'), [
+      [_t('Action'), null, m55.action], [_t('Spelling...'), null, m55.spelling], '-',
+      [_t('Document Manager...'), null, documentManager], [_t('Exam Builder...'), null, examBuilder], '-',
+      [_t('User Setup...'), null, userSetup], [_t('Export Settings...'), null, exportSettings], [_t('Computation Setup...'), null, act55('settings55', engineInfo)], [_t('Engine Setup...'), null, engineInfo], '-',
+      [_t('Automatic Substitution...'), null, autoSubstitution], '-',
+      [_t('Save User Preferences...'), null, m55.savePreferences], [_t('Restore Saved Preferences...'), null, m55.restorePreferences], '-',
       [() => (view.dom.spellcheck ? '✓ ' : '　') + _t('Spell check (English, built into the browser)'), null, toggleSpell],
-      [_t('Exam builder…'), null, examBuilder], '-',
-      [_t('Document manager…'), null, documentManager], [_t('Automatic substitution…'), null, autoSubstitution], [_t('User setup…'), null, userSetup], [_t('Export settings…'), null, exportSettings], '-',
-      [_t('Computation engine…'), null, engineInfo], [_t('Lean setup…'), null, () => leanSettings()], [_t('Connect AI…'), null, connectAi],
+      [_t('Lean setup…'), null, () => leanSettings()], [_t('Connect AI…'), null, connectAi],
     ]],
     [_t('Window'), app.windows],
-    [_t('Help'), [[_t('Keyboard shortcuts'), 'F1', app.help], [_t('Full manual'), null, () => app.openManual(MANUAL, { name: _t('opensw manual') })], [_t('How to use'), null, () => { $('#guide').hidden = false; $('#guide-close').onclick = () => { $('#guide').hidden = true; view.focus(); }; }], [_t('Talking to AI…'), null, talkingToAi]]],
+    [_t('Help'), [[_t('Contents'), null, openManual], [_t('Search...'), null, m55.helpSearch],
+      [_t('Index'), null, [[_t('Computing Techniques'), null, () => m55.helpIndex('computing')], [_t('General Information'), null, () => m55.helpIndex('general')], [_t('Reference Library'), null, () => m55.helpIndex('reference')]]], '-',
+      [_t('MacKichan Software Website'), null, m55.website], '-',
+      [_t('About SW...'), null, m55.about], '-',
+      [_t('Keyboard shortcuts'), 'F1', app.help], [_t('How to use'), null, () => { $('#guide').hidden = false; $('#guide-close').onclick = () => { $('#guide').hidden = true; view.focus(); }; }], [_t('Talking to AI…'), null, talkingToAi]]],
   ];
 
   const popup = $('#popup');
@@ -1599,11 +1736,23 @@ export function setupUI(app) {
         sub.classList.add('submenu');
         b.classList.add('has-sub');
         b.append(sub);
-        b.onclick = (e) => { e.stopPropagation(); b.classList.toggle('sub-open'); };
+        b.addEventListener('mouseenter', () => placeSubmenu(b, sub));
+        b.onclick = (e) => { e.stopPropagation(); b.classList.toggle('sub-open'); placeSubmenu(b, sub); };
       } else if (act) b.onclick = (e) => { e.stopPropagation(); closePopups(); act(); };
       box.append(b);
     }
     return box;
+  }
+  // a submenu beside its item, moved up or to the left when it would go past the window's edge
+  function placeSubmenu(b, sub) {
+    const r = b.getBoundingClientRect();
+    sub.style.left = r.right + 'px'; sub.style.top = (r.top - 3) + 'px';
+    requestAnimationFrame(() => {
+      const h = sub.offsetHeight, w = sub.offsetWidth;
+      if (!h) return;
+      sub.style.top = Math.max(4, Math.min(r.top - 3, innerHeight - h - 4)) + 'px';
+      sub.style.left = (r.right + w > innerWidth ? Math.max(0, r.left - w) : r.right) + 'px';
+    });
   }
   function showPopup(anchor, content) {
     popup.replaceChildren(content);
@@ -1611,6 +1760,7 @@ export function setupUI(app) {
     const r = anchor.getBoundingClientRect();
     popup.style.left = Math.max(0, Math.min(r.left, innerWidth - popup.offsetWidth - 4)) + 'px';
     popup.style.top = r.bottom + 'px';
+    popup.style.setProperty('--popup-top', r.bottom + 'px');
   }
   for (const [name, items] of MENUS) {
     const b = document.createElement('button');
@@ -1629,6 +1779,14 @@ export function setupUI(app) {
     b.onmouseenter = () => { if (openMenu && openMenu !== name) b.click(); };
     $('#menubar').append(b);
   }
+  // as in 5.5, the × at the right end of the menu bar closes the document on screen
+  const docClose = document.createElement('button');
+  docClose.id = 'doc-close';
+  docClose.textContent = '×';
+  docClose.title = _t('Close this document');
+  noFocus(docClose);
+  docClose.onclick = () => { closePopups(); app.closeDoc(); };
+  $('#menubar').append(docClose);
   document.addEventListener('click', (e) => { if (!popup.contains(e.target)) closePopups(); });
   popup.addEventListener('click', (e) => e.stopPropagation());
 
@@ -1846,7 +2004,11 @@ export function setupUI(app) {
     .filter(([k]) => /^[a-z0-9]{2,}$/.test(k)));
   document.addEventListener('keydown', (e) => {
     if (e.key === 'F1') { e.preventDefault(); app.help(); return; }
-    if (e.key === 'Escape') closePopups();
+    if (e.key === 'Escape') { // closes a menu; otherwise View > Refresh (5.5: Esc)
+      const menuWasOpen = !!openMenu;
+      closePopups();
+      if (!menuWasOpen && !pending && !isField(e.target) && !currentMath() && $('#dialog').hidden) m55.refreshView();
+    }
     if (isField(e.target)) return; // typing in a dialog or the find bar
     if (pending) {
       if (['Shift', 'Control', 'Alt', 'Meta', 'CapsLock'].includes(e.key)) return;
@@ -1870,7 +2032,9 @@ export function setupUI(app) {
       }
       if (ctrlTyped) replayCtrl();
     }
-    if (e.key === '=' || e.key === '+') { take(); app.zoomStep(1); return; } // not in 5.5, no conflict
+    if (e.key === '=' && mv) { take(); definitions('define'); return; } // 5.5: Ctrl+= New Definition
+    if (e.key === '?') { take(); act55('interpret')(); return; } // 5.5: Ctrl+? Interpret
+    if (e.key === '=' || e.key === '+') { take(); app.zoomStep(1); return; } // zoom (not in 5.5): Ctrl+= outside a formula, Ctrl++
     const a = actionFor(e);
     if (!a) return;
     take();

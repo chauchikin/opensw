@@ -1,7 +1,9 @@
 // The acceptance test of a computation engine: the cases of test/fixtures/engine/cases.json
 // (made by scripts/engine-cases.mjs) sent to the engine the way the desktop app sends them
 // (engine/engines.json, the line protocol of ENGINE.md), each answer checked.
-//   node scripts/engine-check.mjs sympy                 SymPy, by Python (engine/opensw_stdio.py)
+//   node scripts/engine-check.mjs sympy [program]       SymPy, by Python (engine/opensw_stdio.py;
+//                                                       program: a python.exe, e.g. the one made by
+//                                                       scripts/bundle-python.mjs; none: python on the PATH)
 //   node scripts/engine-check.mjs mathematica [program] Mathematica (program: its wolfram.exe;
 //                                                       none: found as the desktop app finds it)
 import fs from 'node:fs';

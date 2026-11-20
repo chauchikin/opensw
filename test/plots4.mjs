@@ -25,7 +25,7 @@ const b = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium-124
 const page = await b.newPage({ viewport: { width: 1024, height: 900 } });
 const errs = []; page.on('pageerror', (e) => errs.push(e.message));
 page.on('console', (m) => { if (m.type() === 'warning' && /繪圖/.test(m.text())) errs.push(m.text()); });
-await page.goto('http://localhost:4173/?lang=zh-TW'); await page.waitForTimeout(600);
+await page.goto(`http://localhost:${process.env.OPENSW_PORT || 4173}/?lang=zh-TW`); await page.waitForTimeout(600);
 const call = (cmd, args) => page.evaluate(([c, a]) => window.sw.call(c, a), [cmd, args]);
 const menu = async (top, ...items) => {
   await page.click(`.menu-top:has-text("${top}")`);
@@ -89,7 +89,7 @@ check(answer.result?.solutions?.[0] === 'y' && /plottype 4;/.test(r.frame) && ne
   `Plot 2D > ODE of y from Solve ODE > Numeric: starts at ${d.x[0]}, y(3.5) = ${at(d, 3.5)}`);
 await call('compute', { latex: '0', op: 'cleardefs' }); // y is a function no more (the plots below use y)
 
-r = await plotFrom('\\frac{1}{x^2+1}', ['微積分', '畫近似積分圖…'], async () => {
+r = await plotFrom('\\frac{1}{x^2+1}', ['微積分', '畫近似積分圖'], async () => {
   await page.selectOption('#d-m', 'right'); await page.fill('#d-n', '10'); await page.fill('#d-a', '-1'); await page.fill('#d-b', '1'); await page.click('#dialog-ok');
 });
 d = (await dataOf(r.frame))[0];
@@ -166,7 +166,7 @@ const ly = d.y.map(Math.log10);
 check(d.x.every((x, i) => near(ly[i], Math.log10(5) + x * Math.log10(2), 1e-9)), 'log plot points: log y is linear in x');
 
 // 5.5's own settings (a file with one plot of each kind, written as 5.5 writes them)
-await page.goto('http://localhost:4173/?lang=zh-TW'); await page.waitForTimeout(600);
+await page.goto(`http://localhost:${process.env.OPENSW_PORT || 4173}/?lang=zh-TW`); await page.waitForTimeout(600);
 await page.setInputFiles('#file', 'test/fixtures/pictures/plots55more.tex');
 if (await page.isVisible('#confirm')) await page.click('#confirm-ok');
 await page.waitForTimeout(1200);

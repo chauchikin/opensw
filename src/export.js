@@ -28,6 +28,26 @@ const CJK_FONT = `\\ifdefined\\IfFontExistsTF
 \\else\\setCJKmainfont[AutoFakeBold=2.5]{PMingLiU}\\fi
 `;
 
+// A preamble that chooses its own Chinese font gets none of ours: \setCJKmainfont, or ctex
+// (\documentclass{ctexart}, \usepackage{ctex}), which loads xeCJK and sets its fonts (its fontset)
+const CTEX = /\\documentclass\s*(\[[^\]]*\])?\s*\{ctex(art|rep|book|beamer)\}|\\usepackage\s*(\[[^\]]*\])?\s*\{[^}]*\bctex(cap|sub)?\b[^}]*\}/;
+export const ownChineseFont = (pre) => /\\setCJKmainfont(?![a-zA-Z])/.test(stripComments(pre || '')) || CTEX.test(stripComments(pre || ''));
+
+// A font a document asks for by name (fontspec, xeCJK) may not be on this computer; TeX then
+// prints nothing at all in it (a report without its Latin letters and digits). So each such
+// command is carried out only when the font is there; otherwise the default font stays (for
+// Chinese, which has none: the font of CJK_FONT), and TeX writes "opensw-no-font: name" in its
+// log (the desktop app reports it with the errors). A font given as a file, or an older TeX
+// without \IfFontExistsTF: left as written.
+const FONT_COMMAND = /\\(set(?:main|sans|mono|roman)font|setCJK(?:main|sans|mono)font|newfontfamily\s*(\\[A-Za-z@]+)|newCJKfontfamily\s*(?:\[[^\]]*\])?\s*(\\[A-Za-z@]+))\s*(\[[^\]]*\])?\s*\{([^{}\\]+)\}(\s*\[[^\]]*\])?/g;
+export function guardFonts(preamble) {
+  return preamble.replace(FONT_COMMAND, (all, cmd, family, cjkFamily, before, font, after) => {
+    if (/\.(otf|ttf|ttc)$/i.test(font.trim()) || /\b(Path|Extension)\b/.test((before || '') + (after || ''))) return all;
+    const name = family || cjkFamily; // \newfontfamily\name: the name must exist either way
+    return `\\ifdefined\\IfFontExistsTF\\IfFontExistsTF{${font}}{${all}}{\\typeout{opensw-no-font: ${font.trim()}}${cmd === 'setCJKmainfont' ? CJK_FONT : ''}${name ? `\\providecommand${name}{}` : ''}}\\else ${all}\\fi `;
+  });
+}
+
 // packages from the .sci preamble that a normal TeX installation has
 const SAFE_PACKAGES = new Set(['amsfonts', 'xcolor', 'ragged2e', 'tabulary', 'bm', 'url', 'longtable', 'multicol',
   'enumitem', 'booktabs', 'array', 'wrapfig', 'boxedminipage', 'fancyhdr', 'geometry', 'setspace', 'float']);
@@ -115,15 +135,17 @@ function linkTex(a, s) {
   return `\\href{${a.href.replace(/[#%&_~]/g, '\\$&')}}{${s}}`;
 }
 
-function inlineTex(node) {
+// inCell: in a table cell (\\ there ends the row, so a line break is \newline)
+function inlineTex(node, inCell = false) {
   let out = '';
-  node.forEach((child) => {
+  node.forEach((child, offset, index) => {
     let s;
     if (child.isText) s = escTex(child.text);
     else if (child.type.name === 'math_inline') s = '$' + (doc55 ? formula55(child.attrs.latex) : standardTeX(child.attrs.latex)) + '$';
     else if (child.type.name === 'tex_field') s = child.attrs.tex + (/\\[a-zA-Z]+$/.test(child.attrs.tex) ? '{}' : '');
     else if (child.type.name === 'html_field') s = doc55 ? `%TCIMACRO{\\HTML{${child.attrs.html}}}%\n%BeginExpansion\n%EndExpansion\n` : ''; // TeX does not use it
-    else if (child.type.name === 'hard_break') s = '\\\\\n';
+    // (TeX reads [ or * after \\ as part of it: "\\" then "[2] ..." would lose the [2])
+    else if (child.type.name === 'hard_break') s = inCell ? '\\newline ' : index + 1 < node.childCount && /^\s*[[*]/.test(node.child(index + 1).text || '') ? '\\\\{}\n' : '\\\\\n';
     else if (child.type.name === 'marker') s = `\\label{${child.attrs.key}}`;
     else if (child.type.name === 'ref') s = `\\${child.attrs.kind}{${child.attrs.key}}`;
     else if (child.type.name === 'image') s = imageTex(child);
@@ -222,7 +244,7 @@ function tableTex(node) {
       const { colspan, rowspan } = cell.attrs;
       const top = map.findCell(pos).top === r;
       // several paragraphs in a cell: \par only works in a paragraph column (p{..})
-      let s = top ? cell.content.content.map(inlineTex).join(paraCols ? ' \\par ' : ' ') : '';
+      let s = top ? cell.content.content.map((p) => inlineTex(p, true)).join(paraCols ? ' \\par ' : ' ') : '';
       if (top && rowspan > 1) s = `\\multirow{${rowspan}}{*}{${s}}`;
       const ownSpec = cell.attrs.spec || (cell.attrs.align && cell.attrs.align !== colAligns[c] ? cell.attrs.align : null);
       if (colspan > 1 || (ownSpec && ownSpec !== colAligns[c])) {
@@ -265,7 +287,10 @@ function blockTex(node, envs) {
     case 'paragraph': return inlineTex(node) + '\n\n';
     case 'title':
       if (node.attrs.form) return `\\begin{center}\n{\\${node.attrs.form} ${inlineTex(node)}}\n\\end{center}\n\n`;
-      if (doc55) return `\\title{${inlineTex(node)}}\n${doc55.author55 != null ? `\\author{${doc55.author55}}\n` : ''}${node.attrs.date != null ? `\\date{${node.attrs.date}}\n` : ''}\\maketitle\n\n`;
+      if (doc55) {
+        const fronts = [...doc55.fronts].map((f) => `\\${f.attrs.cmd}{${inlineTex(f)}}\n`).join('');
+        return `\\title{${inlineTex(node)}}\n${doc55.author55 != null ? `\\author{${doc55.author55}}\n` : ''}${node.attrs.date != null ? `\\date{${node.attrs.date}}\n` : ''}${fronts}\\maketitle\n\n`;
+      }
       return `\\title{${inlineTex(node)}}\n\\date{${node.attrs.date ?? ''}}\n\\maketitle\n\n`;
     case 'heading': return `\\${SECTION_CMD[node.attrs.level] || 'section'}${node.attrs.nonum ? '*' : ''}{${inlineTex(node)}}\n\n`;
     case 'math_display': return displayTex(node) + '\n\n';
@@ -277,7 +302,7 @@ function blockTex(node, envs) {
     }
     case 'toc': return `\\${node.attrs.kind}\n\n`;
     case 'subdoc': return (node.attrs.tex || `\\input{${node.attrs.file}}`) + '\n\n';
-    case 'front_field': return `\\${node.attrs.cmd}{${inlineTex(node)}}\n\n`;
+    case 'front_field': return doc55?.fronts.has(node) ? '' : `\\${node.attrs.cmd}{${inlineTex(node)}}\n\n`;
     case 'appendix': return '\\appendix\n\n';
     case 'bibtex': return `\\bibliographystyle{${node.attrs.style}}\n\\bibliography{${node.attrs.files}}\n\n`;
     case 'float_box': return floatTex(node, envs);
@@ -345,12 +370,13 @@ export function toLatex(doc, meta = {}, opts = {}) {
   for (const p of tablePackages(body, pre)) if (!pkgs.includes(p)) pkgs.push(p);
   if (usedXcolor && !pkgs.includes('xcolor') && !/\{[^}]*\bx?color\b[^}]*\}/.test(pre)) pkgs.push('xcolor');
   const indexSetup = (usedIndex || /\\printindex/.test(body)) && !/\\makeindex/.test(pre) ? '\\usepackage{makeidx}\n\\makeindex\n' : '';
-  return `\\documentclass{${cls}}
+  // File > Style, Typeset > Options and Packages: the class's options and the user's packages
+  const userPkgs = (meta.userPackages || []).map((p) => { const m = p.match(/^\[([^\]]*)\](.*)$/); return m ? `\\usepackage[${m[1]}]{${m[2]}}` : `\\usepackage{${p}}`; }).join('\n');
+  return `\\documentclass${meta.classOptions ? `[${meta.classOptions}]` : ''}{${cls}}
 \\usepackage{amsmath,amssymb,amsthm}
 \\usepackage{graphicx}
-\\usepackage{xeCJK}
-${CJK_FONT}${pkgs.map((p) => `\\usepackage{${p}}`).join('\n')}
-${indexSetup}\\usepackage{hyperref}
+${CTEX.test(stripComments(pre)) || (meta.userPackages || []).some((p) => /(^|\])ctex$/.test(p)) ? '' : `\\usepackage{xeCJK}\n${CJK_FONT}`}${pkgs.map((p) => `\\usepackage{${p}}`).join('\n')}
+${indexSetup}${userPkgs ? userPkgs + '\n' : ''}\\usepackage{hyperref}
 \\renewcommand{\\proofname}{${envLabel('proof')}}
 ${pre}
 ${theorems}
@@ -453,7 +479,7 @@ export function originalTex55(text, opts = {}) {
   const s = text.replace(/\r\n?/g, '\n');
   const b = s.indexOf('\\begin{document}');
   if (b < 0) return null;
-  const pre = s.slice(0, b);
+  const pre = guardFonts(s.slice(0, b));
   let body = '';
   let graphicx = false;
   let i = b;
@@ -473,7 +499,8 @@ export function originalTex55(text, opts = {}) {
     i = end;
   }
   body += s.slice(i);
-  const cjk = /[\u3000-\u9fff\uf900-\ufaff\uff00-\uffef]/.test(stripComments(body))
+  // (a document that chooses its Chinese font keeps it: see guardFonts)
+  const cjk = /[\u3000-\u9fff\uf900-\ufaff\uff00-\uffef]/.test(stripComments(body)) && !ownChineseFont(pre)
     ? `\\usepackage{xeCJK}\n${CJK_FONT}` : '';
   const gfx = graphicx && !/\\usepackage(\[[^\]]*\])?\{[^}]*\bgraphicx\b/.test(pre) ? '\\usepackage{graphicx}\n' : '';
   return `${pre.trimEnd()}\n${gfx}\\ifdefined\\XeTeXversion\\pdfpagewidth=\\paperwidth \\pdfpageheight=\\paperheight\\fi\n${cjk}\n${body}`;
@@ -484,13 +511,17 @@ export function originalTex55(text, opts = {}) {
 const AMS_ONLY = /\\(dfrac|tfrac|dbinom|tbinom|binom|text|operatorname|boldsymbol|eqref|tag|substack|overset|underset|xrightarrow|xleftarrow|iint|iiint|genfrac|intertext)(?![a-zA-Z])|\\begin\{(align|gather|multline|flalign|alignat|split|cases|pmatrix|bmatrix|vmatrix|Vmatrix|Bmatrix|smallmatrix)\*?\}/;
 // the 5.x writer's state for doc: the author line shown under the title is \author, not a separate block
 function start55(doc, meta) {
-  doc55 = { author55: meta.author55, skip: null, graphicx: false,
+  doc55 = { author55: meta.author55, skip: null, fronts: new Set(), graphicx: false,
     hyperref: /\\usepackage(\[[^\]]*\])?\{[^}]*\bhyperref\b/.test(meta.preamble55) };
   doc.forEach((n, off, i) => {
-    if (n.type.name === 'title' && !n.attrs.form && meta.author55) { // an empty \author{} has no block
-      const next = i + 1 < doc.childCount ? doc.child(i + 1) : null;
-      if (next && next.type.name === 'env' && next.attrs.kind === 'centered') doc55.skip = next;
-    }
+    if (n.type.name !== 'title' || n.attrs.form || doc55.titleSeen) return;
+    doc55.titleSeen = true;
+    let k = i + 1;
+    const next = k < doc.childCount ? doc.child(k) : null;
+    // the author line under the title: \author (a 5.x document with an author, or Typeset > Front Matter's)
+    if (meta.author55 && next && next.type.name === 'env' && next.attrs.kind === 'centered') { doc55.skip = next; k++; }
+    // the front matter fields after it (keywords, address ...): 5.x keeps them before \maketitle
+    while (k < doc.childCount && doc.child(k).type.name === 'front_field') doc55.fronts.add(doc.child(k++));
   });
   if (doc55.skip) doc55.author55 = inlineTex(doc55.skip.firstChild); // the author line as edited
 }
@@ -501,7 +532,7 @@ function toLatex55(doc, meta, opts = {}) {
   start55(doc, meta);
   try { body = childrenTex(doc, envs); graphicx = doc55.graphicx; } finally { doc55 = null; }
   // Chinese anywhere in the text, formulas included ($\mathsf{李}$)
-  const cjk = /[\u3000-\u9fff\uf900-\ufaff\uff00-\uffef]/.test(body)
+  const cjk = /[\u3000-\u9fff\uf900-\ufaff\uff00-\uffef]/.test(body) && !ownChineseFont(meta.preamble55)
     ? `\\usepackage{xeCJK}\n${CJK_FONT}` : '';
   const { tablePkgs, theorems } = additions55(body, envs, meta.preamble55, graphicx);
   // a file for 5.x itself gets neither: 5.x typesets with its own TeX
@@ -669,16 +700,20 @@ export function toTex55File(doc, meta = {}) {
   const cjk = /[\u3000-\u9fff\uf900-\ufaff\uff00-\uffef]/.test(doc.textContent);
   const cls = meta.documentclass && /^(article|book|report|amsart|amsbook)$/.test(meta.documentclass) ? meta.documentclass : 'article';
   const own = meta.preamble55raw || meta.preamble55;
-  const clsOpt = (own && !is5xPreamble(own) && (stripComments(own).match(/\\documentclass(\[[^\]]*\])/) || [])[1]) || '';
+  const clsOpt = (own && !is5xPreamble(own) && (stripComments(own).match(/\\documentclass(\[[^\]]*\])/) || [])[1]) || '' || (meta.classOptions ? `[${meta.classOptions}]` : '');
+  const userPkgs = (meta.userPackages || []).map((p) => { const m = p.match(/^\[([^\]]*)\](.*)$/); return m ? `\\usepackage[${m[1]}]{${m[2]}}` : `\\usepackage{${p}}`; });
+  // File > Document Info, Typeset > Bibliography Choice: kept as 5.5 keeps them
+  const info55 = [meta.bibScheme ? `%TCIDATA{BibliographyScheme=${meta.bibScheme}}` : '', meta.docTitle ? `%TCIDATA{<META NAME="Title" CONTENT="${meta.docTitle.replace(/"/g, "'")}">}` : '',
+    ...Object.entries(meta.links || {}).map(([rel, href]) => `%TCIDATA{<LINK REL="${rel}" HREF="${href}">}`)].filter(Boolean);
   const preamble = (own && is5xPreamble(own) ? own : null) || [
     cjk ? '%2multibyte Version: 5.50.0.2960 CodePage: 950' : '%% This document created by opensw',
-    '', `\\documentclass${clsOpt}{${cls}}`, '\\usepackage{amsmath}',
+    '', `\\documentclass${clsOpt}{${cls}}`, '\\usepackage{amsmath}', ...userPkgs,
     // a LaTeX document's packages and settings go where 5.x writes its \usepackage lines
     own ? latexPreambleFor55(meta.preamble55 || own) : '', '',
     '%TCIDATA{OutputFilter=LATEX.DLL}', '%TCIDATA{Version=5.50.0.2960}', cjk ? '%TCIDATA{Codepage=950}' : '%TCIDATA{Codepage=1252}',
-    `%TCIDATA{CSTFile=40 LaTeX ${cls}.cst}`, '', '\\input{tcilatex}', own ? '' : meta.preambleTeX || '',
+    `%TCIDATA{CSTFile=40 LaTeX ${cls}.cst}`, ...info55, ...(meta.tcidata55 ? [meta.tcidata55] : []), '', '\\input{tcilatex}', own ? '' : meta.preambleTeX || '',
   ].join('\n').replace(/\n{3,}/g, '\n\n');
-  return toLatex55(doc, { ...meta, preamble55: preamble, author55: meta.preamble55 ? meta.author55 : null }, { file55: true });
+  return toLatex55(doc, { ...meta, preamble55: preamble, author55: meta.author55 ?? null }, { file55: true });
 }
 
 export function toMarkdown(doc) {

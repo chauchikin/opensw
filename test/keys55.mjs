@@ -1,6 +1,6 @@
 // Scientific Word 5.5 keys, toolbars and tag bar. Run: node test/keys55.mjs [url]
 import { chromium } from 'playwright';
-const url = process.argv[2] || 'http://localhost:4173/?lang=zh-TW';
+const url = process.argv[2] || `http://localhost:${process.env.OPENSW_PORT || 4173}/?lang=zh-TW`;
 const b = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium-1243/chrome-linux64/chrome' });
 const page = await b.newPage({ viewport: { width: 1024, height: 700 } });
 const errs = [];

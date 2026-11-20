@@ -63,7 +63,7 @@ function Watch($q, $want, $secs) {
     }
     if ($stop) { break }
     $main = [D55]::Title($q.Id)
-    if ($main -and $main.Contains($want) -and $real -eq 0) { $quiet++ } else { $quiet = 0 }
+    if ($main -and @($want | Where-Object { $main.Contains($_) }).Count -and $real -eq 0) { $quiet++ } else { $quiet = 0 }
     if ($quiet -ge 3) { $result = 'opened'; break }
   }
   if ($result -eq 'opened' -and ($msgs.Keys -match 'Error while reading|truncated')) { $result = 'truncated' }
@@ -86,7 +86,11 @@ foreach ($f in $files) {
   if ($k -ge $restart -or $q.HasExited) { $q = Start55; $k = 0 }
   $k++
   Start-Process C:\sw55\sciword.exe -ArgumentList ('"' + $f.FullName + '"')
-  $r = Watch $q $f.FullName $secs
+  # 5.5 shows a document's title (File > Document Info) in the window's title instead of its file name
+  $want = @($f.FullName)
+  $t = Select-String -LiteralPath $f.FullName -Pattern '%TCIDATA\{<META NAME="Title" CONTENT="([^"]*)">\}' | Select -First 1
+  if ($t) { $want += '[' + $t.Matches[0].Groups[1].Value + ']' }
+  $r = Watch $q $want $secs
   "$($f.FullName.Substring($dir.Length + 1))`t$($r[0])`t$($r[1])" | Out-File -LiteralPath $out -Append -Encoding utf8
   if ($r[0] -in 'opened', 'truncated') { [void][M]::CloseDoc($q.Id); Start-Sleep 1; if ([M]::No($q.Id)) { Start-Sleep 1 } } else { $q = Start55; $k = 0 }
 }

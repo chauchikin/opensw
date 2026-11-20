@@ -13,6 +13,7 @@ import { schema } from './schema.js';
 import { matchBlocks } from './export.js';
 import { mathForDisplay, standardTeX } from './tex55.js';
 import { _t } from './i18n.js';
+import { splitTop, tidy, REL, askEqual, definedNames, mentions, nameKey } from './steps.js';
 
 export const reviewKey = new PluginKey('review');
 let shown = false;
@@ -126,7 +127,8 @@ const PLAIN = [
   [/^Too many \}'s/, () => _t('One } too many')],
   [/^Extra alignment tab has been changed to \\cr/, () => _t('A row of a table or matrix has more columns than it should')],
   [/^Misplaced alignment tab character &/, () => _t('An & outside a table or an aligned formula')],
-  [/^File `([^']+)' not found/, (c, m) => _t('File not found: {0} (a picture or a package)', m[1])],
+  [/^(?:LaTeX Error: |Package \S+ Error: )?File `([^']+)' not found/, (c, m) => _t('File not found: {0} (a picture or a package)', m[1])],
+  [/^The font "([^"]+)" is not installed on this computer/, (c, m) => _t('The font {0} is not installed on this computer; the default font is used instead', m[1])],
   [/^(?:LaTeX Error: )?Environment (\S+) undefined/, (c, m) => _t('An environment TeX does not know: {0}', m[1])],
   [/^Paragraph ended before (\\\S+) was complete/, (c, m) => _t('The paragraph ends before {0} has all its arguments', m[1])],
   [/^Double subscript/, () => _t('Two subscripts on one symbol (x_1_2): put braces around one')],
@@ -138,36 +140,16 @@ const PLAIN = [
   [/^Dimension too large/, () => _t('A size too large for TeX (a picture or a space)')],
 ];
 export function plainError(e) {
-  const m0 = e.match(/^(.*?)(?: \(l\.(\d+) ?([^]*)\))?$/);
-  const msg = m0[1].trim(), context = m0[3] || '';
-  for (const [re, f] of PLAIN) { const m = msg.match(re); if (m) return { text: f(context, m), context, line: m0[2] ? +m0[2] : null }; }
-  return { text: msg, context, line: m0[2] ? +m0[2] : null };
+  const m0 = e.match(/^(.*?)(?: \[(\d+) times\])?(?: \(l\.(\d+) ?([^]*)\))?$/);
+  const msg = m0[1].trim(), context = m0[4] || '';
+  // (a message TeX gave many times comes once, with how often and the first place)
+  const often = m0[2] ? ' ' + _t('({0} times; the first place is shown)', m0[2]) : '';
+  const line = m0[3] ? +m0[3] : null;
+  for (const [re, f] of PLAIN) { const m = msg.match(re); if (m) return { text: f(context, m) + often, context, line }; }
+  return { text: msg + often, context, line };
 }
 
 // ---------- derivations: a = b = c in displayed formulas ----------
-const REL = /\\(?:le|ge|leq|geq|neq|ne|approx|sim|simeq|equiv|cong|propto|to|rightarrow|Rightarrow|Leftarrow|Leftrightarrow|iff|implies|in|notin|subset|subseteq|supset|supseteq|mapsto|longrightarrow|Longrightarrow)(?![A-Za-z])|[<>]/;
-// the parts of s at brace depth 0 (\left..\right counted as braces) split at sep
-function splitTop(s, sep) {
-  const out = [];
-  let depth = 0, from = 0;
-  for (let i = 0; i < s.length; i++) {
-    const c = s[i];
-    if (c === '\\') {
-      const w = s.slice(i + 1).match(/^[A-Za-z]+/);
-      if (w && (w[0] === 'left' || w[0] === 'begin')) depth++;
-      else if (w && (w[0] === 'right' || w[0] === 'end')) depth--;
-      if (!w && s.startsWith(sep, i) && sep === '\\\\' && depth === 0) { out.push(s.slice(from, i)); from = i + 2; i++; continue; }
-      i += w ? w[0].length : 1;
-      continue;
-    }
-    if (c === '{') depth++;
-    else if (c === '}') depth--;
-    else if (depth === 0 && s.startsWith(sep, i)) { out.push(s.slice(from, i)); from = i + sep.length; i += sep.length - 1; }
-  }
-  out.push(s.slice(from));
-  return out;
-}
-const tidy = (s) => s.replace(/\\(?:quad|qquad|,|;|!)\s*/g, ' ').replace(/\\text\{[^{}]*\}\s*$/, '').replace(/\\(?:nonumber|notag)/g, '').replace(/[.,;]\s*$/, '').trim();
 const isName = (s) => /^([A-Za-z]|\\[A-Za-z]+)(_\{[^{}]*\}|_\w)?\s*((\\left)?\(\s*[^()]*?\s*(\\right)?\))?$/.test(s.trim());
 // -> [{ a, b, pos }]: the steps a = b to check, pos the block they are in
 export function derivationSteps(doc) {
@@ -180,16 +162,20 @@ export function derivationSteps(doc) {
     const rows = env ? splitTop(env[3], '\\\\') : [tex];
     if (chain && chain.block !== index - 1) chain = null;
     rows.forEach((row, r) => {
-      const parts = splitTop(row.replace(/&/g, ' '), '=').map(tidy);
-      if (parts.length < 2) { if (!(r === 0 && parts[0] === '')) chain = null; return; }
-      // "= b" continues the expression before; "a = b" starts again
-      if (parts[0] !== '') chain = null;
-      parts.forEach((p, k) => {
-        if (k === 0 && p === '') return;
-        if (!p || REL.test(p)) { chain = null; return; }
-        // (the first step of f(x) = .., x = .. or a := .. names something: not checked)
-        if (chain && !(chain.first && isName(chain.last)) && !chain.last.endsWith(':')) steps.push({ a: chain.last, b: p, pos });
-        chain = { last: p, block: index, first: !chain };
+      // a row can hold several statements set apart by \qquad (a = b, \qquad c = d): each its own chain
+      splitTop(row.replace(/&/g, ' '), '\\qquad').forEach((statement, q) => {
+        if (q > 0) chain = null;
+        const parts = splitTop(statement, '=').map(tidy);
+        if (parts.length < 2) { if (!(r === 0 && q === 0 && parts[0] === '')) chain = null; return; }
+        // "= b" continues the expression before; "a = b" starts again
+        if (parts[0] !== '') chain = null;
+        parts.forEach((p, k) => {
+          if (k === 0 && p === '') return;
+          if (!p || REL.test(p)) { chain = null; return; }
+          // (the first step of f(x) = .., x = .. or a := .. names something: not checked)
+          if (chain && !(chain.first && isName(chain.last)) && !chain.last.endsWith(':')) steps.push({ a: chain.last, b: p, pos });
+          chain = { last: p, block: index, first: !chain };
+        });
       });
     });
   });
@@ -197,11 +183,14 @@ export function derivationSteps(doc) {
 }
 
 // ---------- the panel ----------
-// app: { view, toast, compute(op, latex, params), source() -> { text, head, segs } | { text } }
+// app: { view, toast, compute(op, latex, params), source() -> { text, head, segs } | { text },
+//   steps() / checkSteps(): the named steps' table (steps.js; may be absent) }
 export function setupReview(app) {
   const { view } = app;
   const $ = (s) => document.querySelector(s);
   let tab = 'doc', timer = null, left = null, errors = [], steps = null, checking = false;
+  // the line-by-line check of named steps (steps.js, the file beside the document): its table
+  let named = null, namedText = '', checkingNamed = false;
 
   function leftDecos(state, base) {
     const decos = [];
@@ -329,10 +318,12 @@ export function setupReview(app) {
       steps.forEach((s, i) => {
         if (s.result === 'equal') return;
         const mark = s.result === 'notequal' ? `<span class="rv-bad">✗ ${_t('Not equal')}</span>` : `<span class="rv-unknown">? ${_t('Cannot decide')}</span>`;
-        const why = s.result === 'notequal' ? ` — ${_t('at {0}: {1} and {2}', s.point, s.values[0], s.values[1])}` : '';
+        const why = s.result === 'notequal' ? ` — ${_t('at {0}: {1} and {2}', s.point, s.values[0], s.values[1])}`
+          : s.missing.length ? ` — ${_t('no definition in force for {0}; define it (Compute > Definitions > New Definition) and check again', s.missing.join(', '))}` : '';
         html += `<div class="rv-item" data-step="${i}">${mark} <code>${esc(s.a)}</code> = <code>${esc(s.b)}</code><span class="rv-text">${esc(why)}</span></div>`;
       });
     }
+    html += namedHtml();
     list.innerHTML = html;
     list.querySelectorAll('[data-hunk]').forEach((el) => el.addEventListener('click', (ev) => {
       if (ev.target.closest('button')) return;
@@ -344,17 +335,78 @@ export function setupReview(app) {
     list.querySelectorAll('[data-error]').forEach((el) => el.addEventListener('click', () => { const e = errors[+el.dataset.error]; if (e?.pos != null) goTo(e.pos); }));
     list.querySelectorAll('[data-step]').forEach((el) => el.addEventListener('click', () => goTo(steps[+el.dataset.step].pos)));
     $('#rv-check')?.addEventListener('click', checkSteps);
+    list.querySelectorAll('[data-named]').forEach((el) => el.addEventListener('click', () => { const pos = blockPos(+el.dataset.named); if (pos != null) goTo(pos); }));
+    $('#rv-check-named')?.addEventListener('click', checkNamed);
+    loadNamed();
+  }
+
+  // ---------- the line-by-line check: every named step with its result (Changes and errors tab)
+  const STATUS = {
+    pass: ['rv-good', '✓', () => _t('Passed')], fail: ['rv-bad', '✗', () => _t('Failed')], trusted: ['rv-trusted', '★', () => _t('Trusted')],
+    unknown: ['rv-unknown', '?', () => _t('Cannot decide')], unchecked: ['rv-unchecked', '–', () => _t('Not checked')],
+  };
+  function blockPos(index) {
+    let at = null;
+    view.state.doc.forEach((n, pos, i) => { if (i === index) at = pos; });
+    return at;
+  }
+  function namedHtml() {
+    let html = `<h3>${_t('Line-by-line check ({0} steps)', named?.counts?.steps ?? 0)}</h3>`;
+    if (!app.steps) return html + `<p class="rv-none">${_t('Not available here.')}</p>`;
+    html += `<p><button id="rv-check-named"${checkingNamed || !named?.steps?.length ? ' disabled' : ''}>${checkingNamed ? _t('Checking…') : _t('Check all named steps')}</button></p>`;
+    if (!named) return html + `<p class="rv-none">${_t('Reading the steps…')}</p>`;
+    if (named.error) return html + `<p class="rv-none">${esc(named.error)}</p>`;
+    if (!named.steps.length) return html + `<p class="rv-none">${_t('No named steps yet. A displayed formula with a \\label is a step; an AI can name the others (nameSteps).')}</p>`;
+    const c = named.counts;
+    html += `<p class="rv-none">${_t('Passed {0}, failed {1}, cannot decide {2}, not checked {3}, trusted {4}.', c.pass, c.fail, c.unknown, c.unchecked, c.trusted)}</p>`;
+    html += `<table class="rv-steps"><thead><tr><th>${_t('Step')}</th><th>${_t('Block')}</th><th>${_t('Result')}</th><th>${_t('Why')}</th></tr></thead><tbody>`;
+    for (const r of named.steps) {
+      const [cls, mark, word] = STATUS[r.status] || STATUS.unknown;
+      const waits = r.waitsFor?.length ? ` (${_t('waits for {0}', r.waitsFor.join(', '))})` : '';
+      html += `<tr class="rv-item" data-named="${r.block}"><td><code>${esc(r.name)}</code></td><td>${r.block + 1}</td><td><span class="${cls}">${mark} ${word()}</span></td><td class="rv-text">${esc(r.why || '')}${esc(waits)}${r.note ? ` — ${esc(r.note)}` : ''}</td></tr>`;
+    }
+    html += '</tbody></table>';
+    if (named.problems?.length) html += `<ul class="rv-problems">${named.problems.map((p) => `<li>${esc(p)}</li>`).join('')}</ul>`;
+    return html;
+  }
+  // the table as the steps file says now (a step changed since its check is unchecked again)
+  let loading = false;
+  async function loadNamed() {
+    if (!app.steps || loading || checkingNamed) return;
+    loading = true;
+    let t;
+    try { t = await app.steps(); } catch (e) { t = { error: String(e.message || e) }; } finally { loading = false; }
+    const text = JSON.stringify(t);
+    if (text === namedText) return;
+    named = t; namedText = text;
+    if (shown && tab === 'list') drawList();
+  }
+  async function checkNamed() {
+    checkingNamed = true;
+    drawList();
+    try { named = await app.checkSteps(); } catch (e) { named = { error: String(e.message || e) }; }
+    namedText = JSON.stringify(named);
+    checkingNamed = false;
+    drawList();
   }
 
   async function checkSteps() {
     checking = true;
     drawList();
     const found = derivationSteps(view.state.doc);
+    // the names the displayed formulas define (w_0 = ..) that have no definition in force
+    // (Compute > Definitions): a step with such a name cannot be decided, it is not wrong
+    const shown = [];
+    view.state.doc.forEach((n, pos, index) => { if (n.type.name === 'math_display') shown.push({ latex: n.attrs.latex, block: index + 1 }); });
+    let have = new Set();
+    try { have = new Set(((await app.compute('showdefs', '0')).solutions || []).map(nameKey)); } catch (e) { /* no engine: every step comes out unknown below */ }
+    const known = definedNames(shown);
     const out = [];
     for (const s of found) {
-      let r;
-      try { r = await app.compute('stepcheck', s.a, [s.b]); } catch (e) { r = { result: 'unknown' }; }
-      out.push({ ...s, result: r.result || 'unknown', point: r.point, values: r.values });
+      const r = await askEqual(app.compute, s.a, s.b);
+      const last = r.asked.at(-1);
+      const missing = r.result === 'equal' ? [] : [...new Set(known.filter((k) => !have.has(k.key) && mentions(s.a + ' ' + s.b, k.key)).map((k) => k.key.replace(/\($/, '')))];
+      out.push({ ...s, result: missing.length || r.result === 'error' ? 'unknown' : r.result, missing, point: last.counterexample?.point, values: last.counterexample?.values });
     }
     steps = out;
     checking = false;
@@ -387,6 +439,6 @@ export function setupReview(app) {
     if ((e.ctrlKey || e.metaKey) && e.shiftKey && !e.altKey && (e.key === 'D' || e.key === 'd')) { e.preventDefault(); e.stopPropagation(); toggle(); }
   }, true);
 
-  return { toggle, shown: () => shown, refresh, setErrors, hunks: () => hunks(view.state), checkSteps, steps: () => steps, errors: () => errors };
+  return { toggle, shown: () => shown, refresh, setErrors, hunks: () => hunks(view.state), checkSteps, steps: () => steps, errors: () => errors, named: () => named, checkNamed, showTab };
 }
 

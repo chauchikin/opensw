@@ -5,16 +5,22 @@
 //! base64 so no console code page can garble them:
 //!   in:  the engine's `call` line, with {op} and {data} (the MathJSON request in base64)
 //!   out: a line containing @@OPENSW@@ followed by the JSON answer in base64
-//! Other output lines (a start-up banner, messages) are skipped.
+//! Other output lines (a start-up banner, messages) are skipped. A program that has not
+//! answered after PATIENCE is stopped; the next computation starts it again.
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
-use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
-use std::sync::Mutex;
+use std::process::{Child, ChildStdin, Command, Stdio};
+use std::sync::mpsc::{self, Receiver, RecvTimeoutError};
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 
 const MARK: &str = "@@OPENSW@@";
+/// How long a program may take to answer. The adapters give up on one computation after a
+/// minute themselves ($timeLimit in opensw_compute.wl); this is for a program that says nothing.
+const PATIENCE: Duration = Duration::from_secs(if cfg!(test) { 2 } else { 120 });
 
 /// One entry of engine/engines.json.
 #[derive(Deserialize, Serialize, Clone, Debug)]
@@ -50,31 +56,51 @@ pub fn list(dir: &Path) -> Result<Vec<Spec>, String> {
 
 struct Running {
     program: PathBuf,
-    child: Child,
+    child: Arc<Mutex<Child>>,
     input: ChildStdin,
-    output: BufReader<ChildStdout>,
+    /// the lines the program prints, read by a thread of its own so that waiting for one can end
+    lines: Receiver<std::io::Result<String>>,
 }
 
 impl Drop for Running {
     fn drop(&mut self) {
-        let _ = self.child.kill();
-        let _ = self.child.wait();
+        kill(&self.child);
+        if let Ok(mut all) = CHILDREN.lock() {
+            all.retain(|c| !Arc::ptr_eq(c, &self.child));
+        }
     }
 }
 
-/// engine id -> its running program
+fn kill(child: &Mutex<Child>) {
+    if let Ok(mut child) = child.lock() {
+        let _ = child.kill();
+        let _ = child.wait();
+    }
+}
+
+/// engine id -> its running program (held for the whole of a computation)
 static RUNNING: Mutex<Option<HashMap<String, Running>>> = Mutex::new(None);
+/// the running programs again, so that closing the editor can stop one that a computation is
+/// still waiting for
+static CHILDREN: Mutex<Vec<Arc<Mutex<Child>>>> = Mutex::new(Vec::new());
 
 /// The program: the one the user chose, otherwise the newest one found where the engine
-/// says to look ("*" stands for any folder name; the numbers in a path are its version),
-/// otherwise the first bare name (a program on the PATH).
-fn find_program(spec: &Spec, chosen: Option<&str>) -> PathBuf {
+/// says to look ("*" stands for any folder name; the numbers in a path are its version;
+/// "{engine}" at the start is the engine folder `dir`: a program that comes with opensw),
+/// otherwise the first bare name (a program on the PATH). An engine without a bare name is
+/// never looked for on the PATH: its first place is returned, for the message.
+fn find_program(spec: &Spec, dir: &Path, chosen: Option<&str>) -> PathBuf {
     if let Some(p) = chosen.map(str::trim).filter(|p| !p.is_empty()) {
         return PathBuf::from(p);
     }
     let mut found: Option<(Vec<u32>, PathBuf)> = None;
     for pattern in &spec.program {
-        for path in expand(pattern) {
+        let paths = match in_engine_folder(pattern, dir) {
+            Some(path) if path.is_file() => vec![path],
+            Some(_) => Vec::new(),
+            None => expand(pattern),
+        };
+        for path in paths {
             let version: Vec<u32> = path
                 .to_string_lossy()
                 .split(|c: char| !c.is_ascii_digit())
@@ -89,7 +115,14 @@ fn find_program(spec: &Spec, chosen: Option<&str>) -> PathBuf {
         return path;
     }
     let bare = spec.program.iter().find(|p| !p.contains(['/', '\\']));
-    PathBuf::from(bare.map_or(spec.id.as_str(), String::as_str))
+    let first = spec.program.first().map_or(spec.id.as_str(), String::as_str);
+    bare.map_or_else(|| in_engine_folder(first, dir).unwrap_or_else(|| PathBuf::from(first)), PathBuf::from)
+}
+
+/// "{engine}/python/python.exe" -> that file in the engine folder
+fn in_engine_folder(pattern: &str, dir: &Path) -> Option<PathBuf> {
+    let rest = pattern.strip_prefix("{engine}")?;
+    Some(rest.split(['/', '\\']).filter(|part| !part.is_empty()).fold(dir.to_path_buf(), |path, part| path.join(part)))
 }
 
 /// The existing files a pattern names; "*" in a folder name matches any folder there.
@@ -159,8 +192,23 @@ impl Running {
             .spawn()
             .map_err(|e| format!("Cannot find {name} ({}): {e}. Its location can be set in Tools > Computation Engine", program.display()))?;
         let input = child.stdin.take().ok_or(format!("{name} has no input pipe"))?;
-        let output = BufReader::new(child.stdout.take().ok_or(format!("{name} has no output pipe"))?);
-        let mut running = Running { program, child, input, output };
+        let mut output = BufReader::new(child.stdout.take().ok_or(format!("{name} has no output pipe"))?);
+        let (send, lines) = mpsc::channel();
+        std::thread::spawn(move || {
+            loop {
+                let mut text = String::new();
+                let read = output.read_line(&mut text);
+                let more = matches!(read, Ok(n) if n > 0);
+                if send.send(read.map(|_| text)).is_err() || !more {
+                    break; // nobody is listening any more, or the program stopped
+                }
+            }
+        });
+        let child = Arc::new(Mutex::new(child));
+        if let Ok(mut all) = CHILDREN.lock() {
+            all.push(child.clone());
+        }
+        let mut running = Running { program, child, input, lines };
         let ready = if spec.load.is_empty() {
             running.read_answer(name)?
         } else {
@@ -183,10 +231,16 @@ impl Running {
     /// The text after the mark on the first line that has it.
     fn read_answer(&mut self, name: &str) -> Result<String, String> {
         let gone = |e: String| format!("{name} stopped ({e}); it will start again on the next computation");
-        let mut text = String::new();
+        let until = Instant::now() + PATIENCE;
         loop {
-            text.clear();
-            if self.output.read_line(&mut text).map_err(|e| gone(e.to_string()))? == 0 {
+            let text = match self.lines.recv_timeout(until.saturating_duration_since(Instant::now())) {
+                Ok(line) => line.map_err(|e| gone(e.to_string()))?,
+                Err(RecvTimeoutError::Timeout) => {
+                    return Err(format!("{name} did not answer within {} seconds and was stopped; it will start again on the next computation", PATIENCE.as_secs()));
+                }
+                Err(RecvTimeoutError::Disconnected) => String::new(),
+            };
+            if text.is_empty() {
                 return Err(gone("no answer".into()));
             }
             if let Some(i) = text.find(MARK) {
@@ -212,7 +266,7 @@ pub fn compute(dir: &Path, id: &str, program: Option<&str>, op: &str, data: &str
         return Err("The computation request is not in the right format".into());
     }
     let spec = list(dir)?.into_iter().find(|s| s.id == id).ok_or(format!("The list of computation engines has no {id}"))?;
-    let path = find_program(&spec, program);
+    let path = find_program(&spec, dir, program);
     let mut all = RUNNING.lock().map_err(|e| e.to_string())?;
     let all = all.get_or_insert_with(HashMap::new);
     if all.get(id).is_some_and(|r| r.program != path) {
@@ -235,9 +289,12 @@ pub fn compute(dir: &Path, id: &str, program: Option<&str>, op: &str, data: &str
     }
 }
 
-/// Stops every engine when the editor closes.
+/// Stops every engine when the editor closes: the programs first, so that a computation still
+/// waiting for one ends (it holds RUNNING until then).
 pub fn stop() {
-    if let Ok(mut all) = RUNNING.lock() {
+    let children = CHILDREN.lock().map(|all| all.clone()).unwrap_or_default();
+    children.iter().for_each(|child| kill(child));
+    if let Ok(mut all) = RUNNING.try_lock() {
         *all = None;
     }
 }
@@ -269,6 +326,11 @@ mod tests {
         let m = engines.iter().find(|s| s.id == "mathematica").unwrap();
         assert!(Path::new(env!("CARGO_MANIFEST_DIR")).join("../engine").join(&m.adapter).is_file());
         assert!(m.call.contains("{op}") && m.call.contains("{data}") && m.load.contains("{adapter64}"));
+        // SymPy by the Python that comes with opensw: only ever the one in the engine folder
+        let p = engines.iter().find(|s| s.id == "python").unwrap();
+        assert!(Path::new(env!("CARGO_MANIFEST_DIR")).join("../engine").join(&p.adapter).is_file());
+        assert!(p.program.iter().all(|place| place.starts_with("{engine}/")), "{:?}", p.program);
+        assert!(p.load.is_empty() && p.args.iter().any(|a| a == "{adapter}"));
     }
 
     #[test]
@@ -280,7 +342,7 @@ mod tests {
 
     #[test]
     fn find_program_should_use_the_chosen_path_then_the_newest_version() {
-        assert_eq!(find_program(&spec("x"), Some(" /opt/w/wolfram ")), PathBuf::from("/opt/w/wolfram"));
+        assert_eq!(find_program(&spec("x"), Path::new("/e"), Some(" /opt/w/wolfram ")), PathBuf::from("/opt/w/wolfram"));
         let root = std::env::temp_dir().join("opensw-find-program");
         for v in ["9.0", "14.3", "14.10", "Readme"] {
             std::fs::create_dir_all(root.join("W").join(v)).unwrap();
@@ -289,17 +351,32 @@ mod tests {
             std::fs::write(root.join("W").join(v).join("k.exe"), "").unwrap();
         }
         let pattern = format!("{}/W/*/k.exe", root.display());
-        assert_eq!(find_program(&spec(&pattern), None), root.join("W").join("14.10").join("k.exe"));
+        assert_eq!(find_program(&spec(&pattern), Path::new("/e"), None), root.join("W").join("14.10").join("k.exe"));
         let mut s = spec(&format!("{}/nothing/*/k.exe", root.display()));
         s.program.push("wolfram".into());
-        assert_eq!(find_program(&s, None), PathBuf::from("wolfram"));
+        assert_eq!(find_program(&s, Path::new("/e"), None), PathBuf::from("wolfram"));
     }
 
-    // a stand-in program: answers each line with the mark, skipping a banner first
-    #[cfg(unix)]
     #[test]
-    fn compute_should_read_the_marked_line_and_restart_a_stopped_engine() {
-        let dir = std::env::temp_dir().join("opensw-fake-engine");
+    fn a_program_that_comes_with_opensw_should_be_found_in_the_engine_folder_only() {
+        let dir = std::env::temp_dir().join("opensw-engine-folder");
+        std::fs::create_dir_all(dir.join("python")).unwrap();
+        let _ = std::fs::remove_file(dir.join("python").join("python.exe"));
+        let mut s = spec("{engine}/python/python.exe");
+        s.id = "python".into();
+        // not there: the place it should be (so starting it fails), never "python" on the PATH
+        assert_eq!(find_program(&s, &dir, None), dir.join("python").join("python.exe"));
+        s.program.insert(0, "{engine}\\other\\python.exe".into());
+        std::fs::write(dir.join("python").join("python.exe"), "").unwrap();
+        assert_eq!(find_program(&s, &dir, None), dir.join("python").join("python.exe"));
+        assert_eq!(find_program(&s, &dir, Some("/usr/bin/python3")), PathBuf::from("/usr/bin/python3"));
+    }
+
+    // a stand-in program: answers each line with the mark, skipping a banner first; "silent"
+    // makes it say nothing for a minute
+    #[cfg(unix)]
+    fn fake_engine(folder: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(folder);
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::write(
             dir.join("engines.json"),
@@ -307,9 +384,21 @@ mod tests {
         )
         .unwrap();
         let fake = dir.join("fake");
-        std::fs::write(&fake, "#!/bin/sh\necho 'Fake banner'\nwhile read line; do\n  case \"$line\" in\n    *Get*) echo '@@OPENSW@@ready' ;;\n    *quit*) exit 0 ;;\n    *) echo 'a message'; echo '\"@@OPENSW@@eyJvayI6MX0=\"' ;;\n  esac\ndone\n").unwrap();
+        std::fs::write(&fake, "#!/bin/sh\necho 'Fake banner'\nwhile read line; do\n  case \"$line\" in\n    *Get*) echo '@@OPENSW@@ready' ;;\n    *quit*) exit 0 ;;\n    *silent*) exec sleep 60 ;;\n    *) echo 'a message'; echo '\"@@OPENSW@@eyJvayI6MX0=\"' ;;\n  esac\ndone\n").unwrap();
         use std::os::unix::fs::PermissionsExt;
         std::fs::set_permissions(&fake, std::fs::Permissions::from_mode(0o755)).unwrap();
+        dir
+    }
+
+    // the tests that run a program share RUNNING, and stop() stops every program: one at a time
+    #[cfg(unix)]
+    static ONE_AT_A_TIME: Mutex<()> = Mutex::new(());
+
+    #[cfg(unix)]
+    #[test]
+    fn compute_should_read_the_marked_line_and_restart_a_stopped_engine() {
+        let _alone = ONE_AT_A_TIME.lock().unwrap_or_else(|e| e.into_inner());
+        let dir = fake_engine("opensw-fake-engine");
         let ok = |started| Answer { data: "eyJvayI6MX0=".into(), started };
         assert_eq!(compute(&dir, "fake", None, "factor", "eA==").unwrap(), ok(true));
         assert_eq!(compute(&dir, "fake", None, "factor", "eA==").unwrap(), ok(false));
@@ -317,5 +406,61 @@ mod tests {
         assert_eq!(compute(&dir, "fake", None, "factor", "eA==").unwrap(), ok(true)); // started again
         assert!(compute(&dir, "other", None, "factor", "eA==").is_err());
         stop();
+    }
+
+    // as the Python that comes with opensw: found in the engine folder, loads the adapter
+    // from its arguments and says ready itself, each line in is "<op> <data>"
+    #[cfg(unix)]
+    #[test]
+    fn a_program_in_the_engine_folder_should_answer_and_a_missing_one_fail_to_start() {
+        let _alone = ONE_AT_A_TIME.lock().unwrap_or_else(|e| e.into_inner());
+        let dir = std::env::temp_dir().join("opensw-own-engine");
+        std::fs::create_dir_all(dir.join("python")).unwrap();
+        let own = serde_json::json!({ "engines": [{
+            "id": "python", "name": "SymPy", "program": ["{engine}/python/python.exe"], "args": ["{adapter}"],
+            "adapter": "opensw_stdio.py", "call": "{op} {data}"
+        }] });
+        std::fs::write(dir.join("engines.json"), own.to_string()).unwrap();
+        let program = dir.join("python").join("python.exe");
+        let _ = std::fs::remove_file(&program);
+        let error = compute(&dir, "python", None, "factor", "eA==").unwrap_err();
+        assert!(error.starts_with("Cannot find SymPy (") && error.contains("python.exe"), "{error}");
+        std::fs::write(&program, "#!/bin/sh\ncase \"$1\" in *opensw_stdio.py) echo '@@OPENSW@@ready' ;; esac\nwhile read op data; do echo \"@@OPENSW@@$data\"; done\n").unwrap();
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&program, std::fs::Permissions::from_mode(0o755)).unwrap();
+        assert_eq!(compute(&dir, "python", None, "factor", "eA==").unwrap(), Answer { data: "eA==".into(), started: true });
+        assert_eq!(compute(&dir, "python", None, "expand", "eQ==").unwrap(), Answer { data: "eQ==".into(), started: false });
+        stop();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn an_engine_that_does_not_answer_should_be_stopped_and_start_again() {
+        let _alone = ONE_AT_A_TIME.lock().unwrap_or_else(|e| e.into_inner());
+        let dir = fake_engine("opensw-silent-engine");
+        let ok = |started| Answer { data: "eyJvayI6MX0=".into(), started };
+        assert_eq!(compute(&dir, "fake", None, "factor", "eA==").unwrap(), ok(true));
+        let asked = Instant::now();
+        let error = compute(&dir, "fake", None, "silent", "eA==").unwrap_err();
+        assert!(error.contains("did not answer within 2 seconds"), "{error}");
+        assert!(asked.elapsed() < Duration::from_secs(10));
+        assert!(CHILDREN.lock().unwrap().is_empty()); // the silent program is not left running
+        assert_eq!(compute(&dir, "fake", None, "factor", "eA==").unwrap(), ok(true)); // started again
+        stop();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn stop_should_not_wait_for_a_computation_that_is_still_waiting() {
+        let _alone = ONE_AT_A_TIME.lock().unwrap_or_else(|e| e.into_inner());
+        let dir = fake_engine("opensw-closing-engine");
+        compute(&dir, "fake", None, "factor", "eA==").unwrap();
+        let waiting = std::thread::spawn(move || compute(&dir, "fake", None, "silent", "eA=="));
+        std::thread::sleep(Duration::from_millis(300)); // the computation now holds RUNNING
+        let closing = Instant::now();
+        stop();
+        let error = waiting.join().unwrap().unwrap_err();
+        assert!(closing.elapsed() < Duration::from_secs(1), "{:?}", closing.elapsed());
+        assert!(error.contains("stopped (no answer)"), "{error}");
     }
 }

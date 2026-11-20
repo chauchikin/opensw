@@ -6,7 +6,7 @@ import { chromium } from 'playwright';
 const b = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium-1243/chrome-linux64/chrome' });
 const page = await b.newPage();
 const errs = []; page.on('pageerror', (e) => errs.push(e.message));
-await page.goto('http://localhost:4173/?lang=en'); await page.waitForTimeout(600);
+await page.goto(`http://localhost:${process.env.OPENSW_PORT || 4173}/?lang=en`); await page.waitForTimeout(600);
 let fails = 0;
 const check = (name, ok, detail) => { if (!ok) fails++; console.log(ok ? 'ok  ' : 'FAIL', name, JSON.stringify(detail ?? '').slice(0, 220)); };
 const call = (cmd, args) => page.evaluate(([c, a]) => window.sw.call(c, a), [cmd, args]);
@@ -49,7 +49,7 @@ const menu = async (...items) => {
   for (const it of items.slice(1)) await page.locator(`.menu-list button:has(> span:text-is("${it}"))`).filter({ visible: true }).first().click();
 };
 await enter(0);
-await menu('Compute', 'Calculus', 'Power series…');
+await menu('Compute', 'Power Series...');
 check('Power series asks the variable and the number of terms', await page.isVisible('#dialog #d-v') && await page.isVisible('#dialog #d-n'));
 await page.fill('#d-v', 't'); await page.fill('#d-n', '3');
 await page.click('#dialog-ok');
@@ -65,13 +65,14 @@ r = await call('formulas');
 check('... and gives [2/2]', r.result.some((f) => f.latex.replace(/\s/g, '').includes('6x+12')), r.result.map((f) => f.latex));
 const n = (await call('formulas')).result.length;
 await enter(n - 1);
-await menu('Compute', 'Solution', 'Exact');
+await menu('Compute', 'Solve', 'Exact');
 check('Solve with more unknowns than equations asks which', await page.isVisible('#dialog #d-u'));
 await page.fill('#d-u', 'q');
 await page.click('#dialog-ok');
 await page.waitForFunction(() => JSON.stringify(window.swEditor.state.doc.toJSON()).includes('\\\\frac{p}{a}'), null, { timeout: 30000 }).catch(() => {});
 r = await call('formulas');
-check('... and solves for q', r.result.some((f) => f.latex.replace(/\s/g, '') === '\\frac{p}{a}'), r.result.map((f) => f.latex));
+// as 5.5 with Ignore Special Cases off (Compute > Settings): {p/a} if a ≠ 0, and the case a = 0
+check('... and solves for q', r.result.some((f) => f.latex.replace(/\s/g, '').includes('\\frac{p}{a}')), r.result.map((f) => f.latex));
 
 // 5.x groups digits with thin spaces: one number, not a product
 r = await compute('\\sqrt{86.\\, 989}', 'numeric');

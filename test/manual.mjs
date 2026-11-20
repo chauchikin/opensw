@@ -6,10 +6,10 @@ const check = (ok, what) => { console.log(ok ? 'ok  ' : 'FAIL', what); if (!ok) 
 const b = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium-1243/chrome-linux64/chrome' });
 const page = await b.newPage({ viewport: { width: 1200, height: 900 } });
 const errs = []; page.on('pageerror', (e) => errs.push(e.message));
-await page.goto('http://localhost:4173/?lang=zh-TW'); await page.waitForTimeout(700);
+await page.goto(`http://localhost:${process.env.OPENSW_PORT || 4173}/?lang=zh-TW`); await page.waitForTimeout(700);
 const tops = await page.$$eval('.menu-top', (l) => l.map((e) => e.textContent.trim()));
 await page.click('.menu-top:has-text("說明")');
-await page.locator('.menu-list button:has(> span:text-is("完整說明文件"))').click();
+await page.locator('.menu-list button:has(> span:text-is("目錄"))').click();
 await page.waitForTimeout(1000);
 const r = await page.evaluate(() => {
   const heads = []; let title = null; let tex = 0;

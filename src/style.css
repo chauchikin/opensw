@@ -14,6 +14,8 @@ body { display: flex; flex-direction: column; overflow: hidden; }
 #menubar { display: flex; background: #f0f0f0; padding: 1px 2px; flex: none; overflow-x: auto; scrollbar-width: none; }
 .menu-top { font: inherit; border: 1px solid transparent; background: none; padding: 3px 8px; cursor: default; flex: none; color: inherit; }
 .menu-top:hover, .menu-top.open { background: #cce4f7; border-color: #99c9ef; }
+#doc-close { font: inherit; font-size: 16px; line-height: 1; border: 1px solid transparent; background: none; padding: 1px 9px; margin-left: auto; cursor: default; flex: none; color: inherit; }
+#doc-close:hover { background: #e81123; color: #fff; }
 
 #toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 0; padding: 2px; background: #f0f0f0;
   border-top: 1px solid #fff; border-bottom: 1px solid #a0a0a0; flex: none; }
@@ -49,6 +51,11 @@ body { display: flex; flex-direction: column; overflow: hidden; }
 #rv-list .rv-item { padding: 4px 6px; border-bottom: 1px solid #eee; cursor: pointer; }
 #rv-list .rv-item:hover { background: #f4f8ff; }
 #rv-list .rv-actions { float: right; }
+#rv-list table.rv-steps { border-collapse: collapse; width: 100%; }
+#rv-list table.rv-steps th { text-align: left; font-weight: 600; border-bottom: 1px solid #ccc; padding: 3px 6px; }
+#rv-list table.rv-steps td { padding: 3px 6px; vertical-align: top; }
+#rv-list .rv-good { color: #1a7f37; } #rv-list .rv-trusted { color: #8a6d00; } #rv-list .rv-unchecked { color: #777; }
+#rv-list .rv-problems { margin: 6px 0; padding-left: 20px; color: #a40; }
 #rv-list .rv-text { color: #555; }
 #rv-list .rv-none { color: #777; margin: 2px 0; }
 #rv-list .rv-bad { color: #c00; font-weight: 600; }
@@ -91,8 +98,10 @@ body { display: flex; flex-direction: column; overflow: hidden; }
 .menu-list button:hover:not(:disabled) { background: #cce4f7; border-color: #99c9ef; }
 .menu-list button:disabled { color: #999; }
 .menu-list kbd { font: inherit; color: #555; }
-.submenu { display: none; position: absolute; left: 100%; top: -3px; border: 1px solid #a0a0a0; box-shadow: 2px 2px 4px rgba(0,0,0,.25);
-  max-height: 70vh; overflow-y: auto; z-index: 1; }
+.submenu { display: none; position: fixed; border: 1px solid #a0a0a0; box-shadow: 2px 2px 4px rgba(0,0,0,.25);
+  max-height: calc(100vh - 8px); overflow-y: auto; z-index: 1; }
+/* a menu taller than the window (5.5's Compute menu) scrolls; its submenus are fixed, so they are not cut */
+#popup > .menu-list { max-height: calc(100vh - var(--popup-top, 30px) - 4px); overflow-y: auto; }
 .has-sub:hover > .submenu, .has-sub.sub-open > .submenu { display: flex; }
 .sym-grid { display: grid; grid-template-columns: repeat(8, 30px); gap: 1px; padding: 3px; background: #f9f9f9; }
 .sym-grid button { height: 28px; border: 1px solid #ddd; background: #fff; font: 16px/1 "Cambria Math", "STIX Two Math", "Times New Roman", serif; cursor: default; padding: 0; }
@@ -277,3 +286,29 @@ table.info td { padding: 2px 10px 2px 0; } table.info td:first-child { color: #6
 #guide .guide-panel { background: #fff; border-radius: 10px; padding: 16px 22px; max-width: 640px; max-height: 85vh; overflow: auto; font: 15px/1.65 system-ui, "Microsoft JhengHei", sans-serif; }
 #guide h2 { margin: 0 0 .4em; font-size: 1.3em; } #guide h3 { margin: 1em 0 .2em; font-size: 1.05em; } #guide ul { margin: .2em 0; padding-left: 1.3em; }
 .lean-code { white-space: pre-wrap; font: 13px/1.4 Consolas, monospace; background: #f4f4f4; padding: 6px 8px; max-width: 560px; }
+/* an animated plot's bar (5.5's Plot 2D/3D Animated): play, the frame, the parameter's value */
+.ProseMirror .anim-ctl { display: flex; align-items: center; gap: .4em; justify-content: center; font-size: 12px; margin-top: 2px; user-select: none; }
+.ProseMirror .anim-ctl .anim-play { min-width: 2.2em; padding: 0 .4em; font-size: 12px; cursor: pointer; }
+.ProseMirror .anim-ctl .anim-frame { width: 160px; }
+.ProseMirror .anim-ctl .anim-value { min-width: 5em; text-align: left; font-variant-numeric: tabular-nums; }
+.ProseMirror .image.place-float > .anim-ctl { flex: 0 0 100%; order: 1; }
+
+/* 5.5's menus (src/menus55.js) */
+.pick55 { display: grid; grid-template-columns: repeat(8, 2.6em); gap: 3px; margin: 4px 0 8px; }
+.pick55 button { height: 2.2em; font-size: 1.1em; padding: 0; }
+#dialog .dialog-extra { margin-right: 4px; }
+#editor.show-invisibles .ProseMirror p::after, #editor.show-invisibles .ProseMirror h1::after, #editor.show-invisibles .ProseMirror h2::after,
+#editor.show-invisibles .ProseMirror h3::after, #editor.show-invisibles .ProseMirror h4::after, #editor.show-invisibles .ProseMirror h5::after { content: '¶'; color: #8aa0c0; margin-left: 2px; }
+#editor.show-invisibles .ProseMirror br::before { content: '↵'; color: #8aa0c0; }
+#editor.hide-inputboxes math-field { --placeholder-opacity: 0; }
+#preview55 { position: fixed; inset: 0; background: rgba(60, 60, 60, .55); z-index: 60; display: flex; flex-direction: column; padding: 16px 24px; }
+#preview55[hidden] { display: none; }
+#preview55 .preview55-bar { background: #ece9d8; padding: 6px 10px; border: 1px solid #888; border-bottom: none; }
+#preview55 iframe { flex: 1; background: #fff; border: 1px solid #888; }
+#dialog .panel { max-height: calc(100vh - 32px); overflow: auto; }
+#statusbar[hidden] { display: none; }
+/* Compute > Settings: 5.5's pages as a row of tabs */
+#dialog .tabs55 { display: flex; flex-wrap: wrap; gap: 2px; margin-bottom: 6px; border-bottom: 1px solid #a0a0a0; }
+#dialog .tabs55 button { border: 1px solid #a0a0a0; border-bottom: none; background: #ece9d8; padding: 3px 8px; font: inherit; cursor: pointer; }
+#dialog .tabs55 button.on { background: #fff; font-weight: 600; }
+#dialog .page55[hidden] { display: none; }

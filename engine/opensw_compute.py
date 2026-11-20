@@ -13,6 +13,29 @@ import re
 import sympy as sp
 from sympy.printing.latex import LatexPrinter
 
+try:  # Giac as a faster first try for integrals, series and determinants (see opensw_giac.py)
+    import opensw_giac
+except ImportError:  # Pyodide is given this file alone
+    opensw_giac = None
+try:  # FriCAS for the indefinite integrals Giac does not find, before SymPy (see opensw_fricas.py)
+    import opensw_fricas
+except ImportError:
+    opensw_fricas = None
+
+
+def integrate(f, x):
+    """sp.integrate(f, x), asking Giac first, then FriCAS."""
+    r = opensw_giac.integral(f, (x,)) if opensw_giac else None
+    if r is None and opensw_fricas:
+        r = opensw_fricas.integral(f, x)
+    return sp.integrate(f, x) if r is None else r
+
+
+def det(m):
+    """m.det(), asking Giac first."""
+    r = opensw_giac.det(m) if opensw_giac else None
+    return m.det() if r is None else r
+
 # ---------------------------------------------------------------------------
 # MathJSON -> SymPy
 # ---------------------------------------------------------------------------
@@ -374,7 +397,7 @@ def build(j):
             return [x for r in rows for x in r]  # a system of equations
         return a_matrix(rows, "[" if args[1:2] == ["'[]'"] else "(")
     if head == "Determinant":
-        return sp.Matrix(a(0)).det()
+        return det(sp.Matrix(a(0)))
     if head == "Transpose":
         return sp.ImmutableMatrix(a(0)).T
     if head == "Inverse":
@@ -574,6 +597,7 @@ def fourier55(f, x, w):
             r = sp.integrate(g * sp.exp(sp.I * w * x), (x, -sp.oo, sp.oo), conds="none")
             if r.has(sp.Integral):
                 raise Unsupported("This Fourier transform")
+            r = sp.simplify(r)  # e^(-x^2): sqrt(pi) e^(-w^2/4), not in erfc
         out += c * r
     return out
 
@@ -646,6 +670,12 @@ class BothSidesLimit(sp.Limit):
 
     def doit(self, **hints):
         f, x, a = (self.args[0].doit(**hints) if hints.get("deep", True) else self.args[0]), self.args[1], self.args[2]
+        if a.is_finite and f.is_rational_function(x):
+            # a quotient of polynomials in x: with the common factors cancelled, it is continuous where
+            # the bottom is not 0, so the limit is the value there (quick also with many letters)
+            num, den = sp.fraction(sp.cancel(f))
+            if sp.simplify(den.subs(x, a)) != 0:
+                return sp.cancel((num / den).subs(x, a))
         right, left = sp.limit(f, x, a, "+"), sp.limit(f, x, a, "-")
         if right.has(sp.Limit) or left.has(sp.Limit):  # not found: stays a limit
             return self
@@ -952,6 +982,23 @@ class PowerSeries(sp.Function):
         return (out + "+" if out else "") + printer._print(order)
 
 
+def rational_series(g, t, n):
+    """A quotient of polynomials in t by long division -> (v + n, the powers of t below
+    max(v + n, 1) + 8), v its lowest power. SymPy's series leaves the coefficients as they come:
+    with several letters in them it takes minutes, and it does not see a coefficient that is 0."""
+    p, q = (sp.Poly(e, t) for e in sp.fraction(sp.together(g)))
+    if p.is_zero:
+        return sp.Integer(n), sp.S.Zero
+    p, q = p.unify(q)
+    K = p.domain.get_field()  # the coefficients as quotients of polynomials in the other letters
+    vp, vq = (min(m[0] for m in poly.monoms()) for poly in (p, q))
+    pk, qk = ([K.from_sympy(poly.coeff_monomial(t ** (v + k))) for k in range(max(vp - vq + n, 1) + 8 - (vp - vq))] for poly, v in ((p, vp), (q, vq)))
+    c = []
+    for k in range(len(pk)):
+        c.append((pk[k] - sum((qk[j] * c[k - j] for j in range(1, k + 1)), K.zero)) / qk[0])
+    return sp.Integer(vp - vq + n), sp.Add(*[K.to_sympy(ck) * t ** (vp - vq + k) for k, ck in enumerate(c)])
+
+
 def mupad_series(f, at=None, order=sp.Integer(5)):
     """MuPAD's series(f, x = a, n), which 5.5's Power Series (Number of terms n) also uses: n powers
     of x - a counted from the lowest one v, ending in O((x - a)^(v + n)), or further when the next
@@ -962,13 +1009,31 @@ def mupad_series(f, at=None, order=sp.Integer(5)):
         raise Unsupported("The order of series must be a positive whole number")
     t = sp.Dummy("t")
     g = f.subs(x, a + t)
-    top = g.as_leading_term(t).as_coeff_exponent(t)[1] + int(order)  # v + n (v may be a fraction: sqrt(x))
-    # SymPy's own count can stop short (Y3(x)/x with n = 1 gives only -16/(pi x^4)), and it takes
-    # no n below 1: ask for more powers and keep the powers below top
     def power(term):  # the power of t in one term (a log(t) factor counts as 0)
         return sum((e for b, e in (f.as_base_exp() for f in sp.Mul.make_args(term)) if b == t), sp.S.Zero)
 
-    s = sp.expand(sp.series(g, t, 0, max(int(sp.ceiling(top)), 1) + 8).removeO())
+    if g.is_rational_function(t):
+        top, s = rational_series(g, t, int(order))
+    else:
+        v = g.as_leading_term(t).as_coeff_exponent(t)[1]
+        top = v + int(order)  # v + n (v may be a fraction: sqrt(x))
+        # SymPy's own count can stop short (Y3(x)/x with n = 1 gives only -16/(pi x^4)), and it takes
+        # no n below 1: ask for more powers and keep the powers below top
+        most = max(int(sp.ceiling(top)), 1) + 8
+        if v.is_Integer and v >= 0 and not g.has(sp.log, sp.bessely, sp.besselk, sp.Ei, sp.Ci, sp.li):
+            # a Taylor series: SymPy's terms below the order asked are all there, and asking for
+            # many more is slow (e^{sin x}: 0.4 s to x^7, 6 s to x^14); ask for one power past top,
+            # then more only while no term at or past top has come (to see where O goes, below)
+            n = max(int(sp.ceiling(top)), 1) + 1
+            while True:
+                s = opensw_giac.series(g, t, n) if opensw_giac else None
+                s = sp.expand(sp.series(g, t, 0, n).removeO()) if s is None else s
+                if n >= most or any(power(term) >= top for term in sp.Add.make_args(s)):
+                    break
+                n = min(most, n + 2 * (n - int(sp.ceiling(top))))
+        else:
+            s = opensw_giac.series(g, t, most) if opensw_giac else None
+            s = sp.expand(sp.series(g, t, 0, most).removeO()) if s is None else s
     # as 5.5 shows it, O moves past powers whose coefficient is 0, to the first term left out
     # (checked on 5.5: sin x with 5 terms ends in O(x^7), cos x / x^4 with 3 terms in O(1));
     # not past a term with log x (5.5's help: Y3(x)/x with 5 terms ends in O(x))
@@ -1159,7 +1224,7 @@ NABLA = {"Gradient": "gradient", "Divergence": "divergence", "Curl": "curl", "La
 
 # a function of one matrix: its largest or smallest entry, |A| (the determinant), e^A
 MATRIX_FUNCTIONS = {
-    "Max": lambda m: sp.Max(*m), "Min": lambda m: sp.Min(*m), "Abs": lambda m: m.det(),
+    "Max": lambda m: sp.Max(*m), "Min": lambda m: sp.Min(*m), "Abs": lambda m: det(m),
     "Exp": lambda m: sp.ImmutableMatrix(sp.simplify(m.exp())),
 }
 
@@ -1219,7 +1284,8 @@ def evaluated(e):
         return e.applyfunc(lambda x: with_decimals(x.doit())) if e.has(sp.Float) else e.applyfunc(lambda x: x.doit())
     if e.has(sp.Integral):
         e = kept_divergent(e)
-    r = antiderivative(e, e.doit())
+    r = opensw_giac.integrals(e) if opensw_giac else e
+    r = antiderivative(e, (opensw_fricas.integrals(r) if opensw_fricas else r).doit())
     if e.has(sp.Float):
         return with_decimals(r)
     return sp.simplify(r) if r == e else r
@@ -1873,12 +1939,23 @@ def laplace(e):
 def inverse_laplace(e):
     f = last_side(e).doit()
     s = variable("s") if variable("s") in f.free_symbols else main_variable(f)
-    return sp.inverse_laplace_transform(f, s, sp.Symbol("t"))
+    t = sp.Symbol("t")
+    return sp.inverse_laplace_transform(f, s, t).subs(sp.Heaviside(t), 1)  # for t > 0, as 5.5 shows it
 
 
 def fourier(e):
+    """Transforms > Fourier, as 5.5 (MuPAD): F f(w) = int f(x) e^(iwx) dx, from x to w."""
     f = last_side(e).doit()
-    return sp.fourier_transform(f, main_variable(f), sp.Symbol("k"))
+    free = getattr(f, "free_symbols", set())
+    x = variable("x") if variable("x") in free or not free else main_variable(f)
+    w = variable("t") if x == variable("w") else variable("w")
+    return Transform(f, x, w, 2).doit()
+
+
+# Compute > Transforms as 5.5 answers them (its help, dm10-1.tex): "1, Fourier transform is: 2 pi Dirac(w)",
+# "2/s^3, Is Laplace transform of t^2"
+def transform_answer(op, label):  # (label as **{"label": ..}: i18n-keys finds it)
+    return lambda j: {"kind": "solutions", "label": label, "solutions": [tex(OPERATIONS[op](apply_definitions(build(j))))]}
 
 
 # ---------------------------------------------------------------------------
@@ -2231,7 +2308,7 @@ def with_options(op, e, ps, words=()):
     if op == "partialfractions":  # params: [variable]
         return {"kind": "value", "latex": tex(partial_fractions(e, var))}
     if op == "integrate":  # params: [variable]
-        return {"kind": "value", "latex": tex(sp.integrate(last_side(e).doit(), var or main_variable(last_side(e))))}
+        return {"kind": "value", "latex": tex(integrate(last_side(e).doit(), var or main_variable(last_side(e))))}
     if op == "pade":  # params: [m, n, variable, point]
         if len(numbers) < 2:
             raise Unsupported("Give the degrees m and n of [m/n]")
@@ -2264,7 +2341,7 @@ OPERATIONS = {
     "simplify": simplify,
     "expand": expand,
     "factor": factor,
-    "determinant": lambda e: sp.Matrix(last_side(e)).det(),
+    "determinant": lambda e: det(sp.Matrix(last_side(e))),
     "inverse": lambda e: sp.Matrix(last_side(e)).inv(),
     "transpose": lambda e: sp.Matrix(last_side(e)).T,
     "eigenvalues": lambda e: sp.Matrix(last_side(e)).eigenvals(),
@@ -2278,7 +2355,7 @@ OPERATIONS = {
     "series": power_series,
     "pade": lambda e: pade(e, 2, 2),
     "differentiate": lambda e: sp.diff(last_side(e).doit(), main_variable(last_side(e))),
-    "integrate": lambda e: sp.integrate(last_side(e).doit(), main_variable(last_side(e))),
+    "integrate": lambda e: integrate(last_side(e).doit(), main_variable(last_side(e))),
     "laplace": laplace,
     "inverselaplace": inverse_laplace,
     "fourier": fourier,
@@ -2296,6 +2373,13 @@ OPERATIONS = {
     "stddev": lambda e: sp.sqrt(sp.nsimplify(variance(numbers(e)))),
 }
 
+
+# op -> function(request) -> the answer (a dict as compute() returns): the request is the MathJSON,
+# or {"expr": MathJSON, "params": [...]} when the menu item asks for more (see the parts at the end)
+EXTRA_OPS = {}
+EXTRA_OPS["laplace"] = transform_answer("laplace", **{"label": ", Laplace transform is: "})
+EXTRA_OPS["inverselaplace"] = transform_answer("inverselaplace", **{"label": ", Is Laplace transform of "})
+EXTRA_OPS["fourier"] = transform_answer("fourier", **{"label": ", Fourier transform is: "})
 
 # operations done entry by entry on a matrix
 ELEMENTWISE = {"numeric", "simplify", "expand", "factor", "partialfractions", "collect", "combine", "rewrite_exp", "rewrite_sincos"}
@@ -2831,20 +2915,47 @@ def exam_random(kind, args, rng):
     return m
 
 
+EXAM_FUNCTION = object()  # marks a function of a Setup in env
+
+
 def exam_value(j, env, rng):
     """MathJSON -> SymPy, with the variables of env (name -> (value, delayed MathJSON or None))
     and new random numbers for rand and randmat."""
     holes = {}
 
     def hole(v):
+        # a whole number or a fraction goes in as itself, so gcd(u_1, u_2) and the like are worked
+        # out with the values (a stand-in symbol would make gcd 1 before the values come in)
+        if isinstance(v, sp.Integer):
+            return int(v)
+        if isinstance(v, sp.Rational):
+            return ["Rational", int(v.p), int(v.q)]
         name = "_eb%d" % len(holes)
         holes[sp.Symbol(name)] = v
         return name
 
+    def put(body, values):  # a function's body with its parameters replaced
+        if isinstance(body, str):
+            return values.get(body, body)
+        return [put(x, values) for x in body] if isinstance(body, list) else body
+
     def walk(n):
-        if isinstance(n, str) and n in env:
+        # e (or i) defined in a Setup is that variable, not the number e
+        if n == "ExponentialE" and "e" in env:
+            n = "e"
+        elif n == "ImaginaryUnit" and "i" in env:
+            n = "i"
+        if isinstance(n, str) and n in env and env[n][0] is not EXAM_FUNCTION:
             value, delayed = env[n]
             return walk(delayed) if delayed is not None else hole(value)
+        # f(x, n) = .. defined in a Setup (5.5: nplaces(x, n) = 1.0 floor(10^n x + .5)/10^n)
+        if isinstance(n, list) and n and isinstance(n[0], str) and env.get(n[0], (None,))[0] is EXAM_FUNCTION:
+            params, body = env[n[0]][1]
+            return walk(put(body, dict(zip(params, [walk(x) for x in n[1:]]))))
+        # distinct(a, b, c): no two of them equal (the Exam Builder's, for conditions)
+        if isinstance(n, list) and n[:1] == ["distinct"]:
+            vals = [sp.simplify(exam_value(x, env, rng)) for x in n[1:]]
+            return "True" if all(sp.simplify(a - b) != 0 for i, a in enumerate(vals) for b in vals[i + 1:]) else "False"
         if isinstance(n, list) and n and n[0] in ("rand", "randmat"):
             # a range written (1, 9) is a pair of numbers
             args = [tuple(exam_value(y, env, rng) for y in x[1:]) if isinstance(x, list) and x[:1] in (["Tuple"], ["Pair"], ["Triple"], ["Delimiter"])
@@ -2865,7 +2976,9 @@ def exam_setup(statements, env, rng):
         for st in statements:
             if "cond" in st:
                 continue
-            if st.get("delayed"):
+            if st.get("params") is not None:  # a function f(x) = ..
+                mine[st["name"]] = (EXAM_FUNCTION, (st["params"], st["expr"]))
+            elif st.get("delayed"):
                 mine[st["name"]] = (None, st["expr"])
             else:
                 mine[st["name"]] = (exam_value(st["expr"], mine, rng), None)
@@ -2879,6 +2992,15 @@ def exam_formula(f, env, rng):
     try:
         e = exam_value(f[0], env, rng)
         op = (f[1] if len(f) > 1 else "evaluate").lower()
+        if op == "opensw-sample":  # GradeProc's answer for the online quiz: its values at 3 points
+            e = e.doit() if hasattr(e, "doit") else e
+            names = sorted(e.free_symbols, key=lambda x: x.name)
+            points = [[0.5 + 0.37 * (k + 1) + 0.13 * i for i in range(len(names))] for k in range(3)]
+            values = []
+            for p in points:
+                v = complex(sp.N(e.subs(dict(zip(names, p)))))
+                values.append([v.real, v.imag])
+            return "SAMPLE:" + json.dumps({"vars": [x.name for x in names], "points": points, "values": values})
         if op == "numeric" or op == "evaluate numerically":
             e = e.evalf(6)
         elif op == "simplify":
@@ -2957,6 +3079,19 @@ def subscript_argument(e, name, value):
     return e.subs({x: at(sp.Integer(x.name[2:])) for x in e.free_symbols if re.fullmatch(base + r"_\d+", x.name)})
 
 
+def inside_derivatives(e, name, value):
+    """e with the defined name put in where it stands under a derivative not carried out yet, in a
+    variable its value has: with w = y^2, d/dy (t w) is the derivative of t y^2. (subs alone keeps
+    that as "differentiate with w a constant, then put in": 0.)"""
+    def here(d):
+        return any(s.name == name for s in d.expr.free_symbols) and not any(v.name == name for v in d.variables) \
+            and bool(getattr(value, "free_symbols", set()) & set(d.variables))
+
+    def put(d):
+        return d.func(d.expr.subs({s: value for s in d.expr.free_symbols if s.name == name}), *d.variable_count)
+    return e.replace(lambda n: isinstance(n, sp.Derivative) and here(n), put)
+
+
 def apply_definitions(e, skip=()):
     if not DEFINITIONS or not hasattr(e, "subs"):
         return e
@@ -2968,7 +3103,7 @@ def apply_definitions(e, skip=()):
             if isinstance(value, sp.Lambda) or isinstance(value, type):  # f(x) = ..; y of Solve ODE > Numeric
                 e = e.replace(key, value)
             else:  # by name: the variable may have other assumptions now
-                e = e.subs({s: value for s in e.free_symbols if s.name == key.name})
+                e = inside_derivatives(e, key.name, value).subs({s: value for s in e.free_symbols if s.name == key.name})
                 e = subscript_argument(e, name, value)
         if e == before:
             break
@@ -3034,6 +3169,8 @@ def compute(op, mathjson_text):
                      for k, v in DEFINITIONS.values()]
             return json.dumps({"kind": "solutions", "solutions": list(dict.fromkeys(shown))})  # a system once
         j = json.loads(mathjson_text)
+        if op in EXTRA_OPS:  # the rest of 5.5's Compute menu, in the parts at the end of this file
+            return json.dumps(EXTRA_OPS[op](j))
         if op in ("define", "evaluate") and isinstance(j, list) and j and j[0] in ("assume", "additionally", "unassume", "about"):
             return json.dumps({"kind": "value", "latex": assume(j)})
         if isinstance(j, dict) and "expr" in j and op in OPTION_OPS:
@@ -3106,3 +3243,1956 @@ def compute(op, mathjson_text):
         return json.dumps({"error": f"Cannot compute this yet: {x}"})
     except Exception as x:  # SymPy raises many kinds; the editor shows the message
         return json.dumps({"error": f"{type(x).__name__}: {x}"})
+
+# =============================================================================
+# The rest of 5.5's Compute menu, one part per group of items. Each part adds its functions
+# here and registers them in EXTRA_OPS (or OPERATIONS / ELEMENTWISE for a plain op).
+# =============================================================================
+
+
+# -----------------------------------------------------------------------------
+# part: matdecomp
+# -----------------------------------------------------------------------------
+
+# Compute > Matrices: the decompositions and normal forms, answered as 5.5 (MuPAD) answers them:
+# a factorization "A = P L U" (the factors after "="), or ", label: result" after the matrix.
+# What each does follows SW6's MuPAD code (computelib/swfcns.mu: tciLU, tciQR, tcicholesky, tciSVD,
+# tcisingvals, tcijordan, tcihermite, tcismith, tcifrob, tciffgausselim, tciminpoly,
+# tcieigenvectors) and the examples of 5.5's help (dm8-3, dm8-6, dm8-7, dm8-8).
+
+def md_matrix(j):
+    """The matrix of the request (and the params): a defined name is replaced by its value."""
+    expr, params = (j["expr"], j.get("params", [])) if isinstance(j, dict) and "expr" in j else (j, [])
+    m = last_side(apply_definitions(build(expr)))
+    if not isinstance(m, sp.MatrixBase):
+        raise Unsupported("Put the cursor in a matrix")
+    return sp.Matrix(m), params
+
+
+def md_float(m):
+    """5.5 works with decimals when an entry is a decimal (MuPAD's numeric:: functions)."""
+    return m.has(sp.Float)
+
+
+def md_zero(x):
+    return sp.cancel(sp.expand(x)) == 0
+
+
+def md_tidy(x, numeric=False):
+    if numeric:
+        x = sp.N(x, 15)
+        if isinstance(x, sp.Float) and abs(x) < 1e-13:
+            return sp.Integer(0)
+        if x.is_number and abs(sp.im(x)) < 1e-13:
+            x = sp.re(x)
+        return x
+    x = sp.radsimp(sp.cancel(x))
+    return sp.expand(x) if x.is_number else x
+
+
+def md_product(*ms):
+    """the factors of A = .. side by side, as 5.5 writes them"""
+    return {"kind": "value", "latex": " ".join(tex(m) for m in ms)}
+
+
+
+def md_echelon(m, fraction_free=False, largest_pivot=False):
+    """Row echelon form by Gaussian elimination, as MuPAD's linalg::gaussElim: the first nonzero
+    entry of the column as pivot (the largest with decimals), rows swapped only for that.
+    -> (U, L, perm): Q A = L U with row i of Q A row perm[i] of A."""
+    a = m.copy()
+    rows, cols = a.shape
+    low = sp.zeros(rows, rows)
+    perm = list(range(rows))
+    r, prev = 0, sp.Integer(1)
+    for c in range(cols):
+        if r >= rows:
+            break
+        found = [i for i in range(r, rows) if not md_zero(a[i, c])]
+        if not found:
+            continue
+        p = max(found, key=lambda i: abs(sp.N(a[i, c]))) if largest_pivot else found[0]
+        if p != r:
+            a.row_swap(p, r)
+            low.row_swap(p, r)
+            perm[p], perm[r] = perm[r], perm[p]
+        piv = a[r, c]
+        for i in range(r + 1, rows):
+            f = a[i, c]
+            if fraction_free:  # Bareiss: (pivot row_i - a_ic row_r) / the pivot before
+                for k in range(cols):
+                    a[i, k] = sp.expand(sp.cancel((piv * a[i, k] - f * a[r, k]) / prev))
+            else:
+                q = sp.cancel(f / piv)
+                low[i, r] = q
+                for k in range(cols):
+                    a[i, k] = sp.cancel(a[i, k] - q * a[r, k])
+                a[i, c] = 0
+        prev = piv
+        r += 1
+    return a, low + sp.eye(rows), perm
+
+
+def md_gauss(j):
+    m, _ = md_matrix(j)
+    u, _, _ = md_echelon(m, largest_pivot=False)
+    return {"kind": "solutions", "label": ", Gaussian elimination: ", "solutions": [tex(u.applyfunc(lambda x: md_tidy(x, md_float(m))))]}
+
+
+def md_ffgauss(j):
+    m, _ = md_matrix(j)
+    if md_float(m):
+        raise Unsupported("Matrix entries must be polynomials over the rationals")
+    u, _, _ = md_echelon(m, fraction_free=True)
+    return {"kind": "solutions", "label": ", fraction-free Gaussian elimination: ", "solutions": [tex(u)]}
+
+
+def md_plu(j):
+    m, _ = md_matrix(j)
+    num = md_float(m)
+    u, low, perm = md_echelon(m, largest_pivot=num)
+    n = m.rows
+    p = sp.zeros(n, n)
+    for i, k in enumerate(perm):
+        p[k, i] = 1
+    if num:  # MuPAD's numeric::factorLU: 1.0 on the diagonal of L
+        low = low.applyfunc(lambda x: sp.Float(1.0) if x == 1 else md_tidy(x, True))
+        u = u.applyfunc(lambda x: md_tidy(x, True))
+    else:
+        low, u = low.applyfunc(md_tidy), u.applyfunc(md_tidy)
+    return md_product(p, low, u)
+
+
+def md_dot(u, v):
+    return sum(sp.conjugate(a) * b for a, b in zip(u, v))
+
+
+def md_qr(j):
+    """Gram-Schmidt on the columns (linalg::factorQR): Q is m x m (completed with the unit vectors
+    when there are fewer columns), R = Q^T A is m x n."""
+    m, _ = md_matrix(j)
+    num = md_float(m)
+    rows = m.rows
+    qs = []
+    cands = [m.col(k) for k in range(m.cols)] + [sp.eye(rows).col(k) for k in range(rows)]
+    for v in cands:
+        if len(qs) == rows:
+            break
+        w = v - sum((md_dot(q, v) * q for q in qs), sp.zeros(rows, 1))
+        w = w.applyfunc(lambda x: md_tidy(x, num))
+        if all(md_zero(x) if not num else abs(sp.N(x)) < 1e-12 for x in w):
+            continue
+        norm = sp.sqrt(md_dot(w, w))
+        qs.append((w / norm).applyfunc(lambda x: md_tidy(x, num)))
+    q = sp.Matrix.hstack(*qs)
+    r = (q.H * m).applyfunc(lambda x: md_tidy(x, num))
+    for i in range(r.rows):  # below the diagonal is 0 (rounding)
+        for k in range(min(i, r.cols)):
+            r[i, k] = 0
+    return md_product(q, r)
+
+
+def md_cholesky(j):
+    m, _ = md_matrix(j)
+    if not m.is_square:
+        raise Unsupported("Cholesky decomposition needs a square matrix")
+    num = md_float(m)
+    try:
+        g = m.cholesky(hermitian=False)
+    except ValueError:
+        raise Unsupported("Cholesky decomposition needs a symmetric matrix")
+    g = g.applyfunc(lambda x: md_tidy(x, num))
+    return md_product(g, g.T)
+
+
+def md_mp(m):
+    import mpmath
+    return mpmath.matrix([[complex(sp.N(x)) if not sp.N(x).is_real else float(sp.N(x)) for x in m.row(i)] for i in range(m.rows)])
+
+
+def md_float_of(x):
+    import mpmath
+    x = complex(x) if isinstance(x, mpmath.mpc) else float(x)
+    if isinstance(x, complex):
+        if abs(x.imag) < 1e-13 * max(1, abs(x.real)):
+            x = x.real
+        else:
+            return md_tidy(sp.Float(x.real, 15) + sp.I * sp.Float(x.imag, 15), True)
+    return sp.Integer(0) if abs(x) < 1e-13 else sp.Float(x, 15)
+
+
+def md_svd_parts(m):
+    import mpmath
+    a = md_mp(m)
+    cplx = any(isinstance(a[i, k], mpmath.mpc) for i in range(a.rows) for k in range(a.cols))
+    u, s, v = (mpmath.svd_c if cplx else mpmath.svd_r)(a, full_matrices=True)
+    return u, s, v
+
+
+def md_singularvalues(j):
+    m, _ = md_matrix(j)
+    _, s, _ = md_svd_parts(m)
+    vals = [md_float_of(s[i]) for i in range(len(s))]
+    shown = r"\left[ " + ",".join(tex(sp.Float(x, 15) if x == 0 else x) for x in vals) + r"\right] "
+    return {"kind": "solutions", "label": ", singular values: ", "solutions": [shown]}
+
+
+def md_svd(j):
+    """A = U D V (MuPAD's numeric::singularvectors, always with decimals); each pair of singular
+    vectors signed so that the row of V starts with a positive number, as in 5.5's examples."""
+    m, _ = md_matrix(j)
+    u, s, v = md_svd_parts(m)
+    rows, cols = m.shape
+    big_u = sp.Matrix(rows, rows, lambda i, k: md_float_of(u[i, k]))
+    big_v = sp.Matrix(cols, cols, lambda i, k: md_float_of(v[i, k]))
+    for i in range(min(len(s), rows, cols)):
+        first = next((x for x in big_v.row(i) if x != 0), 1)
+        if sp.re(first) < 0:
+            big_v[i, :] = -big_v[i, :]
+            big_u[:, i] = -big_u[:, i]
+    d = sp.zeros(rows, cols)
+    for i in range(len(s)):
+        d[i, i] = md_float_of(s[i])
+    return md_product(big_u, d, big_v)
+
+
+def md_jordan(j):
+    """A = P J P^-1 with J's ones below the diagonal: tcijordan takes MuPAD's Jordan form of A^T
+    (A^T = q j q^-1) and answers (q^-1)^T, j^T, q^T."""
+    m, _ = md_matrix(j)
+    if not m.is_square:
+        raise Unsupported("Needs a square matrix")
+    num = md_float(m)
+    a = m.applyfunc(sp.nsimplify) if num else m
+    q, jj = a.T.jordan_form()
+    p, jl = q.inv().T, jj.T
+    # each chain scaled so that its eigenvector (the chain's last column) starts with 1, as 5.5
+    n, s = a.rows, 0
+    while s < n:
+        e = s
+        while e + 1 < n and jl[e + 1, e] == 1:
+            e += 1
+        first = next((x for x in p.col(e) if not md_zero(x)), 1)
+        for k in range(s, e + 1):
+            p[:, k] = p[:, k] / first
+        s = e + 1
+    f = (lambda x: md_tidy(x, True)) if num else md_tidy
+    p = p.applyfunc(f)
+    return md_product(p, jl.applyfunc(f), p.inv().applyfunc(f))
+
+
+def md_poly_domain(m):
+    """ZZ for integers, QQ[x] for polynomials in one variable x (the rings 5.5's normal forms use)."""
+    from sympy.polys.domains import ZZ, QQ
+    if all(x.is_Integer for x in m):
+        return ZZ, None
+    vs = sorted(m.free_symbols, key=str)
+    if len(vs) == 1 and all(x.is_polynomial(vs[0]) and all(c.is_Rational for c in sp.Poly(x, vs[0]).coeffs()) for x in m if x != 0):
+        return QQ[vs[0]], vs[0]
+    raise Unsupported("The entries must be integers, or polynomials in one variable with rational coefficients")
+
+
+def md_smith(j):
+    m, _ = md_matrix(j)
+    from sympy.matrices.normalforms import smith_normal_form
+    dom, x = md_poly_domain(m)
+    s = smith_normal_form(m, domain=dom)
+    for i in range(min(s.shape)):
+        d = s[i, i]
+        if x is None:
+            s[i, i] = abs(d)
+        elif d != 0:
+            s[i, i] = sp.Poly(d, x).monic().as_expr()
+    return {"kind": "solutions", "label": ", Smith normal form: ", "solutions": [tex(s)]}
+
+
+def md_hermite(j):
+    """Row Hermite normal form over the integers (linalg::hermiteForm): upper echelon, pivots
+    positive, the entries above a pivot from 0 to the pivot - 1."""
+    m, _ = md_matrix(j)
+    if not all(x.is_Integer for x in m):
+        raise Unsupported("Hermite normal form needs a matrix of integers")
+    a = [[int(x) for x in m.row(i)] for i in range(m.rows)]
+    rows, cols = m.shape
+    r = 0
+    for c in range(cols):
+        if r >= rows:
+            break
+        while True:
+            nz = [i for i in range(r, rows) if a[i][c] != 0]
+            if not nz:
+                break
+            p = min(nz, key=lambda i: abs(a[i][c]))
+            a[r], a[p] = a[p], a[r]
+            clean = True
+            for i in range(r + 1, rows):
+                q = a[i][c] // a[r][c]
+                a[i] = [x - q * y for x, y in zip(a[i], a[r])]
+                clean = clean and a[i][c] == 0
+            if clean:
+                break
+        if a[r][c] == 0:
+            continue
+        if a[r][c] < 0:
+            a[r] = [-x for x in a[r]]
+        for i in range(r):
+            q = a[i][c] // a[r][c]
+            a[i] = [x - q * y for x, y in zip(a[i], a[r])]
+        r += 1
+    return {"kind": "solutions", "label": ", Hermite normal form: ", "solutions": [tex(sp.Matrix(a))]}
+
+
+def md_companion(d, x):
+    """MuPAD's companion matrix: ones below the diagonal, the last column -a_0, .., -a_(n-1)."""
+    c = sp.Poly(d, x).monic().all_coeffs()[::-1]  # a_0 .. a_n (= 1)
+    n = len(c) - 1
+    b = sp.zeros(n, n)
+    for i in range(1, n):
+        b[i, i - 1] = 1
+    for i in range(n):
+        b[i, n - 1] = -c[i]
+    return b
+
+
+def md_rationalcanonical(j):
+    """A = P B P^-1 with B in rational canonical (Frobenius) form (tcifrob): B's blocks are the
+    companion matrices of the invariant factors, largest first; P's columns for a block are
+    v, Av, .. A^(k-1) v with d(A) v = 0 (the unit vectors tried first, as 5.5's examples)."""
+    m, _ = md_matrix(j)
+    if not m.is_square:
+        raise Unsupported("Needs a square matrix")
+    from sympy.matrices.normalforms import invariant_factors
+    from sympy.polys.domains import QQ
+    x = sp.Dummy("x")
+    a = m.applyfunc(sp.nsimplify)
+    n = a.rows
+    if not all(v.is_Rational for v in a):
+        raise Unsupported("Rational canonical form needs a matrix of rational numbers")
+    char = x * sp.eye(n) - a
+    facs = [sp.Poly(f.as_expr() if hasattr(f, "as_expr") else QQ[x].to_sympy(f), x) for f in invariant_factors(char, domain=QQ[x])]
+    facs = [f.monic() for f in facs if f.degree() > 0][::-1]  # largest first
+    cols, blocks = [], []
+    for f in facs:
+        k = f.degree()
+        dA = sp.zeros(n, n)
+        for c in f.all_coeffs():
+            dA = dA * a + c * sp.eye(n)
+        ns = dA.nullspace()[::-1]
+        cands = [sp.eye(n).col(i) for i in range(n) if (dA * sp.eye(n).col(i)).is_zero_matrix] + ns
+        cands += [u + w for i, u in enumerate(ns) for w in ns[i + 1:]]
+        for v in cands:
+            kry = [v]
+            for _ in range(k - 1):
+                kry.append(a * kry[-1])
+            trial = cols + kry
+            if sp.Matrix.hstack(*trial).rank() == len(trial):
+                cols = trial
+                break
+        else:
+            raise Unsupported("Could not find the rational canonical form")
+        blocks.append(md_companion(f.as_expr(), x))
+    p = sp.Matrix.hstack(*cols)
+    b = sp.diag(*blocks)
+    return md_product(p, b, p.inv())
+
+
+def md_poly_tex(coeffs, var):
+    """a polynomial from the highest power down, a coefficient with several terms in brackets:
+    \\lambda^2 + (-3X - y) \\lambda + (3Xy - 5x), as 5.5 writes it"""
+    if all(not c.free_symbols for c in coeffs):
+        return tex(sum(c * var ** i for i, c in enumerate(coeffs)))
+    out = []
+    for i in range(len(coeffs) - 1, -1, -1):
+        c = sp.expand(coeffs[i])
+        if c == 0:
+            continue
+        power = tex(var ** i) if i else ""
+        if not power:
+            t = r"\left( %s\right)" % tex(c) if c.is_Add and out else tex(c)
+        elif c == 1:
+            t = power
+        elif c == -1:
+            t = "-" + power
+        elif c.is_Add:
+            t = r"\left( %s\right) %s" % (tex(c), power)
+        else:
+            t = "%s %s" % (tex(c), power)
+        out.append(t)
+    s = " + ".join(out) or "0"
+    return s.replace("+ -", "- ")
+
+
+def md_minpoly(j):
+    """The monic polynomial of least degree with p(A) = 0, in X (tciminpoly); a matrix with X in it
+    needs another variable (params: [variable], 5.5 asks for it)."""
+    m, params = md_matrix(j)
+    if not m.is_square:
+        raise Unsupported("Needs a square matrix")
+    if params:
+        var = build(params[0])
+    elif any("X" in str(s) for s in m.free_symbols):
+        raise Unsupported("The matrix has X in it: give the polynomial variable")
+    else:
+        var = sp.Symbol("X")
+    n = m.rows
+    powers = [sp.eye(n)]
+    for k in range(1, n + 1):
+        powers.append((powers[-1] * m).applyfunc(sp.expand))
+        big = sp.Matrix.hstack(*[sp.Matrix(p.reshape(n * n, 1)) for p in powers])
+        ns = big.nullspace(simplify=True)
+        if ns:
+            c = ns[0]
+            c = [sp.factor(sp.cancel(x / c[k])) for x in c]
+            c = [sp.expand(x) if not sp.fraction(sp.cancel(x))[1].free_symbols else x for x in c]
+            return {"kind": "solutions", "label": ", minimum polynomial: ", "solutions": [md_poly_tex(c, var)]}
+    raise Unsupported("Could not find the minimum polynomial")
+
+
+def md_eigenvectors(j):
+    """Each eigenvalue with the set of its eigenvectors: {v1, v2} <-> c (tcieigenvectors), the
+    eigenvalues from the smallest; with decimals one vector of length 1 for each eigenvalue."""
+    m, _ = md_matrix(j)
+    if not m.is_square:
+        raise Unsupported("Needs a square matrix")
+    key = lambda v: (sp.N(sp.re(v)), sp.N(sp.im(v))) if v.is_number else (0, 0)  # noqa: E731
+    parts = []
+    if md_float(m):
+        import mpmath
+        e, er = mpmath.eig(md_mp(m))
+        pairs = []
+        for i in range(len(e)):
+            vec = [er[k, i] for k in range(m.rows)]
+            norm = mpmath.sqrt(sum(abs(z) ** 2 for z in vec))
+            vec = [z / norm for z in vec]
+            big = max(vec, key=abs)
+            if mpmath.re(big) < 0:
+                vec = [-z for z in vec]
+            pairs.append((md_float_of(e[i]), [sp.Matrix([md_float_of(z) for z in vec])]))
+        pairs.sort(key=lambda p: key(p[0]))
+    else:
+        pairs = [(val, vecs[::-1]) for val, _, vecs in m.eigenvects()]
+        pairs = [(md_tidy(val), [v.applyfunc(md_tidy) for v in vecs]) for val, vecs in pairs]
+        if all(v.is_number for v, _ in pairs):
+            pairs.sort(key=lambda p: key(p[0]))
+    for val, vecs in pairs:
+        parts.append(r"\left\{ %s\right\} \leftrightarrow %s" % (",".join(tex(v) for v in vecs), tex(val)))
+    return {"kind": "solutions", "label": ", eigenvectors: ", "solutions": [",".join(parts)]}
+
+
+EXTRA_OPS["cholesky"] = md_cholesky
+EXTRA_OPS["plu"] = md_plu
+EXTRA_OPS["qr"] = md_qr
+EXTRA_OPS["svd"] = md_svd
+EXTRA_OPS["singularvalues"] = md_singularvalues
+EXTRA_OPS["jordan"] = md_jordan
+EXTRA_OPS["hermite"] = md_hermite
+EXTRA_OPS["smith"] = md_smith
+EXTRA_OPS["rationalcanonical"] = md_rationalcanonical
+EXTRA_OPS["ffgauss"] = md_ffgauss
+EXTRA_OPS["gauss"] = md_gauss
+EXTRA_OPS["minpoly"] = md_minpoly
+EXTRA_OPS["eigenvectors"] = md_eigenvectors
+
+# (end of part: matdecomp)
+
+
+# -----------------------------------------------------------------------------
+# part: matmisc
+# -----------------------------------------------------------------------------
+
+# Compute > Matrices: Column Basis, Row Basis, Concatenate, Stack, Reshape, Fill Matrix, Random Matrix,
+# Condition Number, Definiteness Tests, Norm, Orthogonality Test, Permanent, Spectral Radius,
+# Hermitian Transpose. The answers as 5.5 writes them (its help, Doing Mathematics ch. 8: ", column
+# basis: [..]", " is positive definite", ", 2-norm: 9.3268"); the MuPAD of each is tci* in SW6's swfcns.mu.
+
+def mm_request(j):
+    """-> (formula MathJSON, params) of a request"""
+    if isinstance(j, dict) and "expr" in j:
+        return j["expr"], j.get("params", [])
+    return j, []
+
+
+def mm_matrix(j):
+    """the matrix the formula is (or gives), as written"""
+    e = last_side(apply_definitions(build(mm_request(j)[0])))
+    if hasattr(e, "doit") and not is_matrix(e):
+        e = e.doit()
+    if not is_matrix(e):
+        raise Unsupported("Put the insertion point in a matrix")
+    return sp.Matrix(e)
+
+
+def mm_side_by_side(j):
+    """the matrices written next to each other (Concatenate, Stack): A B, as 5.5 asks"""
+    f = mm_request(j)[0]
+    while isinstance(f, list) and f[:1] == ["Equal"]:
+        f = f[-1]
+    items, todo = [], [f]
+    while todo:
+        x = todo.pop(0)
+        if isinstance(x, list) and x[:1] == ["Multiply"]:
+            todo[:0] = x[1:]
+        else:
+            items.append(x)
+    ms = []
+    for x in items:
+        m = last_side(apply_definitions(build(x)))
+        if not is_matrix(m):
+            raise Unsupported("Place two matrices next to each other")
+        ms.append(sp.Matrix(m))
+    if len(ms) < 2:
+        raise Unsupported("Place two matrices next to each other")
+    return ms
+
+
+def mm_rows_tex(rows):
+    """a matrix as tex() writes one, with empty entries (Reshape leaves the last ones blank)"""
+    o, c = {"(": ("\\left(", "\\right)"), "[": ("\\left[", "\\right]")}.get(answer_delim(), ("\\left(", "\\right)"))
+    body = "\\\\".join(" & ".join("" if x is None else tex(x) for x in r) for r in rows)
+    return "%s\\begin{matrix}%s\\end{matrix}%s" % (o, body, c)
+
+
+def mm_independent(vectors):
+    """the first vectors that are independent of those before them (MuPAD's linalg::basis keeps the
+    given vectors, in order)"""
+    kept = []
+    for v in vectors:
+        if sp.Matrix.hstack(*kept, v).rank(simplify=True) > len(kept):
+            kept.append(v)
+    return kept
+
+
+def mm_basis(j, rows):
+    a = mm_matrix(j)
+    vs = mm_independent([a.row(i).T for i in range(a.rows)] if rows else [a.col(i) for i in range(a.cols)])
+    shown = [tex(v.T if rows else v) for v in vs] or [tex(sp.zeros(1, a.cols) if rows else sp.zeros(a.rows, 1))]
+    return "\\left[ " + ",".join(shown) + "\\right] "
+
+
+def mm_colbasis(j):
+    return {"kind": "solutions", "label": ", column basis: ", "solutions": [mm_basis(j, False)]}
+
+
+def mm_rowbasis(j):
+    return {"kind": "solutions", "label": ", row basis: ", "solutions": [mm_basis(j, True)]}
+
+
+def mm_concat(j):
+    ms = mm_side_by_side(j)
+    if len({m.rows for m in ms}) > 1:
+        raise Unsupported("Concatenate needs matrices with the same number of rows")
+    return {"kind": "solutions", "label": ", concatenate: ", "solutions": [tex(sp.Matrix.hstack(*ms))]}
+
+
+def mm_stack(j):
+    ms = mm_side_by_side(j)
+    if len({m.cols for m in ms}) > 1:
+        raise Unsupported("Stack needs matrices with the same number of columns")
+    return {"kind": "solutions", "label": ", stack: ", "solutions": [tex(sp.Matrix.vstack(*ms))]}
+
+
+def mm_reshape(j):
+    """a list or matrix into rows of n entries, read left to right and top to bottom; the last row
+    filled with blanks (5.5: 45, 21, 8, 19 to 3 columns)"""
+    f, ps = mm_request(j)
+    if not ps:
+        raise Unsupported("Give the number of columns")
+    n = build(ps[0])
+    if not (n.is_Integer and n > 0):
+        raise Unsupported("The number of columns must be a positive whole number")
+    n = int(n)
+    e = last_side(apply_definitions(build(f)))
+    items = list(e) if isinstance(e, (sp.MatrixBase, sp.Tuple, list)) else [e]
+    rows = [items[i:i + n] + [None] * (n - len(items[i:i + n])) for i in range(0, len(items), n)]
+    return {"kind": "solutions", "label": f" to {n} columns: ", "solutions": [mm_rows_tex(rows)]}
+
+
+def mm_numeric(a):
+    """an mpmath matrix of a matrix of numbers (5.5 computes these numerically)"""
+    import mpmath
+    try:
+        return mpmath.matrix([[complex(sp.N(x, 20)) if not sp.N(x, 20).is_real else float(sp.N(x, 20)) for x in a.row(i)] for i in range(a.rows)])
+    except TypeError:
+        raise Unsupported("This needs a matrix of numbers")
+
+
+def mm_norm2(a):
+    """the 2-norm: the largest singular value (MuPAD's twonorm: sqrt of the largest eigenvalue of A A^H)"""
+    import mpmath
+    m = mm_numeric(a)
+    return max(abs(s) for s in mpmath.svd(m, compute_uv=False))
+
+
+def mm_norm(j):
+    a = mm_matrix(j)
+    if 1 in a.shape:  # a vector: its length, exactly (sqrt(a^2 + b^2) for real a, b)
+        r = sp.sqrt(sum(sp.Abs(x) ** 2 for x in a))
+    else:
+        r = sp.Float(mm_norm2(a), 15)
+    return {"kind": "solutions", "label": ", 2-norm: ", "solutions": [tex(r)]}
+
+
+def mm_condition(j):
+    a = mm_matrix(j)
+    if a.rows != a.cols:
+        raise Unsupported("The condition number is for a square matrix")
+    if a.det() == 0:
+        raise Unsupported("The matrix has no inverse")
+    r = sp.Float(mm_norm2(a) * mm_norm2(a.inv()), 15)
+    return {"kind": "solutions", "label": ", condition number: ", "solutions": [tex(r)]}
+
+
+def mm_spectral_radius(j):
+    import mpmath
+    a = mm_matrix(j)
+    if a.rows != a.cols:
+        raise Unsupported("The spectral radius is for a square matrix")
+    ev = mpmath.eig(mm_numeric(a), left=False, right=False)
+    r = sp.Float(max(abs(x) for x in ev), 15)
+    return {"kind": "solutions", "label": ", spectral radius: ", "solutions": [tex(r)]}
+
+
+def mm_definiteness(j):
+    """5.5: a Hermitian matrix with all eigenvalues positive "is positive definite", any other "is
+    indefinite" (Sylvester: all leading principal minors positive)"""
+    a = mm_matrix(j)
+    if a.rows != a.cols:
+        raise Unsupported("Definiteness tests are for a square matrix")
+    hermitian = all(sp.simplify(x) == 0 for x in a - a.H)
+    if not hermitian and not (a.free_symbols and a == a.T):  # letters: taken as real if the matrix is symmetric
+        return {"kind": "text", "text": " is indefinite"}
+    minors = [sp.simplify(a[:k, :k].det()) for k in range(1, a.rows + 1)]
+    signs = [sp.ask(sp.Q.positive(m)) if m.free_symbols else bool(m > 0) for m in minors]
+    if all(s is True for s in signs):
+        return {"kind": "text", "text": " is positive definite"}
+    if any(s is False for s in signs):
+        return {"kind": "text", "text": " is indefinite"}
+    return {"kind": "text", "text": " is indeterminant"}
+
+
+def mm_orthogonal(j):
+    """orthonormal columns: A^H A is the identity (a square matrix)"""
+    a = mm_matrix(j)
+    ok = a.rows == a.cols and all(sp.simplify(x) == 0 for x in a.H * a - sp.eye(a.cols))
+    return {"kind": "solutions", "label": ", orthogonal? ", "solutions": [tex(sp.true if ok else sp.false)]}
+
+
+def mm_permanent(j):
+    a = mm_matrix(j)
+    if a.rows != a.cols:
+        raise Unsupported("The permanent is for a square matrix")
+    return {"kind": "solutions", "label": ", permanent: ", "solutions": [tex(sp.expand(a.per()))]}
+
+
+def mm_htranspose(j):
+    return {"kind": "solutions", "label": ", Hermitian transpose: ", "solutions": [tex(mm_matrix(j).H)]}
+
+
+def mm_band(items, rows, cols):
+    """MuPAD's matrix(d, d, [.., diagonal, ..], Banded) cut to rows x cols (tciBand): the middle item on
+    the diagonal, those before it below, those after it above"""
+    if len(items) % 2 == 0:
+        raise Unsupported("The band list needs an odd number of entries")
+    k = len(items) // 2
+    return sp.Matrix(rows, cols, lambda i, c: items[k + c - i] if abs(c - i) <= k else 0)
+
+
+def mm_size(ps):
+    try:
+        rows, cols = (int(build(p)) for p in ps[:2])
+    except (TypeError, ValueError):
+        raise Unsupported("Give the numbers of rows and columns")
+    if rows < 1 or cols < 1:
+        raise Unsupported("Give the numbers of rows and columns")
+    return rows, cols
+
+
+def mm_bare(m):
+    """the entries of a new matrix, for the brackets the insertion point is in (as 5.5 fills them)"""
+    return "\\begin{matrix}%s\\end{matrix}" % "\\\\".join(" & ".join(tex(x) for x in m.row(i)) for i in range(m.rows))
+
+
+def mm_fill(j):
+    """Matrices > Fill Matrix: params ['zero'|'identity'|'random'|'jordan'|'function'|'band', rows, cols, item]"""
+    import random
+    _, ps = mm_request(j)
+    kind = str(ps[0]).strip("'") if ps else "zero"
+    rows, cols = mm_size(ps[1:])
+    item = ps[3] if len(ps) > 3 else None
+    if kind in ("jordan", "function", "band") and item is None:
+        raise Unsupported("Fill in the entry")
+    if kind == "zero":
+        m = sp.zeros(rows, cols)
+    elif kind == "identity":
+        m = sp.eye(rows, cols)
+    elif kind == "random":  # linalg::randomMatrix(.., Dom::Integer): -999..999
+        m = sp.Matrix(rows, cols, lambda i, c: random.randint(-999, 999))
+    elif kind == "jordan":
+        m = mm_band([sp.Integer(0), apply_definitions(build(item)), sp.Integer(1)], rows, cols)
+    elif kind == "band":
+        e = apply_definitions(build(item))
+        m = mm_band(list(e) if isinstance(e, (sp.Tuple, list, sp.MatrixBase)) else [e], rows, cols)
+    elif kind == "function":  # f(i, j) for a function name, else the same entry everywhere (5 -> all 5)
+        if isinstance(item, str) and item[:1] != "'":
+            m = sp.Matrix(rows, cols, lambda i, c: apply_definitions(build([item, int(i) + 1, int(c) + 1])))
+        else:
+            v = apply_definitions(build(item))
+            m = sp.Matrix(rows, cols, lambda i, c: v)
+    else:
+        raise Unsupported(kind)
+    return {"kind": "value", "latex": mm_bare(m)}
+
+
+def mm_random(j):
+    """Matrices > Random Matrix: params ['unrestricted'|'symmetric'|'antisymmetric'|'triangular', rows, cols, min, max]
+    (tcirandmat: whole numbers from min to max)"""
+    import random
+    _, ps = mm_request(j)
+    kind = str(ps[0]).strip("'") if ps else "unrestricted"
+    rows, cols = mm_size(ps[1:])
+    try:
+        lo, hi = (int(build(p)) for p in ps[3:5])
+    except (TypeError, ValueError):
+        lo, hi = -9, 9
+    lo, hi = min(lo, hi), max(lo, hi)
+    m = sp.Matrix(rows, cols, lambda i, c: random.randint(lo, hi))
+    for i in range(rows):
+        for c in range(min(i + 1, cols)):
+            if kind == "symmetric" and c < i and i < cols and c < rows:
+                m[i, c] = m[c, i]
+            elif kind == "antisymmetric":
+                m[i, c] = 0 if c == i else (-m[c, i] if i < cols and c < rows else m[i, c])
+            elif kind == "triangular" and c < i:
+                m[i, c] = 0
+    return {"kind": "value", "latex": mm_bare(m)}
+
+
+EXTRA_OPS["colbasis"] = mm_colbasis
+EXTRA_OPS["rowbasis"] = mm_rowbasis
+EXTRA_OPS["concat"] = mm_concat
+EXTRA_OPS["stack"] = mm_stack
+EXTRA_OPS["reshape"] = mm_reshape
+EXTRA_OPS["fillmatrix"] = mm_fill
+EXTRA_OPS["randommatrix"] = mm_random
+EXTRA_OPS["condition"] = mm_condition
+EXTRA_OPS["definiteness"] = mm_definiteness
+EXTRA_OPS["norm"] = mm_norm
+EXTRA_OPS["orthogonal"] = mm_orthogonal
+EXTRA_OPS["permanent"] = mm_permanent
+EXTRA_OPS["spectralradius"] = mm_spectral_radius
+EXTRA_OPS["htranspose"] = mm_htranspose
+
+# (end of part: matmisc)
+
+
+# -----------------------------------------------------------------------------
+# part: rewrite
+# -----------------------------------------------------------------------------
+
+# Compute > Rewrite and Compute > Combine, as 5.5 does them: MuPAD's rewrite(e, target) and
+# combine(e, target) (SW6's swfcns.mu, tcirewrite and tcicomb2; 5.5's own table: Combine > Powers
+# and Trig Functions are simplify there). Each works on the formula's last side, entry by entry on
+# a matrix, as the other plain items do.
+
+def rw_plain(f):
+    def run(j):
+        j = j.get("expr") if isinstance(j, dict) else j
+        if isinstance(j, list) and j[:1] == ["Equal"] and len(j) == 3:
+            e = sp.Eq(build(j[1]), build(j[2]), evaluate=False)
+        else:
+            e = build(j)
+        x = last_side(apply_definitions(e))
+        one = lambda u: f(u.doit() if hasattr(u, "doit") else u)  # noqa: E731
+        if isinstance(x, sp.MatrixBase):
+            r = x.applyfunc(one)
+            r = r[0, 0] if r.shape == (1, 1) else r
+        elif isinstance(x, (list, tuple)):
+            r = [one(u) for u in x]
+        elif isinstance(x, sp.FiniteSet):
+            r = sp.FiniteSet(*[one(u) for u in x])
+        else:
+            r = one(x)
+        return {"kind": "value", "latex": tex(r)}
+    return run
+
+
+def rw_rational(x):
+    """numeric::rationalize: each decimal as the fraction it is (4.72 = 118/25, 3.1416 = 3927/1250)."""
+    return x.replace(lambda n: n.is_Float, lambda f: sp.nsimplify(f, rational=True))
+
+
+def rw_float(x):
+    return x.evalf(10)
+
+
+def rw_log(x):
+    """rewrite(e, ln): the inverse hyperbolic functions as MuPAD writes them (arccosh x = ln(x + sqrt(x^2 - 1)))."""
+    x = x.replace(sp.asinh, lambda u: sp.log(u + sp.sqrt(u**2 + 1))).replace(sp.acosh, lambda u: sp.log(u + sp.sqrt(u**2 - 1)))
+    x = x.replace(sp.atanh, lambda u: sp.log(u + 1) / 2 - sp.log(1 - u) / 2).replace(sp.acoth, lambda u: sp.log(u + 1) / 2 - sp.log(u - 1) / 2)
+    x = x.replace(sp.asech, lambda u: sp.log(1 / u + sp.sqrt(1 / u**2 - 1))).replace(sp.acsch, lambda u: sp.log(1 / u + sp.sqrt(1 / u**2 + 1)))
+    return x.replace(lambda n: isinstance(n, (sp.asin, sp.acos, sp.atan, sp.acot)), lambda n: n.rewrite(sp.log))
+
+
+def rw_sinhcosh(x):
+    """rewrite(e, sinhcosh): tanh, coth, sech, csch and e^x in sinh and cosh (e^x = cosh x + sinh x)."""
+    x = x.replace(sp.tanh, lambda u: sp.sinh(u) / sp.cosh(u)).replace(sp.coth, lambda u: sp.cosh(u) / sp.sinh(u))
+    x = x.replace(sp.sech, lambda u: 1 / sp.cosh(u)).replace(sp.csch, lambda u: 1 / sp.sinh(u))
+    return x.replace(lambda n: isinstance(n, sp.exp) and not n.args[0].has(sp.I), lambda n: sp.cosh(n.args[0]) + sp.sinh(n.args[0]))
+
+
+def rw_trig(target):
+    """rewrite(e, sin), (e, cos), (e, tan): the six trigonometric functions in one of them, by the
+    half angle (no square roots): cos x = 1 - 2 sin^2(x/2); sin x = 2 tan(x/2)/(tan^2(x/2) + 1)."""
+    def via(u):
+        h = u / 2
+        if target == "sin":
+            s, c = sp.sin(u), 1 - 2 * sp.sin(h)**2
+        elif target == "cos":
+            s, c = 2 * sp.cos(h - sp.pi / 4, evaluate=False)**2 - 1, sp.cos(u)  # (SymPy would make it sin(x/2 + pi/4))
+        else:
+            t = sp.tan(h)
+            s, c = 2 * t / (t**2 + 1), (1 - t**2) / (t**2 + 1)
+        return s, c
+
+    def one(n):
+        u = n.args[0]
+        s, c = via(u)
+        if isinstance(n, sp.sin):
+            return s
+        if isinstance(n, sp.cos):
+            return c
+        if isinstance(n, sp.tan):
+            return n if target == "tan" else s / c
+        if isinstance(n, sp.cot):
+            return 1 / sp.tan(u) if target == "tan" else c / s
+        if isinstance(n, sp.sec):
+            return 1 / c
+        return 1 / s  # csc
+    kinds = (sp.sin, sp.cos, sp.tan, sp.cot, sp.sec, sp.csc)
+    return lambda x: x.replace(lambda n: isinstance(n, kinds) and not (target == "sin" and isinstance(n, sp.sin))
+                                and not (target == "cos" and isinstance(n, sp.cos)), one)
+
+
+def rw_arc(target):
+    """rewrite(e, arcsin) .. (e, arccot): arcsin, arccos, arctan, arccot in one of them
+    (arctan x = arcsin(x/sqrt(x^2 + 1)), arccos x = pi/2 - arcsin x, as 5.5's examples)."""
+    half = sp.pi / 2
+    forms = {
+        "asin": {sp.acos: lambda u: half - sp.asin(u), sp.atan: lambda u: sp.asin(u / sp.sqrt(u**2 + 1)),
+                 sp.acot: lambda u: half - sp.asin(u / sp.sqrt(u**2 + 1))},
+        "acos": {sp.asin: lambda u: half - sp.acos(u), sp.acot: lambda u: sp.acos(u / sp.sqrt(u**2 + 1)),
+                 sp.atan: lambda u: half - sp.acos(u / sp.sqrt(u**2 + 1))},
+        "atan": {sp.asin: lambda u: sp.atan(u / sp.sqrt(1 - u**2)), sp.acos: lambda u: half - sp.atan(u / sp.sqrt(1 - u**2)),
+                 sp.acot: lambda u: half - sp.atan(u)},
+        "acot": {sp.atan: lambda u: half - sp.acot(u), sp.acos: lambda u: sp.acot(u / sp.sqrt(1 - u**2)),
+                 sp.asin: lambda u: half - sp.acot(u / sp.sqrt(1 - u**2))},
+    }[target]
+    return lambda x: x.replace(lambda n: type(n) in forms, lambda n: forms[type(n)](n.args[0]))
+
+
+def rw_sqrt_rect(n):
+    """sqrt(a + bi) of numbers as 5.5 writes it: sqrt((|z| + a)/2) + i sqrt((|z| - a)/2) (sign of b)."""
+    a, b = sp.re(n.base), sp.im(n.base)
+    r = sp.sqrt(a**2 + b**2)
+    return sp.sqrt(sp.expand((r + a) / 2)) + sp.sign(b) * sp.I * sp.sqrt(sp.expand((r - a) / 2))
+
+
+def rw_rectangular(x):
+    """rectform: a + bi, the letters taken as real (5.5: (a + bi)^-1 = a/(a^2 + b^2) - b/(a^2 + b^2) i)."""
+    real = {s: sp.Symbol(s.name, real=True) for s in x.free_symbols if s.is_real is None}
+    x = x.xreplace(real)
+    x = x.replace(lambda n: n.is_Pow and n.exp == sp.S.Half and n.base.is_number and sp.im(n.base) != 0, rw_sqrt_rect)
+    # a number to a complex power: e^(w ln z) (i^i = e^(-pi/2), 5^(2i) = cos(2 ln 5) + i sin(2 ln 5))
+    x = x.replace(lambda n: n.is_Pow and n.base.is_number and n.exp.is_number and sp.im(n.exp) != 0, lambda n: sp.exp(sp.expand(n.exp * sp.log(n.base))))
+    r = sp.expand_complex(x)
+    return r.xreplace({v: k for k, v in real.items()})
+
+
+def rw_polar(x):
+    """abs(e) exp(i arg(e)): 3 + 5i = sqrt(34) e^(i arctan(5/3))."""
+    if x.is_number:
+        return sp.Mul(sp.Abs(x), sp.exp(sp.I * sp.arg(x)), evaluate=False)
+    return sp.Mul(sp.exp(sp.I * sp.arg(x), evaluate=False), sp.Abs(x), evaluate=False)
+
+
+def rw_normal(x):
+    """normal: one fraction, numerator and denominator expanded."""
+    return sp.cancel(sp.together(x))
+
+
+def cb_exp(x):
+    """combine(e, exp): e^x e^y = e^(x + y), (e^x)^y = e^(xy); other bases stay (2^x 2^y)."""
+    x = x.replace(lambda n: n.is_Pow and isinstance(n.base, sp.exp), lambda n: sp.exp(sp.expand(n.base.args[0] * n.exp)))
+
+    def merge(m):
+        es = [f for f in m.args if isinstance(f, sp.exp)]
+        if len(es) < 2:
+            return m
+        return sp.Mul(*[f for f in m.args if not isinstance(f, sp.exp)]) * sp.exp(sp.expand(sp.Add(*[f.args[0] for f in es])))
+    return x.replace(lambda n: n.is_Mul, merge)
+
+
+def cb_log(x):
+    """combine(e, ln): ln x + ln y = ln xy where it holds (5.5: after assume(positive))."""
+    return sp.logcombine(x)
+
+
+def cb_powers(x):
+    """5.5 simplifies: a^x a^y = a^(x + y), a^x/a^y = a^(x - y), 10^(x + i) 10^(x - i) = 10^(2x)
+    (not 100^x: a number keeps its power)."""
+    def merge(m):
+        powers, rest = {}, []
+        for f in m.args:
+            b, k = f.as_base_exp()
+            if f.is_Pow or isinstance(f, sp.exp):
+                powers.setdefault(b, []).append(k)
+            else:
+                rest.append(f)
+        if all(len(ks) < 2 for ks in powers.values()):
+            return m
+        out = [sp.Pow(b, sp.expand(sp.Add(*ks)), evaluate=not b.is_Number) for b, ks in powers.items()]
+        return sp.Mul(*rest, *out)
+    return x.replace(lambda n: n.is_Mul, merge)
+
+
+def cb_trig(x):
+    return linearize(x)
+
+
+def cb_arctan(x):
+    """combine(e, arctan): arctan x + arctan y = -arctan((x + y)/(xy - 1)), arctan x - arctan y = arctan((x - y)/(xy + 1))."""
+    if not x.is_Add:
+        return x
+    items, rest = [], []
+    for t in x.args:
+        c, f = t.as_coeff_Mul()
+        if isinstance(f, sp.atan) and c.is_Integer:
+            items += [(1 if c > 0 else -1, f.args[0])] * abs(int(c))
+        else:
+            rest.append(t)
+    if len(items) < 2:
+        return x
+    s0, u = items[0]
+    u = s0 * u
+    for s, v in items[1:]:
+        u = sp.cancel((u + s * v) / (1 - s * u * v))
+    n, d = sp.fraction(sp.cancel(u))
+    lead = None
+    xs = sorted(d.free_symbols, key=str)
+    if xs:
+        terms = sp.Poly(d, *xs).terms()
+        lead = max(terms, key=lambda t: (sum(t[0]), t[0]))[1]
+    if (lead < 0) if lead is not None else d.could_extract_minus_sign():
+        n, d = -n, sp.expand(-d)
+    n = sp.expand(n)
+    r = -sp.atan(sp.expand(-n) / d) if n.could_extract_minus_sign() else sp.atan(n / d)
+    return sp.Add(*rest) + r
+
+
+def cb_hyp(x):
+    """combine(e, sinhcosh): products and powers of sinh and cosh as sums
+    (sinh x sinh y = 1/2 cosh(x + y) - 1/2 cosh(x - y))."""
+    def term(t):
+        fs = []
+        for f in sp.Mul.make_args(t):
+            if f.is_Pow and isinstance(f.base, (sp.sinh, sp.cosh)) and f.exp.is_Integer and f.exp > 1:
+                fs += [f.base] * int(f.exp)
+            else:
+                fs.append(f)
+        hs = [i for i, f in enumerate(fs) if isinstance(f, (sp.sinh, sp.cosh))]
+        if len(hs) < 2:
+            return t
+        f, g = fs[hs[0]], fs[hs[1]]
+        a, b = f.args[0], g.args[0]
+        if isinstance(f, sp.sinh) and isinstance(g, sp.sinh):
+            p = (sp.cosh(a + b) - sp.cosh(a - b)) / 2
+        elif isinstance(f, sp.sinh):
+            p = (sp.sinh(a + b) + sp.sinh(a - b)) / 2
+        elif isinstance(g, sp.sinh):
+            p = (sp.sinh(a + b) - sp.sinh(a - b)) / 2
+        else:
+            p = (sp.cosh(a + b) + sp.cosh(a - b)) / 2
+        return sp.Mul(*[h for i, h in enumerate(fs) if i not in hs[:2]]) * p
+    for _ in range(20):
+        r = sp.expand(sp.Add(*[term(t) for t in sp.Add.make_args(sp.expand(x))]))
+        if r == x:
+            break
+        x = r
+    return x
+
+
+def rw_items(j):
+    """The equations (or expressions = 0) of a list, set or one-column matrix."""
+    if isinstance(j, list) and j[:1] in (["Set"], ["List"]) and not (len(j) == 2 and isinstance(j[1], list) and j[1][:1] == ["List"]):
+        return [build(x) for x in j[1:]]
+    return [build(x) for x in items_json(j)]
+
+
+def rw_vars(params, count=None):
+    vs = [build(p) for p in params]
+    vs = [v for v in vs if isinstance(v, sp.Symbol)]
+    if vs:
+        return vs
+    if count is None:
+        return []
+    return [variable(n) for n in "xyz"[:count]] if count <= 3 else [variable("x_%d" % (i + 1)) for i in range(count)]
+
+
+def eqs_to_matrix(j):
+    """Rewrite > Equations as Matrix (5.5 asks the variables): the augmented matrix [A | b]."""
+    expr, params = (j["expr"], j.get("params", [])) if isinstance(j, dict) else (j, [])
+    eqs = [apply_definitions(e) for e in rw_items(expr)]
+    exprs = [e.lhs - e.rhs if isinstance(e, sp.Equality) else e for e in eqs]
+    vs = rw_vars(params)
+    if not vs:
+        vs = sorted(set().union(*(e.free_symbols for e in exprs)), key=str)
+    A, b = sp.linear_eq_to_matrix(exprs, vs)
+    return {"kind": "solutions", "label": ", Corresponding matrix: ", "solutions": [tex(sp.ImmutableMatrix(sp.Matrix.hstack(A, b)))]}
+
+
+def matrix_to_eqs(j):
+    """Rewrite > Matrix as Equations (5.5 asks the variables): an m x n matrix is the system with
+    the last column on the right; a square one has 0 on the right."""
+    expr, params = (j["expr"], j.get("params", [])) if isinstance(j, dict) else (j, [])
+    M = sp.Matrix(last_side(apply_definitions(build(expr))))
+    if M.rows == M.cols:
+        S, c = M, sp.zeros(M.rows, 1)
+    else:
+        S, c = M[:, :-1], M[:, -1]
+    vs = rw_vars(params, S.cols)
+    if len(vs) != S.cols:
+        raise Unsupported("Give {0} variables".format(S.cols))
+    eqs = [sp.Eq(sp.Add(*[S[r, k] * vs[k] for k in range(S.cols)]), c[r], evaluate=False) for r in range(S.rows)]
+    return {"kind": "solutions", "label": ", Corresponding equations: ", "solutions": ["\\left\\{" + ", ".join(tex(e) for e in eqs) + "\\right\\}"]}
+
+
+# arccot written as 5.5 writes it (SymPy's printer would write acot)
+WITHOUT_BRACKETS[sp.acot] = "\\operatorname{arccot}"
+
+EXTRA_OPS["rewrite_rational"] = rw_plain(rw_rational)
+EXTRA_OPS["rewrite_float"] = rw_plain(rw_float)
+EXTRA_OPS["rewrite_factorial"] = rw_plain(lambda x: x.rewrite(sp.factorial))
+EXTRA_OPS["rewrite_gamma"] = rw_plain(lambda x: x.rewrite(sp.gamma))
+EXTRA_OPS["rewrite_log"] = rw_plain(rw_log)
+EXTRA_OPS["rewrite_sinhcosh"] = rw_plain(rw_sinhcosh)
+EXTRA_OPS["rewrite_sin"] = rw_plain(rw_trig("sin"))
+EXTRA_OPS["rewrite_cos"] = rw_plain(rw_trig("cos"))
+EXTRA_OPS["rewrite_tan"] = rw_plain(rw_trig("tan"))
+EXTRA_OPS["rewrite_arcsin"] = rw_plain(rw_arc("asin"))
+EXTRA_OPS["rewrite_arccos"] = rw_plain(rw_arc("acos"))
+EXTRA_OPS["rewrite_arctan"] = rw_plain(rw_arc("atan"))
+EXTRA_OPS["rewrite_arccot"] = rw_plain(rw_arc("acot"))
+EXTRA_OPS["rewrite_polar"] = rw_plain(rw_polar)
+EXTRA_OPS["rewrite_rectangular"] = rw_plain(rw_rectangular)
+EXTRA_OPS["rewrite_normal"] = rw_plain(rw_normal)
+EXTRA_OPS["eqs_to_matrix"] = eqs_to_matrix
+EXTRA_OPS["matrix_to_eqs"] = matrix_to_eqs
+EXTRA_OPS["combine_exp"] = rw_plain(cb_exp)
+EXTRA_OPS["combine_log"] = rw_plain(cb_log)
+EXTRA_OPS["combine_powers"] = rw_plain(cb_powers)
+EXTRA_OPS["combine_trig"] = rw_plain(cb_trig)
+EXTRA_OPS["combine_arctan"] = rw_plain(cb_arctan)
+EXTRA_OPS["combine_hyp"] = rw_plain(cb_hyp)
+
+# (end of part: rewrite)
+
+
+# -----------------------------------------------------------------------------
+# part: statpoly
+# -----------------------------------------------------------------------------
+
+# Compute > Statistics, as 5.5 (MuPAD's tcimean, tcimedian ... in SW6's swfcns.mu): a list is one
+# set of data; a matrix gives one answer per column (its first row left out when it starts with a
+# name: a labeled matrix); the answer follows a label (", Mean(s): ..."), as 5.5 writes it.
+
+def stat_data(j):
+    """-> (columns of data, the matrix's first row when it is labels, whether a matrix was given)."""
+    req = j["expr"] if isinstance(j, dict) else j
+    plain = isinstance(req, list) and req[:1] in (["Tuple"], ["Set"], ["Delimiter"], ["Sequence"])
+    e = last_side(apply_definitions(build(req)))
+    if isinstance(e, sp.Set):
+        e = sp.Matrix([list(e)])
+    if isinstance(e, (list, tuple, sp.Tuple)):
+        e = sp.Matrix([list(e)])
+    if not isinstance(e, sp.MatrixBase):
+        return [[e]], None, False
+    m = sp.Matrix(e)
+    if plain:
+        return [list(m)], None, False
+    if m.rows == 1:  # a vector comes in as a row (tcistatdata)
+        m = m.T
+    labels = None
+    if m.rows > 1 and m[0, 0].is_Symbol:  # a labeled matrix: the first row names the columns
+        labels = list(m[0, :])
+        m = m[1:, :]
+    return [list(m[:, k]) for k in range(m.cols)], labels, m.cols > 1
+
+
+def stat_list(values):
+    return "\\left[" + ",".join(values) + "\\right]"
+
+
+def stat_answer(j, one):
+    """one(column) -> LaTeX of its answer; several columns: a list of them (the caller adds the label)."""
+    cols, _, _ = stat_data(j)
+    parts = [one(c) for c in cols]
+    return {"kind": "solutions", "solutions": [parts[0] if len(parts) == 1 else stat_list(parts)]}
+
+
+def stat_mean(xs):
+    return sp.expand(sp.Add(*xs) / len(xs))
+
+
+def stat_median(xs):
+    """MuPAD's stats::median: of two middle numbers the smaller."""
+    s = sorted(xs, key=lambda v: float(v))
+    return s[(len(s) - 1) // 2]
+
+
+def stat_mode(xs):
+    """MuPAD's stats::modal: the values that occur most, in the order they first come, and how often."""
+    count = {}
+    for x in xs:
+        count[x] = count.get(x, 0) + 1
+    most = max(count.values())
+    return stat_list([tex(x) for x in count if count[x] == most]) + "," + str(most)
+
+
+def stat_geomean(xs):
+    p = sp.Mul(*xs)
+    r = p ** sp.Rational(1, len(xs))
+    if p.is_Rational and not r.is_Rational:  # \\sqrt[4]{4704}, as MuPAD leaves it
+        return sp.Pow(p, sp.Rational(1, len(xs)), evaluate=False)
+    return r
+
+
+def stat_harmonic(xs):
+    return len(xs) / sp.Add(*[1 / x for x in xs])
+
+
+def stat_meandev(xs):
+    m = stat_mean(xs)
+    return sp.Add(*[sp.Abs(x - m) for x in xs]) / len(xs)
+
+
+def stat_variance(xs):
+    """The sample variance (n - 1), MuPAD's stats::variance; (x - m)^2 with the sign of x - m made
+    alike, so a b c d data gives 2(a/2 - c/2)^2 as 5.5."""
+    if len(xs) < 2:
+        return sp.Integer(0)
+    m = stat_mean(xs)
+    def sq(d):
+        d = sp.expand(d)
+        return (-d if d.could_extract_minus_sign() else d) ** 2
+    return sp.Add(*[sq(x - m) for x in xs]) / (len(xs) - 1)
+
+
+def stat_sqrt(v):
+    """LaTeX of the square root of a variance as MuPAD writes it: sqrt(p/q) = (a/(b q')) sqrt(q') sqrt(p'),
+    where p = a^2 p', q = b^2 q' (\\frac{1}{21} \\sqrt{21} \\sqrt{21055})."""
+    if not v.is_Rational or v < 0 or v.q == 1:
+        return tex(sp.sqrt(v))
+    def part(n):
+        a, rest = 1, n
+        for f, k in sp.factorint(n).items():
+            a *= f ** (k // 2)
+            rest //= f ** (2 * (k // 2))
+        return a, rest
+    a, p1 = part(int(v.p))
+    b, q1 = part(int(v.q))
+    c = sp.Rational(a, b * q1)
+    parts = [] if c == 1 else [tex(c)]
+    parts += [tex(sp.sqrt(n)) for n in (q1, p1) if n != 1]
+    return " ".join(parts) or "1"
+
+
+def stat_moment(xs, r, about):
+    """MuPAD's tcimoment1: the r-th moment about a number, or about the mean (about is None), as a decimal."""
+    a = stat_mean(xs) if about is None else about
+    return sp.Add(*[sp.N((x - a) ** r) for x in xs]) / len(xs)
+
+
+def stat_quantile(xs, q):
+    """MuPAD's stats::empiricalQuantile(data)(q, Averaged): the k-th smallest for k = ceil(n q);
+    when n q is a whole number k, the mean of the k-th and the next."""
+    s = sorted(xs, key=lambda v: float(v))
+    n = len(s)
+    k = sp.nsimplify(q, rational=True) * n
+    if k <= 0:
+        return s[0]
+    if k >= n:
+        return s[-1]
+    if k.is_Integer:
+        return (s[int(k) - 1] + s[int(k)]) / 2
+    return s[int(sp.ceiling(k)) - 1]
+
+
+def stat_cov(a, b):
+    ma, mb = stat_mean(a), stat_mean(b)
+    return sp.Add(*[sp.N((x - ma) * (y - mb)) for x, y in zip(a, b)]) / (len(a) - 1)
+
+
+def stat_matrix(j, entry):
+    cols, _, _ = stat_data(j)
+    if len(cols) == 1 and not isinstance(last_side(build(j["expr"] if isinstance(j, dict) else j)), sp.MatrixBase):
+        raise Unsupported("The selection must be a matrix")
+    n = len(cols)
+    m = sp.Matrix(n, n, lambda i, k: sp.N(entry(cols[i], cols[k])))
+    return {"kind": "solutions", "solutions": [tex(m)]}
+
+
+def stat_corr(a, b):
+    return stat_cov(a, b) / sp.sqrt(stat_cov(a, a) * stat_cov(b, b))
+
+
+def word_params(j):
+    """The words ('first', ...) and the other params of a request."""
+    ps = j.get("params", []) if isinstance(j, dict) else []
+    return [p.strip("'") for p in ps if isinstance(p, str) and p[:1] == "'"], [p for p in ps if not (isinstance(p, str) and p[:1] == "'")]
+
+
+def stat_fit(j):
+    """Statistics > Fit Curve to Data. params: 'regression' | 'noconstant' | 'polynomial', 'first' |
+    'last' (where the dependent variable is), degree. A least-squares fit, as MuPAD's stats::reg
+    (tcimregress, tcipolyfit): exact for exact data, decimals for decimal data."""
+    words, nums = word_params(j)
+    kind = next((w for w in words if w in ("regression", "noconstant", "polynomial")), "regression")
+    first = "first" in words
+    req = j["expr"] if isinstance(j, dict) else j
+    e = last_side(apply_definitions(build(req)))
+    if not isinstance(e, sp.MatrixBase):
+        raise Unsupported("The selection must be a matrix")
+    m = sp.Matrix(e)
+    labels = list(m[0, :]) if m[0, 0].is_Symbol else None
+    if labels:
+        m = m[1:, :]
+    # decimals for numbers (as stats::reg answers), exact for letters; Multiple Regression of two
+    # columns (stats::linReg) keeps exact numbers exact
+    exact = not all(x.is_number for x in m) or (kind == "regression" and m.cols == 2 and not any(isinstance(x, sp.Float) for x in m))
+    num = (lambda v: v) if exact else (lambda v: sp.N(v))
+    if kind == "polynomial":
+        if m.cols != 2:
+            raise Unsupported("The selection must be a matrix of 2 columns")
+        key = labels or [variable("x"), variable("y")]
+        x, y = (1, 0) if first else (0, 1)
+        deg = int(build(nums[0])) if nums else 2
+        deg = min(deg, m.rows - 1)
+        X = sp.Matrix(m.rows, deg + 1, lambda i, k: m[i, x] ** k)
+        c = (X.T * X).solve(X.T * m[:, y])
+        fit = sp.Add(*[num(sp.simplify(c[k])) * key[x] ** k for k in range(deg + 1)])
+        return {"kind": "solutions", "label": ", Polynomial fit: ", "solutions": [tex(sp.Eq(key[y], fit, evaluate=False))]}
+    if m.cols < 2:
+        raise Unsupported("The selection must be a matrix of at least 2 columns")
+    if not labels:
+        raise Unsupported("The columns must be labeled (a first row of names)")
+    dep = 0 if first else m.cols - 1
+    ind = [k for k in range(m.cols) if k != dep]
+    X = sp.Matrix(m.rows, len(ind), lambda i, k: m[i, ind[k]])
+    if kind == "regression":
+        X = X.row_join(sp.ones(m.rows, 1))
+    c = (X.T * X).solve(X.T * m[:, dep])
+    fit = sp.Add(*[num(sp.simplify(c[k])) * labels[ind[k]] for k in range(len(ind))])
+    if kind == "regression":
+        fit += num(sp.simplify(c[len(ind)]))
+    return {"kind": "solutions", "label": ", Regression is: ", "solutions": [tex(sp.Eq(labels[dep], fit, evaluate=False))]}
+
+
+def random_numbers(j):
+    """Statistics > Random Numbers. params: the distribution ('normal' ...), how many, the parameters
+    (as 5.5's dialog asks them). -> the numbers, as a list."""
+    import math
+    import random
+    words, nums = word_params(j)
+    dist = words[0] if words else "uniform"
+    vals = [float(build(p)) for p in nums]
+    if not vals or vals[0] < 1 or vals[0] != int(vals[0]):
+        raise Unsupported("How many: a whole number from 1 on")
+    n, p = int(vals[0]), vals[1:] + [None, None]
+    a, b = p[0], p[1]
+    def need(*xs):
+        if any(x is None for x in xs):
+            raise Unsupported("Give the parameters of the distribution")
+    def chi2(k):
+        return random.gammavariate(k / 2, 2)
+    def poisson(lam):
+        L, k, q = math.exp(-lam), 0, 1.0
+        while True:
+            q *= random.random()
+            if q <= L:
+                return k
+            k += 1
+    draws = {
+        "beta": (2, lambda: random.betavariate(a, b)),
+        "binomial": (2, lambda: sum(random.random() < b for _ in range(int(a)))),
+        "cauchy": (2, lambda: a + b * math.tan(math.pi * (random.random() - 0.5))),
+        "chisquare": (1, lambda: chi2(a)),
+        "exponential": (1, lambda: random.expovariate(1 / a)),
+        "f": (2, lambda: (chi2(a) / a) / (chi2(b) / b)),
+        "gamma": (2, lambda: random.gammavariate(a, b)),
+        "normal": (2, lambda: random.gauss(a, b)),
+        "poisson": (1, lambda: poisson(a)),
+        "t": (1, lambda: random.gauss(0, 1) / math.sqrt(chi2(a) / a)),
+        "uniform": (2, lambda: random.uniform(a, b)),
+        "weibull": (2, lambda: random.weibullvariate(b, a)),  # shape a, scale b
+    }
+    if dist not in draws:
+        raise Unsupported("Unknown distribution: " + dist)
+    k, draw = draws[dist]
+    need(*p[:k])
+    out = [draw() for _ in range(n)]
+    return {"kind": "value", "latex": ",".join(str(x) if isinstance(x, int) else tex(sp.Float(x)) for x in out)}
+
+
+def stat_moment_answer(j):
+    """Statistics > Moment. params: the moment number, then the origin or the word 'mean'."""
+    words, nums = word_params(j)
+    if not nums:
+        raise Unsupported("Give the moment number")
+    r = build(nums[0])
+    about = None if "mean" in words or len(nums) < 2 else build(nums[1])
+    return {"label": ", Moment(s): ", **stat_answer(j, lambda c: tex(stat_moment(c, r, about)))}
+
+
+def stat_quantile_answer(j):
+    _, nums = word_params(j)
+    if not nums:
+        raise Unsupported("Give the quantile q (0 < q < 1)")
+    q = build(nums[0])
+    if not (q.is_number and 0 < q < 1):
+        raise Unsupported("The quantile must be between 0 and 1")
+    shown = str(nums[0]) if isinstance(nums[0], (int, float)) else tex(q)
+    return {"label": f", {shown}th Quantile(s): ", **stat_answer(j, lambda c: tex(stat_quantile(c, q)))}
+
+
+EXTRA_OPS["mean"] = lambda j: {"label": ", Mean(s): ", **stat_answer(j, lambda c: tex(stat_mean(c)))}
+EXTRA_OPS["median"] = lambda j: {"label": ", Median(s): ", **stat_answer(j, lambda c: tex(stat_median(c)))}
+EXTRA_OPS["mode"] = lambda j: {"label": ", Mode(s): ", **stat_answer(j, stat_mode)}
+EXTRA_OPS["geomean"] = lambda j: {"label": ", Geometric Mean(s): ", **stat_answer(j, lambda c: tex(stat_geomean(c)))}
+EXTRA_OPS["harmonicmean"] = lambda j: {"label": ", Harmonic Mean(s): ", **stat_answer(j, lambda c: tex(stat_harmonic(c)))}
+EXTRA_OPS["meandev"] = lambda j: {"label": ", Mean deviation(s): ", **stat_answer(j, lambda c: tex(stat_meandev(c)))}
+EXTRA_OPS["variance"] = lambda j: {"label": ", Variance(s): ", **stat_answer(j, lambda c: tex(stat_variance(c)))}
+EXTRA_OPS["stddev"] = lambda j: {"label": ", Standard deviation(s): ", **stat_answer(j, lambda c: stat_sqrt(stat_variance(c)))}
+EXTRA_OPS["moment"] = stat_moment_answer
+EXTRA_OPS["quantile"] = stat_quantile_answer
+EXTRA_OPS["correlation"] = lambda j: {"label": ", Correlation matrix: ", **stat_matrix(j, stat_corr)}
+EXTRA_OPS["covariance"] = lambda j: {"label": ", Covariance matrix: ", **stat_matrix(j, stat_cov)}
+EXTRA_OPS["fitcurve"] = stat_fit
+EXTRA_OPS["randomnumbers"] = random_numbers
+
+
+# Compute > Polynomials, as 5.5 (tcidiv, tciroot, tcisort, tcicollect, tcicompanion). Without a
+# variable given (params: [variable], Collect: several), the one variable there is, else the
+# editor asks (5.5 asks too) on the error below.
+
+def need_variable():
+    raise Unsupported("Choose the polynomial variable (there are several)")
+
+
+def poly_request(j):
+    """-> (the expression, the variables given)"""
+    req, ps = (j["expr"], j.get("params", [])) if isinstance(j, dict) else (j, [])
+    e = last_side(apply_definitions(build(req)))
+    vs = [build(p) for p in ps if not (isinstance(p, str) and p[:1] == "'")]
+    vs = [v for x in vs for v in (x if isinstance(x, (list, tuple, sp.Tuple, sp.MatrixBase)) else [x])]
+    return e, vs
+
+
+def poly_variable(e, vs):
+    if vs:
+        return vs[0]
+    free = sorted(e.free_symbols, key=str)
+    if len(free) == 1:
+        return free[0]
+    if not free:
+        raise Unsupported("The expression has no variable")
+    need_variable()
+
+
+def poly_divide(j):
+    """Polynomials > Divide: f/g as q + r/g (long division), in the variable of whichever of f, g has
+    one variable, or the one they share (tcidiv)."""
+    e, vs = poly_request(j)
+    num, den = sp.fraction(sp.together(e.doit()))
+    if vs:
+        x = vs[0]
+    else:
+        a, b = num.free_symbols, den.free_symbols
+        both = a & b
+        x = next(iter(a)) if len(a) == 1 else next(iter(b)) if len(b) == 1 else next(iter(both)) if len(both) == 1 else None
+        if x is None:
+            need_variable()
+    if sp.degree(num, x) < sp.degree(den, x):
+        return {"kind": "value", "latex": tex(e)}
+    q, r = sp.div(num, den, x)
+    q, r = sp.expand(q), sp.expand(r)
+    out = q if r == 0 else sp.Add(*sp.Add.make_args(q), sp.Mul(r, sp.Pow(den, -1), evaluate=False), evaluate=False)
+    return {"kind": "value", "latex": tex(out)}
+
+
+def poly_roots(j):
+    """Polynomials > Roots: every root, as often as it is a root (degree <= 4 exactly, otherwise and
+    for decimal coefficients as decimals), in a column, after ", roots: "."""
+    e, vs = poly_request(j)
+    p = sp.expand(e.doit())
+    x = poly_variable(p, vs)
+    P = sp.Poly(p, x)
+    if P.degree() < 1:
+        return {"kind": "solutions", "label": ", roots: ", "solutions": [tex(sp.EmptySet)]}
+    if P.degree() < 5 and not any(isinstance(c, sp.Float) for c in P.coeffs()):
+        rs = []
+        for r, k in sp.roots(P, multiple=False).items():
+            rs += [r] * k
+        if len(rs) < P.degree():  # not all found exactly
+            rs = P.nroots()
+    else:
+        rs = P.nroots()
+    if x.is_real:  # assume(real): the real roots
+        rs = [r for r in rs if r.is_real]
+    if not rs:
+        return {"kind": "solutions", "label": ", roots: ", "solutions": [tex(sp.EmptySet)]}
+    rs = sorted(rs, key=lambda r: (float(sp.re(sp.N(r))), float(sp.im(sp.N(r)))))
+    shown = tex(rs[0]) if len(rs) == 1 else tex(sp.Matrix(rs))
+    return {"kind": "solutions", "label": ", roots: ", "solutions": [shown]}
+
+
+def poly_sort(j):
+    """Polynomials > Sort: the terms by decreasing degree in the variable (numbers collected, as
+    MuPAD's polylib::sortMonomials; terms with other letters stay apart)."""
+    e, vs = poly_request(j)
+    p = sp.expand(e.doit())
+    xs = vs or [poly_variable(p, vs)]
+    terms = list(sp.Add.make_args(p))
+    terms.sort(key=lambda t: tuple(-sp.degree(t, x) for x in xs))
+    out = ""
+    for t in terms:
+        s = tex(t)
+        out += s if not out else (" " + s if s.startswith("-") else " + " + s)
+    return {"kind": "value", "latex": out}
+
+
+def poly_collect(j):
+    """Polynomials > Collect: the coefficients of each power of the variables asked for (5.5 asks)."""
+    e, vs = poly_request(j)
+    def one(x):
+        x = sp.expand(x.doit()) if isinstance(x, sp.Basic) else x
+        return sp.collect(x, vs or [main_variable(x)])
+    r = last_side(e)
+    r = r.applyfunc(one) if isinstance(r, sp.MatrixBase) else one(r)
+    return {"kind": "value", "latex": tex(r)}
+
+
+def poly_companion(j):
+    """Polynomials > Companion Matrix (linalg::companion): ones below the diagonal, the last column
+    minus the coefficients of the polynomial made monic, after ", Companion matrix: "."""
+    e, vs = poly_request(j)
+    p = sp.expand(e.doit())
+    x = poly_variable(p, vs)
+    P = sp.Poly(p, x)
+    n = P.degree()
+    if n < 1:
+        raise Unsupported("Needs a polynomial of degree 1 or more")
+    c = [sp.simplify(a / P.LC()) for a in reversed(P.all_coeffs())]  # a_0 .. a_n
+    m = sp.zeros(n, n)
+    for i in range(1, n):
+        m[i, i - 1] = 1
+    for i in range(n):
+        m[i, n - 1] = -c[i]
+    return {"kind": "solutions", "label": ", Companion matrix: ", "solutions": [tex(m)]}
+
+
+EXTRA_OPS["divide"] = poly_divide
+EXTRA_OPS["roots"] = poly_roots
+EXTRA_OPS["sort"] = poly_sort
+EXTRA_OPS["collect"] = poly_collect
+EXTRA_OPS["companion"] = poly_companion
+
+# (end of part: statpoly)
+
+
+# -----------------------------------------------------------------------------
+# part: defsmisc
+# -----------------------------------------------------------------------------
+
+# Compute > Interpret, Solve ODE > Laplace and Series, Transforms > Inverse Fourier,
+# Definitions > Define MuPAD Name, and the Compute settings of 5.5 the engine uses
+# (Compute > Settings, Tools > Computation Setup: digits shown, i or j, Bessel names ...).
+
+# 5.5's defaults; the editor sends what is in force with "setoptions" (src/compute.js)
+OPTIONS55 = {"digits": 5, "threshold": 5, "comp_digits": 10, "imaginary_j": False,
+             "bessel_subscripts": False, "ode_series_order": 6}
+
+
+def set_options(j):
+    """setoptions {"digits": 5, "threshold": 5, ...}: the settings the answers follow from now on."""
+    if isinstance(j, dict):
+        for k, v in j.items():
+            if k in OPTIONS55 and isinstance(v, type(OPTIONS55[k])):
+                OPTIONS55[k] = v
+    OPTIONS55["digits"] = max(1, min(OPTIONS55["digits"], OPTIONS55["comp_digits"]))
+    OPTIONS55["threshold"] = max(1, OPTIONS55["threshold"])
+    return {"kind": "text", "text": ""}
+
+
+_shown_float_55 = shown_float
+
+
+def shown_float(v):  # noqa: F811 (the Printer looks it up when it prints)
+    """A decimal with 5.5's Digits Shown in Results (n) and Threshold for Scientific Notation (t):
+    n significant digits, as d.ddd x 10^k from 10^t on and below 0.1."""
+    n, t = OPTIONS55["digits"], OPTIONS55["threshold"]
+    if (n, t) == (5, 5):
+        return _shown_float_55(v)
+    from decimal import Decimal
+    d = Decimal(str(sp.Float(v, max(n, 10))))
+    if not d.is_finite():
+        return str(d)
+    if d == 0:
+        return "0.0"
+    exact = len(d.normalize().as_tuple().digits) <= n
+    k = Decimal(format(d, ".%de" % (n - 1))).adjusted()
+    if -1 <= k < t:
+        s = format(d.normalize(), "f") if exact else format(d, ".%df" % max(n - 1 - k, 0))
+        return s if "." in s else s + ".0"
+    m = format(d, ".%de" % (n - 1)).split("e")[0]
+    if exact:
+        m = m.rstrip("0")
+        m = m + "0" if m.endswith(".") else m
+    return "%s\\times 10^{%d}" % (m, k)
+
+
+def evaluate_numerically_55(e):
+    """Evaluate Numerically with 5.5's Digits Used in Computations (10 by default)."""
+    r = evaluated(e)
+    return r.evalf(OPTIONS55["comp_digits"]) if hasattr(r, "evalf") else r
+
+
+OPERATIONS["numeric"] = evaluate_numerically_55
+
+# i or j for the imaginary unit (5.5: Imaginary Unit, Change from i to j); the Bessel functions as
+# J_v(z) (Use I, J, K and Y with Subscripts) or as BesselJ_v(z)
+_print_55 = Printer55._print
+
+
+def _print_with_j(self, expr, **kwargs):  # (sp.I prints itself, so it is caught here)
+    return "j" if expr is sp.I and OPTIONS55["imaginary_j"] else _print_55(self, expr, **kwargs)
+
+
+Printer55._print = _print_with_j
+
+
+def _bessel_printer(name, own):
+    def p(self, e, exp=None):
+        if OPTIONS55["bessel_subscripts"]:
+            return own(self, e, exp)
+        t = r"\operatorname{%s}_{%s}\left(%s\right)" % (name, self._print(e.args[0]), self._print(e.args[1]))
+        return t if exp is None else r"%s^{%s}" % (t, exp)
+    return p
+
+
+for _f, _n in (("besselj", "BesselJ"), ("bessely", "BesselY"), ("besseli", "BesselI"), ("besselk", "BesselK")):
+    setattr(Printer55, "_print_" + _f, _bessel_printer(_n, getattr(Printer55, "_print_" + _f)))
+
+
+def interpret(j):
+    """Compute > Interpret (Ctrl+?): the formula as it is read, worked out no further, with
+    brackets where they say what goes with what (5.5: 1/3x + 4 = 1/3 x + 4, sin x/2 = sin(x/2))."""
+    if isinstance(j, dict):
+        j = j.get("expr")
+    with sp.evaluate(False):
+        e = build(j)
+    if hasattr(e, "replace"):  # e^x as the exponential function (a function: its argument is clear)
+        e = e.replace(lambda y: isinstance(y, sp.Pow) and y.base == sp.E, lambda y: sp.exp(y.exp, evaluate=False))
+    latex = Printer55({"mat_delim": answer_delim(), "ln_notation": True, "order": "none"}).doprint(e)
+    return {"kind": "value", "latex": brackets(re.sub(r"([A-Za-z])\{\\left\(([^{}()]*?) \\right\)\}", r"\1(\2)", latex))}
+
+
+def inverse_fourier(j):
+    """Transforms > Inverse Fourier: F in w -> the f(x) whose transform it is (5.5: 2 pi Dirac(w),
+    Is Fourier transform of 1), with MuPAD's F f(w) = int f(x) e^(iwx) dx."""
+    e = apply_definitions(build(j))
+    f = last_side(e).doit()
+    free = getattr(f, "free_symbols", set())
+    w = variable("w") if variable("w") in free or not free else main_variable(f)
+    x = variable("t") if w == variable("x") else variable("x")
+    r = Transform(f, w, x, 3).doit()
+    return {"kind": "solutions", "label": ", Is Fourier transform of ", "solutions": [tex(r)]}
+
+
+def ode_problem(j):
+    """["OdeSystem", ["List", equations], ["List", ["List", name, x0, value, order], ...], order, variable]
+    (as src/compute.js sends a column of equations and initial values, see odeRows; order: Series's
+    number of terms or "Nothing"; variable: the independent variable 5.5 asks for, or "Nothing")
+    -> (equations in y(x) with y' as Derivative, the unknown functions, the variable,
+    {(function, order): (x0, value)})."""
+    eq_jsons, inits_in = j[1][1:], [x[1:] for x in j[2][1:]]
+    names = {i[0] for i in inits_in}
+
+    def primed(n):  # the names written with a prime: y in y'
+        if isinstance(n, list) and n:
+            return ({n[1]} if n[0] == "Prime" and isinstance(n[1], str) else set()).union(*[primed(x) for x in n[1:]])
+        return set()
+    found = symbol_names(["List", *eq_jsons]) - names - primed(["List", *eq_jsons]) - set(CONSTANTS)
+    given = j[4] if len(j) > 4 and isinstance(j[4], str) and j[4] != "Nothing" else None
+    form = ode_form(["List", *eq_jsons], names, given or (found.pop() if len(found) == 1 else None))
+    eqs = []
+    for x in form[1:]:
+        e = apply_definitions(build(x))
+        eqs.append(e if isinstance(e, sp.Equality) else sp.Eq(e, 0))
+    ds = [d for e in eqs for d in e.atoms(sp.Derivative)]
+    if not ds:
+        raise Unsupported("The equation needs a derivative, e.g. y'")
+    var = ds[0].variables[0]
+    funcs = sorted({d.expr.func for d in ds if isinstance(d.expr, sp.core.function.AppliedUndef)}, key=str)
+    inits = {}
+    for i in inits_in:
+        name, x0, v, k = (*i, 0) if len(i) == 3 else i
+        inits[(sp.Function(name), int(k))] = (build(x0), build(v))
+    return eqs, funcs, var, inits
+
+
+def ode_parts(eqs, funcs, var):
+    """Each equation as {(f, k): coefficient} for f^(k)(x) and the rest; None when one is not linear."""
+    marks = {}
+    for f in funcs:
+        top = max([d.derivative_count for e in eqs for d in e.atoms(sp.Derivative) if d.expr.func == f] + [0])
+        for k in range(top + 1):
+            marks[(f, k)] = sp.Dummy("%s%d" % (f, k))
+    out = []
+    for e in eqs:
+        x = e.lhs - e.rhs
+        for (f, k), m in sorted(marks.items(), key=lambda t: -t[0][1]):
+            x = x.subs(f(var).diff(var, k) if k else f(var), m)
+        if x.has(sp.Derivative) or any(isinstance(a, sp.core.function.AppliedUndef) and a.func in funcs for a in x.atoms(sp.Function)):
+            return None
+        poly = sp.Poly(sp.expand(x), *marks.values()) if marks else None
+        if poly is None or poly.total_degree() > 1:
+            return None
+        coef = {fk: poly.coeff_monomial(m) for fk, m in marks.items()}
+        rest = poly.coeff_monomial(1)
+        out.append((coef, rest))
+    return out
+
+
+def initial_value(inits, f, k, at):
+    """y^(k)(at) as given, else its name (y(0), y'(0))."""
+    for (g, j), (x0, v) in inits.items():
+        if g == f and j == k and x0 == at:
+            return v
+    return sp.Symbol(str(f) + "'" * k + "(%s)" % at)
+
+
+def solve_ode_laplace(j):
+    """Solve ODE > Laplace (MuPAD's ode::laplace): linear equations with constant coefficients,
+    each term transformed (L y^(k) = s^k Y - s^(k-1) y(0) - ... - y^(k-1)(0)), solved for the
+    transforms and transformed back. Other equations: no solution, as 5.5 gives none."""
+    eqs, funcs, var, inits = ode_problem(j)
+    parts = ode_parts(eqs, funcs, var)
+    if parts is None or any(c.has(var) for coef, _ in parts for c in coef.values()):
+        return {"kind": "solutions", "label": ", Laplace solution is: ", "solutions": []}
+    s = sp.Dummy("s")
+    Y = {f: sp.Dummy("Y" + str(f)) for f in funcs}
+    lin = []
+    for coef, rest in parts:
+        t = sp.laplace_transform(rest, var, s, noconds=True) if rest != 0 else sp.Integer(0)
+        if t.has(sp.LaplaceTransform):
+            return {"kind": "solutions", "label": ", Laplace solution is: ", "solutions": []}
+        for (f, k), c in coef.items():
+            if c != 0:
+                t += c * (s ** k * Y[f] - sum(s ** (k - 1 - i) * initial_value(inits, f, i, 0) for i in range(k)))
+        lin.append(t)
+    sol = sp.solve(lin, list(Y.values()), dict=True)
+    if not sol:
+        return {"kind": "solutions", "label": ", Laplace solution is: ", "solutions": []}
+    found = []
+    for f in funcs:
+        F = sp.apart(sp.cancel(sol[0][Y[f]]), s) if sol[0][Y[f]].is_rational_function(s) else sol[0][Y[f]]
+        y = sp.inverse_laplace_transform(F, s, var).subs(sp.Heaviside(var), 1)
+        if y.has(sp.InverseLaplaceTransform):
+            return {"kind": "solutions", "label": ", Laplace solution is: ", "solutions": []}
+        found.append((f, sp.expand(sp.simplify(y))))
+    if len(found) == 1:
+        shown = sp.FiniteSet(found[0][1])
+    else:
+        shown = sp.FiniteSet(Bracketed(*[sp.Eq(f(var), y, evaluate=False) for f, y in found]))
+    return {"kind": "solutions", "label": ", Laplace solution is: ", "solutions": [tex(shown)]}
+
+
+def solve_ode_series(j):
+    """Solve ODE > Series (MuPAD's ode::series): the Taylor series of the solution about the point
+    of the initial values, to 5.5's Series Order for ODE Solutions (params: [order]; else the
+    setting), each equation solved for its highest derivative. An initial value not given stays a
+    name, y(0). 5.5: y' = y^2 + 4, y(0) = -2, order 5: {-2 + 8t - 16t^2 + 128/3 t^3 - 320/3 t^4 + O(t^5)}."""
+    eqs, funcs, var, inits = ode_problem(j)
+    order = int(build(j[3])) if len(j) > 3 and j[3] != "Nothing" else OPTIONS55["ode_series_order"]
+    if order < 1:
+        raise Unsupported("The order of series must be a positive whole number")
+    at = {x0 for x0, _ in inits.values()}
+    if len(at) > 1:
+        raise Unsupported("The initial values must be at the same point")
+    x0 = at.pop() if at else sp.Integer(0)
+    high = {}
+    for e in eqs:
+        ds = [d for d in e.atoms(sp.Derivative) if d.expr.func in funcs]
+        top = max(d.derivative_count for d in ds)
+        d = [d for d in ds if d.derivative_count == top][0]
+        if d.expr.func in high:
+            raise Unsupported("Each unknown function needs one equation")
+        sol = sp.solve(e, d)
+        if len(sol) != 1:
+            raise Unsupported("Cannot solve " + str(d))
+        high[d.expr.func] = (top, sol[0])
+    # the state: f^(k)(x) for k below each function's order, as symbols
+    state = {(f, k): sp.Dummy("%s%d" % (f, k)) for f, (n, _) in high.items() for k in range(n)}
+
+    def as_state(x):
+        for (f, k), m in sorted(state.items(), key=lambda t: -t[0][1]):
+            x = x.subs(f(var).diff(var, k) if k else f(var), m)
+        return x
+    rhs = {f: as_state(g) for f, (n, g) in high.items()}
+
+    def total(x):  # d/dx along a solution
+        r = sp.diff(x, var)
+        for (f, k), m in state.items():
+            nxt = state.get((f, k + 1), rhs[f])
+            r += sp.diff(x, m) * nxt
+        return r
+    start = {m: initial_value(inits, f, k, x0) for (f, k), m in state.items()}
+    out = []
+    for f in sorted(high, key=str):
+        n = high[f][0]
+        coeffs, cur = [], None
+        for m in range(order):
+            if m < n:
+                c = start[state[(f, m)]]
+            else:
+                cur = rhs[f] if cur is None else total(cur)
+                c = sp.simplify(cur.subs(var, x0).subs(start))
+            coeffs.append(sp.simplify(c / sp.factorial(m)))
+        big_o = sp.Order((var - x0) ** order, (var, x0))
+        out.append((f, PowerSeries(var - x0, big_o, *coeffs)))
+    shown = sp.FiniteSet(out[0][1]) if len(out) == 1 else sp.FiniteSet(Bracketed(*[sp.Eq(f(var), y, evaluate=False) for f, y in out]))
+    return {"kind": "solutions", "label": ", Series solution is: ", "solutions": [tex(shown)]}
+
+
+EXTRA_OPS["interpret"] = interpret
+EXTRA_OPS["inversefourier"] = inverse_fourier
+EXTRA_OPS["odelaplace"] = solve_ode_laplace
+EXTRA_OPS["odeseries"] = solve_ode_series
+EXTRA_OPS["setoptions"] = set_options
+
+# Definitions > Define MuPAD Name: a name of the document stands for a MuPAD function (5.5's pages:
+# n(x) <-> nextprime(x), D(x) <-> numlib::divisors(x), S(x, i, j) <-> linalg::swapRow(x, i, j)) or a
+# MuPAD value (PI). Here the MuPAD name is looked up among the MuPAD functions opensw knows, else
+# taken as SymPy's function of that name.
+MUPAD_SYMPY = {
+    "isprime": sp.isprime, "ithprime": sp.prime, "prevprime": sp.prevprime, "ifactor": sp.factorint,
+    "fibonacci": sp.fibonacci, "binomial": sp.binomial, "gcd": sp.gcd, "igcd": sp.igcd, "lcm": sp.lcm, "ilcm": sp.ilcm,
+    "phi": sp.totient, "mobius": sp.mobius, "numdivisors": sp.divisor_count, "sumdivisors": lambda n: sp.divisor_sigma(n, 1),
+    "abs": sp.Abs, "sign": sp.sign, "floor": sp.floor, "ceil": sp.ceiling, "round": lambda x: sp.Integer(round(x)),
+    "fact": sp.factorial, "dfact": sp.factorial2, "gamma": sp.gamma, "beta": sp.beta, "zeta": sp.zeta, "erf": sp.erf,
+    "max": sp.Max, "min": sp.Min, "sqrt": sp.sqrt, "exp": sp.exp, "ln": sp.log, "sin": sp.sin, "cos": sp.cos, "tan": sp.tan,
+    "det": lambda m: det(as_matrix(m)), "transpose": lambda m: as_matrix(m).T, "rank": lambda m: as_matrix(m).rank(),
+    "nops": lambda x: sp.Integer(len(x.args) if hasattr(x, "args") else 1),
+}
+MUPAD_VALUES = {"PI": sp.pi, "E": sp.E, "I": sp.I, "EULER": sp.EulerGamma, "CATALAN": sp.Catalan, "infinity": sp.oo}
+
+
+def mupad_target(name):
+    key = name.split("::")[-1]
+    if key in MUPAD_COMMANDS:
+        return MUPAD_COMMANDS[key]
+    if key in MUPAD_SYMPY:
+        return MUPAD_SYMPY[key]
+    f = getattr(sp, key, None)
+    # SymPy's own mathematical functions only (not those that read text: sympify, parse_expr ...)
+    if isinstance(f, type) and issubclass(f, sp.Function):
+        return f
+    if callable(f) and getattr(f, "__module__", "").startswith(("sympy.ntheory", "sympy.functions", "sympy.polys.polytools")):
+        return f
+    raise Unsupported("Not a MuPAD name opensw knows: " + name)
+
+
+def map_name(lhs, rhs):
+    """define with ["Equal", ["n", "x"], ["MapName", "'nextprime'"]] (a procedure) or
+    ["Equal", "c", ["MapName", "'PI'"]] (a value)."""
+    target = rhs[1].strip("'") if len(rhs) > 1 and isinstance(rhs[1], str) else ""
+    if isinstance(lhs, str):
+        if target not in MUPAD_VALUES:
+            raise Unsupported("Not a MuPAD value opensw knows: " + target)
+        s = variable(lhs)
+        DEFINITIONS[s.name] = (s, MUPAD_VALUES[target])
+        shown = "%s \\leftrightarrow \\text{%s}" % (tex(s), target)
+        return {"kind": "value", "latex": shown}
+    if not (isinstance(lhs, list) and lhs and isinstance(lhs[0], str) and all(isinstance(a, str) for a in lhs[1:])):
+        raise Unsupported("Write the name as n(x) or n(x, y)")
+    name, args = lhs[0], [variable(a) for a in lhs[1:]]
+    fn = mupad_target(target)
+
+    def ev(cls, *a):
+        if len(a) == len(args) and all(getattr(x, "is_number", False) or is_matrix(x) for x in a):
+            r = fn(*a)
+            return sp.sympify(r) if isinstance(r, (int, float, bool)) else (sp.Dict(r) if isinstance(r, dict) else r)
+        return None
+    cls = type(name, (sp.Function,), {"eval": classmethod(ev)})
+    DEFINITIONS[name] = (sp.Function(name), cls)
+    shown = "%s \\leftrightarrow \\text{%s}(%s)" % (tex(sp.Function(name)(*args)), target, ", ".join(str(a) for a in args))
+    NUMERIC_SHOWN[name] = [shown]
+    return {"kind": "value", "latex": shown}
+
+
+_compute_55 = compute
+
+
+def compute(op, mathjson_text):  # noqa: F811 (Define MuPAD Name comes as a definition, kept with the others)
+    if op == "define":
+        try:
+            j = json.loads(mathjson_text)
+        except ValueError:
+            j = None
+        if isinstance(j, list) and j[:1] == ["Equal"] and len(j) == 3 and isinstance(j[2], list) and j[2][:1] == ["MapName"]:
+            try:
+                return json.dumps(map_name(j[1], j[2]))
+            except Unsupported as x:
+                return json.dumps({"error": f"Cannot compute this yet: {x}"})
+            except Exception as x:
+                return json.dumps({"error": f"{type(x).__name__}: {x}"})
+    return _compute_55(op, mathjson_text)
+
+# (end of part: defsmisc)
+
+
+# -----------------------------------------------------------------------------
+# part: anim
+# -----------------------------------------------------------------------------
+
+# (end of part: anim)
+
+
+# -----------------------------------------------------------------------------
+# part: core55
+# -----------------------------------------------------------------------------
+
+# Compute > Settings > Engine Setup, Solve Options (MuPAD's solve(.., MaxDegree = n, IgnoreSpecialCases),
+# swfcns.mu tcisolve2; 5.5's help dm3-3.tex, dm3-5.tex, dm7-3.tex):
+# - Maximum Degree (3): a polynomial factor of higher degree is not solved in radicals; its roots are
+#   rho_1 .. "where rho_1 is a root of X^4 + X - 1, X" (with 1, quadratics too).
+# - Ignore Special Cases (off): an equation whose coefficients have other letters is solved case by
+#   case, as MuPAD: {-(y + cos x)/(x - 1)} if x != 1, C if x = 1 and y = -cos 1, empty otherwise.
+OPTIONS55.update({"max_degree": 3, "ignore_special": False})
+ROOT_COUNT = [0]
+
+
+class RootOf55(sp.Basic):
+    """rho_k: a root of a polynomial (args: k, the polynomial in X_k, X_k)."""
+
+    def _latex(self, printer):
+        return r"\rho _{%s}" % printer._print(self.args[0])
+
+
+def _cases_tex(cases):
+    rows = [r"%s & \text{if} & %s" % (s, c) for s, c in cases]
+    return r"\left\{ \begin{array}{ccc} %s \end{array}\right." % r" \\ ".join(rows)
+
+
+def _solved(c):
+    """c = 0 solved for one letter when that is simple: (letter, value), else None"""
+    c = sp.factor(c)
+    for s in sorted(c.free_symbols, key=str):
+        try:
+            sol = sp.solve(c, s)
+        except Exception:  # noqa: BLE001
+            continue
+        if len(sol) == 1 and s not in sol[0].free_symbols:
+            return s, sol[0]
+    return None
+
+
+def _condition_tex(c, zero):
+    """c = 0 (zero) or c != 0 as MuPAD writes it: solved for a letter when that is simple (x = 1)."""
+    v = _solved(c)
+    if v:
+        return tex(sp.Eq(*v) if zero else sp.Ne(*v))
+    return tex(sp.Eq(sp.factor(c), 0) if zero else sp.Ne(sp.factor(c), 0))
+
+
+def _poly_cases(p, x, conds, out):
+    """the cases of p(x) = 0 with letters in its coefficients: [(solution set as LaTeX, [conditions])]
+    (a case's condition put into the rest: x = 1 makes y + cos x the condition y = -cos 1)"""
+    coeffs = p.all_coeffs()
+    while coeffs and coeffs[0] == 0:
+        coeffs = coeffs[1:]
+    if not coeffs or len(coeffs) == 1:
+        c = coeffs[0] if coeffs else sp.Integer(0)
+        if c == 0 or (c.free_symbols and sp.simplify(c) == 0):
+            out.append((r"\mathbb{C}", conds))
+        elif not c.free_symbols:
+            out.append((r"\emptyset", conds))
+        else:
+            out.append((r"\mathbb{C}", conds + [_condition_tex(c, True)]))
+            out.append((r"\emptyset", conds + [_condition_tex(c, False)]))
+        return
+    lead = coeffs[0]
+    q = sp.Poly(coeffs, x)
+    if lead.free_symbols:
+        found = list(sp.solve(q.as_expr(), x))
+        out.append((r"\left\{ %s\right\}" % ", ".join(tex(r) for r in found), conds + [_condition_tex(lead, False)]))
+        v = _solved(lead)
+        rest = [sp.simplify(c.subs(*v)) for c in coeffs[1:]] if v else coeffs[1:]
+        _poly_cases(sp.Poly(rest, x), x, conds + [_condition_tex(lead, True)], out)
+        return
+    found = list(sp.solve(q.as_expr(), x))
+    out.append((r"\left\{ %s\right\}" % ", ".join(tex(r) for r in found) if found else r"\emptyset", conds))
+
+
+def solve_options55(e, unknowns=None, principal=False):
+    """Solve > Exact of one polynomial equation in one unknown, with the Solve Options; None: as before."""
+    if isinstance(e, (list, sp.MatrixBase)) or not isinstance(e, sp.Equality) or e.has(sp.Float):
+        return None
+    f = sp.expand(e.lhs - e.rhs)
+    free = sorted(f.free_symbols - UNIT_SYMBOLS, key=str)
+    if unknowns and len(unknowns) != 1:
+        return None
+    x = unknowns[0] if unknowns else (free[0] if free else None)
+    if x is None or not f.is_polynomial(x) or f.has(sp.Derivative):
+        return None
+    p = sp.Poly(f, x)
+    if p.degree() < 1:
+        return None
+    params = set().union(*[c.free_symbols for c in p.all_coeffs()])
+    if params and not OPTIONS55["ignore_special"] and not principal:
+        out = []
+        _poly_cases(p, x, [], out)
+        if len(out) > 1:  # a real case split; one case is the usual answer
+            return {"kind": "solutions", "solutions": [_cases_tex([(s, r" \wedge ".join(c)) for s, c in out])]}
+        return None
+    if params:
+        return None
+    # Maximum Degree: the factors over the rationals; one of higher degree kept as a root of it
+    _, factors = sp.factor_list(p.as_expr(), x)
+    if all(sp.degree(g, x) <= OPTIONS55["max_degree"] for g, _ in factors):
+        return None
+    explicit, implicit = [], []
+    ROOT_COUNT[0] = 0  # rho_1, X_1 in each answer
+    for g, _ in factors:
+        d = sp.degree(g, x)
+        if d <= OPTIONS55["max_degree"]:
+            explicit += sp.solve(g, x)
+        else:
+            ROOT_COUNT[0] += 1
+            k = ROOT_COUNT[0]
+            X = sp.Symbol("X_%d" % k)
+            implicit.append((k, g.subs(x, X), X))
+    explicit.sort(key=lambda r: [float(t) for t in sp.N(r).as_real_imag()])
+    rhos = [RootOf55(sp.Integer(k), g, X) for k, g, X in implicit]
+    main = " \\cup ".join(([r"\left\{ %s\right\}" % ", ".join(tex(r) for r in explicit)] if explicit else []) + [tex(r) for r in rhos])
+    where = "; ".join(r"%s \text{ is a root of } %s, %s" % (tex(r), tex(g), tex(X)) for r, (k, g, X) in zip(rhos, implicit))
+    return {"kind": "solutions", "solutions": [main + r" \text{ where } " + where]}
+
+
+_solve_answer_before55 = solve_answer
+
+
+def solve_answer(e, unknowns=None, principal=False):  # noqa: F811 (compute() looks it up when it solves)
+    return solve_options55(e, unknowns, principal) or _solve_answer_before55(e, unknowns, principal)
+
+# (end of part: core55)

@@ -11,7 +11,7 @@ const b = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium-124
 const page = await b.newPage({ viewport: { width: 1024, height: 900 } });
 const errs = [];
 page.on('pageerror', (e) => errs.push(e.message));
-await page.goto('http://localhost:4173/?lang=zh-TW'); await page.waitForTimeout(600);
+await page.goto(`http://localhost:${process.env.OPENSW_PORT || 4173}/?lang=zh-TW`); await page.waitForTimeout(600);
 let fails = 0;
 const check = (ok, what, detail) => { console.log(ok ? 'ok  ' : 'FAIL', what, ok || detail === undefined ? '' : JSON.stringify(detail).slice(0, 300)); if (!ok) fails++; };
 const open = async (file) => {

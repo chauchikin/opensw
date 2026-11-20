@@ -4,7 +4,7 @@ import fs from 'node:fs';
 const src = fs.readFileSync(new URL('../src/api.js', import.meta.url), 'utf8');
 const block = src.slice(src.indexOf('export const COMMANDS = {'), src.indexOf('};', src.indexOf('export const COMMANDS = {')) + 2);
 const COMMANDS = new Function(block.replace('export const COMMANDS =', 'return'))();
-const TYPES = { string: 'string', number: 'integer', boolean: 'boolean' };
+const TYPES = { string: 'string', number: 'integer', boolean: 'boolean', object: 'object' };
 const tools = Object.entries(COMMANDS).filter(([name]) => name !== 'help').map(([name, [desc, params]]) => {
   const properties = {};
   const required = [];

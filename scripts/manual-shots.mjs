@@ -104,13 +104,13 @@ if (want('dialogs')) {
   await inMath(0); await page.keyboard.press('Control+F5'); await page.waitForTimeout(400);
   await shotEl('props', '#props .panel', 6); await page.click('#props-cancel');
   await inMath(0); await page.keyboard.press('End');
-  await menu('Insert'); await click('Matrix…'); await page.waitForTimeout(300);
+  await menu('Insert'); await click('Matrix...'); await page.waitForTimeout(300);
   await shotEl('matrix', '#matrix .panel', 6); await page.click('#matrix-cancel');
-  for (const [name, item] of [['user-setup', 'User setup…'], ['engine', 'Computation engine…']]) {
+  for (const [name, item] of [['user-setup', 'User Setup...'], ['engine', 'Engine Setup...']]) {
     await menu('Tools'); await click(item); await page.waitForTimeout(500);
     await shotEl(name, '#dialog .panel', 6); await closeDialog();
   }
-  await menu('Tag'); await click('Appearance…'); await page.waitForTimeout(400);
+  await menu('Tag'); await click('Appearance...'); await page.waitForTimeout(400);
   await shotEl('tag-appearance', '#dialog .panel', 6); await closeDialog();
 }
 // 5. View > Changes and LaTeX source, after an edit

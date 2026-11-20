@@ -16,7 +16,7 @@ check(formula55('2\\FORMULA{a+b}{a+b}{evaluate}') === '2%\n%TCIMACRO{\\FORMULA{a
 const b = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium-1243/chrome-linux64/chrome' });
 const page = await b.newPage({ viewport: { width: 1200, height: 900 } });
 const errs = []; page.on('pageerror', (e) => errs.push(e.message));
-await page.goto('http://localhost:4173/?lang=zh-TW'); await page.waitForTimeout(600);
+await page.goto(`http://localhost:${process.env.OPENSW_PORT || 4173}/?lang=zh-TW`); await page.waitForTimeout(600);
 const menu = async (top, ...items) => {
   await page.click(`.menu-top:has-text("${top}")`);
   for (const it of items) await page.locator(`.menu-list button:has(> span:text-is("${it}"))`).filter({ visible: true }).first().click();

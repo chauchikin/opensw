@@ -14,7 +14,7 @@ const b = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium-124
 for (const lang of ['en', 'zh-TW']) {
   const page = await b.newPage({ viewport: { width: 1200, height: 900 } });
   const errs = []; page.on('pageerror', (e) => errs.push(e.message));
-  await page.goto(`http://localhost:4173/?lang=${lang}`); await page.waitForTimeout(700);
+  await page.goto(`http://localhost:${process.env.OPENSW_PORT || 4173}/?lang=${lang}`); await page.waitForTimeout(700);
   const call = (cmd, args) => page.evaluate(([c, a]) => window.sw.call(c, a), [cmd, args]);
   // the words as shown (English: the text itself)
   const words = lang === 'en' ? null : JSON.parse(fs.readFileSync(`src/locales/${lang}.json`, 'utf8'));

@@ -6,6 +6,7 @@
 //!   opensw-cli help open             one command's arguments
 //!   opensw-cli open --path C:\a.tex  a command; --name value for each argument
 //!   opensw-cli compute --json "{...}" arguments as one JSON object
+//!   opensw-cli compute --json-file a.json   the same, read from a file (UTF-8): nothing to quote
 //!
 //! Prints the result (text as it is, anything else as JSON); errors go to stderr.
 //! Exit code: 0 done, 1 the command failed, 2 wrong use.
@@ -70,7 +71,7 @@ fn help(tools: &[Value], one: Option<&Value>) -> String {
         s += &format!("\n\n{}\n", t["description"].as_str().unwrap_or(""));
         return s;
     }
-    s += "opensw-cli <command> [--argument value ...]   (or --json \"{...}\")\n\nCommands:\n";
+    s += "opensw-cli <command> [--argument value ...]   (or --json \"{...}\", or --json-file file.json)\n\nCommands:\n";
     for t in tools {
         let name = t["name"].as_str().unwrap_or("").trim_start_matches(mcp::PREFIX);
         let first = t["description"].as_str().unwrap_or("").split(". ").next().unwrap_or("");
@@ -94,6 +95,13 @@ fn parse(tools: &[Value], cmd: &str, rest: &[String]) -> Result<Value, String> {
             match serde_json::from_str::<Value>(val) {
                 Ok(Value::Object(m)) => out.extend(m),
                 _ => return Err("--json needs a JSON object".to_string()),
+            }
+        } else if key == "json-file" {
+            // a formula has backslashes, quotes and braces, which every shell treats its own way
+            let text = std::fs::read_to_string(val).map_err(|e| format!("Cannot read {val}: {e}"))?;
+            match serde_json::from_str::<Value>(text.trim_start_matches('\u{feff}')) {
+                Ok(Value::Object(m)) => out.extend(m),
+                _ => return Err(format!("{val} does not hold a JSON object")),
             }
         } else {
             let ty = props.get(key).ok_or_else(|| format!("{cmd} has no argument --{key}; opensw-cli help {cmd}"))?["type"].as_str().unwrap_or("");
@@ -147,6 +155,18 @@ mod tests {
     fn json_should_give_all_arguments() {
         let v = parse(&tools(), "compute", &args(&["--json", r#"{"op":"evaluate","latex":"1+1"}"#])).unwrap();
         assert_eq!(v["op"], "evaluate");
+    }
+
+    #[test]
+    fn json_file_should_give_all_arguments_from_a_file_with_or_without_a_byte_order_mark() {
+        let file = std::env::temp_dir().join(format!("opensw-cli-test-{}.json", std::process::id()));
+        for mark in ["", "\u{feff}"] {
+            std::fs::write(&file, format!(r#"{mark}{{"op":"simplify","latex":"\\frac{{x^{{2}}}}{{x}}"}}"#)).unwrap();
+            let v = parse(&tools(), "compute", &args(&["--json-file", file.to_str().unwrap()])).unwrap();
+            assert_eq!(v, json!({ "op": "simplify", "latex": "\\frac{x^{2}}{x}" }));
+        }
+        std::fs::remove_file(&file).unwrap();
+        assert!(parse(&tools(), "compute", &args(&["--json-file", file.to_str().unwrap()])).is_err());
     }
 
     #[test]

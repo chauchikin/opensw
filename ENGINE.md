@@ -10,6 +10,8 @@ opensw 的計算選單、畫圖、考卷產生器都經過同一個接口。想�
 2. 依序問引擎：先問 工具 > 計算引擎 選的那個（桌面版，`engine/engines.json` 裡的引擎），再問 SymPy。
 3. 引擎不會的指令回 `{"fallback": true}`，就換下一個問。SymPy 是內建的、每個指令都會，所以排最後。
 
+SymPy 有兩種跑法，用的是同一個 `engine/opensw_compute.py`：桌面版用隨程式附的 Python 跑（快），瀏覽器版在 Pyodide 裡跑。見下面「SymPy 怎麼跑」。
+
 每個引擎只要做一件事：
 
 ```
@@ -59,7 +61,7 @@ LaTeX 照 Scientific Word 5.5 的樣子寫：矩陣用 `pmatrix`（或 `\left(\b
 | 欄位 | 意思 |
 |---|---|
 | `id`、`name` | 代號和顯示的名字 |
-| `program` | 去哪裡找程式。`*` 代表任何資料夾名稱，找到好幾個時用版本最新的（看路徑裡的數字）；只寫名字（沒有 `/` 或 `\`）就在 PATH 裡找 |
+| `program` | 去哪裡找程式。`*` 代表任何資料夾名稱，找到好幾個時用版本最新的（看路徑裡的數字）；只寫名字（沒有 `/` 或 `\`）就在 PATH 裡找；開頭寫 `{engine}` 代表 `engine/` 資料夾（隨 opensw 附的程式，例如 `{engine}/python/python.exe`），沒有寫名字的引擎不會去 PATH 找 |
 | `example` | 計算引擎對話框裡的路徑例子 |
 | `args` | 啟動參數 |
 | `adapter` | 轉接檔（`engine/` 裡的檔名） |
@@ -73,6 +75,22 @@ LaTeX 照 Scientific Word 5.5 的樣子寫：矩陣用 `pmatrix`（或 `\left(\b
 3. 驗收：`node scripts/engine-check.mjs <id> [程式路徑]`。它照桌面版的方式啟動引擎，跑 `test/fixtures/engine/cases.json` 的題目並核對答案。題目由 `scripts/engine-cases.mjs` 產生，新增題目改那個檔。
 
 安裝好的 opensw 裡，`engine/` 資料夾在程式資料夾裡；改轉接檔或 `engines.json` 不用重新建置，重開 opensw 就生效。
+
+## SymPy 怎麼跑
+
+桌面版（Windows）：隨程式附一份 Python（`engine/python/`，由 `scripts/bundle-python.mjs` 組出來：python.org 的 embeddable 版加上 SymPy、mpmath、giacpy、python-flint），照上面的方式一直開著，跑 `engine/opensw_stdio.py`。它是 `engines.json` 裡的 `python` 這一筆，只在 `engine/` 資料夾裡找，不會用電腦上另外裝的 Python（SymPy 版本不同答案會不同）；要用別的 Python，在 工具 > 計算引擎 填它的位置。這份 Python 啟動不了（不在、壞了）時，改用 Pyodide 裡的 SymPy，並告訴使用者一次。用 Mathematica 時也一樣：Mathematica 不做的指令先交給這份 Python，再交給 Pyodide。
+
+這份 Python 裡有 `python-flint`（FLINT）：SymPy 發現它就自己拿來做整數、有理數和多項式的底層運算（`sympy/external/gmpy.py`；python-flint 的版本要是那一版 SymPy 認得的），大的多項式因式分解快很多。答案和沒有它時一樣（Pyodide 裡沒有它），換 python-flint 或 SymPy 的版本時要再驗一次：兩邊各跑一次下面的驗收，逐題比答案。
+
+驗收：`node scripts/engine-check.mjs sympy [python 的位置]`。
+
+## Giac（SymPy 由電腦上的 Python 跑的時候）
+
+`engine/opensw_compute.py` 由電腦上的 Python 跑（`engine/opensw_stdio.py`），而且那個 Python 裝了 `giacpy` 時，重的計算先給 Giac 試：積分（Evaluate、Integrate）、冪級數、4 列以上含字母的行列式。`engine/opensw_giac.py` 把式子（不送定義和假設）交給另一個行程裡的 Giac（`engine/opensw_giac_worker.py`），用數值驗算答案，再交回 `opensw_compute.py`，答案的寫法照舊由它決定。式子裡有 Giac 的答案讀不回來的東西、答案驗算不過、2 秒內沒有答案、Giac 當掉：都由 SymPy 算，和沒有 `giacpy` 時一樣。環境變數 `OPENSW_GIAC=0` 可以關掉 Giac。測試：`node test/engine_giac.mjs`（`OPENSW_PYTHON`：要用的 Python）。
+
+## FriCAS（Giac 沒算出來的不定積分，在 SymPy 之前）
+
+Giac 沒算出來的不定積分（Evaluate、Integrate），先問 FriCAS，再輪到 SymPy：順序是 Giac、FriCAS、SymPy。FriCAS 的積分程式找得到更多（函數開根號、根號裡還有根號、指數和對數混在一起的式子），有些 SymPy 用 gamma 函數、超幾何函數寫的答案它用初等函數寫，算不出來時也多半馬上說（SymPy 要幾秒到幾十秒才放棄）。定積分和其他運算不問它。`engine/opensw_fricas.py` 在 `engine/fricas/` 找 FriCAS（桌面版隨程式附，由 `scripts/bundle-fricas.mjs` 組出來：FriCAS 官方的 Windows 版，拿掉原始碼、說明和原生程式庫），把式子（不送定義和假設）交給另一個行程裡的 FriCAS，把答案微分回去用數值驗算，再交回 `opensw_compute.py`，答案的寫法照舊由它決定。式子裡有不在清單上的東西、答案裡有不認得的名字（`rootOf`、橢圓積分……）、答案驗算不過、FriCAS 當掉：由 SymPy 算，和沒有 FriCAS 時一樣。FriCAS 5 秒內沒有答案就停掉它，所以它卡住時 SymPy 最多晚 5 秒開始算。環境變數 `OPENSW_FRICAS=0` 可以關掉 FriCAS，`OPENSW_FRICAS_DIR` 指到另一份 FriCAS（裡面有 `bin/FRICASsys` 的資料夾）。測試：`node test/engine_fricas.mjs`（`OPENSW_PYTHON`：要用的 Python）。
 
 ## 瀏覽器版
 
@@ -99,7 +117,7 @@ LaTeX 照 Scientific Word 5.5 的樣子寫：矩陣用 `pmatrix`（或 `\left(\b
 | `rewrite_exp` | 改寫 > 成指數 | F | value | ✓ | ✓ |
 | `rewrite_sincos` | 改寫 > 成正弦餘弦 | F | value | ✓ | ✓ |
 | `partialfractions` | 多項式 > 部分分式（F+p：變數） | F | value | ✓ | ✓ |
-| `collect` | 多項式 > 依變數整理 | F | value | ✓ | ✓ |
+| `collect` | 多項式 > 合併同類項（參數：變數） | F+p | value | ✓ | ✓ |
 | `combine` | 合併 | F | value | ✓ | ✓ |
 | `differentiate` | 微積分 > 微分（F+p：變數、次數） | F | value | ✓ | ✓ |
 | `integrate` | 微積分 > 不定積分（F+p：變數） | F | value | ✓ | ✓ |
@@ -136,13 +154,13 @@ LaTeX 照 Scientific Word 5.5 的樣子寫：矩陣用 `pmatrix`（或 `\left(\b
 | `feasible` | 單形法 > 可行性 | L | text | ✓ | ✓ |
 | `standardize` | 單形法 > 標準化 | L | solutions | ✓ | ✓ |
 | `dual` | 單形法 > 對偶 | L | solutions | ✓ | ✓ |
-| `mean` | 統計 > 平均數 | F | value | ✓ | ✓ |
-| `median` | 統計 > 中位數 | F | value | ✓ | ✓ |
-| `variance` | 統計 > 變異數 | F | value | ✓ | ✓ |
-| `stddev` | 統計 > 標準差 | F | value | ✓ | ✓ |
-| `laplace` | 轉換 > 拉氏轉換 | F | value | ✓ | ✓ |
-| `inverselaplace` | 轉換 > 反拉氏轉換 | F | value | ✓ | ✓ |
-| `fourier` | 轉換 > 傅立葉轉換 | F | value | ✓ | ✓ |
+| `mean` | 統計 > 平均數（矩陣：每一行一個） | F | solutions | ✓ | ✓ |
+| `median` | 統計 > 中位數（兩個中間數取小的，如 5.5） | F | solutions | ✓ | ✓ |
+| `variance` | 統計 > 變異數（樣本，n − 1） | F | solutions | ✓ | ✓ |
+| `stddev` | 統計 > 標準差 | F | solutions | ✓ | ✓ |
+| `laplace` | 轉換 > 拉氏轉換（label：「, Laplace transform is: 」） | F | solutions | ✓ | ✓ |
+| `inverselaplace` | 轉換 > 反拉氏轉換（label：「, Is Laplace transform of 」） | F | solutions | ✓ | ✓ |
+| `fourier` | 轉換 > 傅立葉轉換（MuPAD 的慣例 ∫f(x)e^{iwx}dx，x 到 w；label：「, Fourier transform is: 」） | F | solutions | ✓ | ✓ |
 | `define` | 定義 > 新定義（x = 3、f(x) = x^2） | F | value | ✓ | ✓ |
 | `showdefs` | 定義 > 顯示定義 | F | solutions | ✓ | ✓ |
 | `cleardefs` | 定義 > 清除定義 | F | solutions | ✓ | ✓ |
@@ -152,4 +170,74 @@ LaTeX 照 Scientific Word 5.5 的樣子寫：矩陣用 `pmatrix`（或 `\left(\b
 | `plotn` | 畫圖：多個公式在格點上的值（等高線、向量場、複數） | {exprs, vars, ranges, ns, grad, complex} | values | ✓ | ✓ |
 | `odeplot` | 畫圖 2D > 常微分方程（y' = f(x, y) 數值解） | {eqs, inits, a, b, n} | ode | ✓ | ✓ |
 | `exam` | 工具 > 考卷產生器：一個版本的值 | {formulas, parts, ...} | exam | ✓ | ✓ |
+| `cholesky` | 矩陣 > Cholesky 分解（回 G G^T） | F | value | ✓ | ✓ |
+| `plu` | 矩陣 > PLU 分解（回 P L U） | F | value | ✓ | ✓ |
+| `qr` | 矩陣 > QR 分解（回 Q R，Q 是方陣） | F | value | ✓ | ✓ |
+| `svd` | 矩陣 > SVD（回 U D V，小數） | F | value | ✓ | ✓ |
+| `singularvalues` | 矩陣 > 奇異值（小數） | F | solutions | ✓ | ✓ |
+| `jordan` | 矩陣 > Jordan 標準形（回 P J P^{-1}，J 的 1 在對角線下） | F | value | ✓ | ✓ |
+| `hermite` | 矩陣 > Hermite 標準形（整數矩陣） | F | solutions | ✓ | ✓ |
+| `smith` | 矩陣 > Smith 標準形（整數或一個變數的多項式） | F | solutions | ✓ | ✓ |
+| `rationalcanonical` | 矩陣 > 有理標準形（回 P B P^{-1}） | F | value | ✓ | ✓ |
+| `ffgauss` | 矩陣 > 無分數高斯消去 | F | solutions | ✓ | ✓ |
+| `gauss` | 矩陣 > 高斯消去 | F | solutions | ✓ | ✓ |
+| `minpoly` | 矩陣 > 最小多項式（F+p：多項式變數，矩陣裡有 X 時要給） | F | solutions | ✓ | ✓ |
+| `eigenvectors` | 矩陣 > 特徵向量（每個特徵值配它的特徵向量） | F | solutions | ✓ | ✓ |
+| `colbasis` | 矩陣 > 行空間基底（標籤 ", column basis: "） | F | solutions | ✓ | ✓ |
+| `rowbasis` | 矩陣 > 列空間基底 | F | solutions | ✓ | ✓ |
+| `concat` | 矩陣 > 左右合併（公式裡相鄰的兩個以上矩陣，列數相同） | F | solutions | ✓ | ✓ |
+| `stack` | 矩陣 > 上下合併（相鄰的矩陣，行數相同） | F | solutions | ✓ | ✓ |
+| `reshape` | 矩陣 > 改變形狀（參數：行數；一串數或矩陣，由左到右、由上到下排） | F+p | solutions | ✓ | ✓ |
+| `fillmatrix` | 矩陣 > 填入矩陣（參數：'zero'|'identity'|'random'|'jordan'|'function'|'band'、列數、行數、項目；回答是沒有括號的新矩陣） | F+p | value | ✓ | ✓ |
+| `randommatrix` | 矩陣 > 隨機矩陣（參數：'unrestricted'|'symmetric'|'antisymmetric'|'triangular'、列數、行數、最小、最大） | F+p | value | ✓ | ✓ |
+| `condition` | 矩陣 > 條件數（數值） | F | solutions | ✓ | ✓ |
+| `definiteness` | 矩陣 > 正定性檢查（" is positive definite"／" is indefinite"） | F | text | ✓ | ✓ |
+| `norm` | 矩陣 > 範數（2-範數；向量時是精確長度） | F | solutions | ✓ | ✓ |
+| `orthogonal` | 矩陣 > 正交性檢查（true／false） | F | solutions | ✓ | ✓ |
+| `permanent` | 矩陣 > 積和式 | F | solutions | ✓ | ✓ |
+| `spectralradius` | 矩陣 > 譜半徑（數值） | F | solutions | ✓ | ✓ |
+| `htranspose` | 矩陣 > 共軛轉置 | F | solutions | ✓ | ✓ |
+| `rewrite_rational` | 改寫 > 有理數（小數改成分數） | F | value | ✓ | ✓ |
+| `rewrite_float` | 改寫 > 浮點數 | F | value | ✓ | ✓ |
+| `rewrite_factorial` | 改寫 > 階乘 | F | value | ✓ | ✓ |
+| `rewrite_gamma` | 改寫 > Gamma 函數 | F | value | ✓ | ✓ |
+| `rewrite_log` | 改寫 > 對數 | F | value | ✓ | ✓ |
+| `rewrite_sinhcosh` | 改寫 > 雙曲正弦和雙曲餘弦 | F | value | ✓ | ✓ |
+| `rewrite_sin` | 改寫 > 正弦 | F | value | ✓ | ✓ |
+| `rewrite_cos` | 改寫 > 餘弦 | F | value | ✓ | ✓ |
+| `rewrite_tan` | 改寫 > 正切 | F | value | ✓ | ✓ |
+| `rewrite_arcsin` | 改寫 > 反正弦 | F | value | ✓ | ✓ |
+| `rewrite_arccos` | 改寫 > 反餘弦 | F | value | ✓ | ✓ |
+| `rewrite_arctan` | 改寫 > 反正切 | F | value | ✓ | ✓ |
+| `rewrite_arccot` | 改寫 > 反餘切 | F | value | ✓ | ✓ |
+| `rewrite_polar` | 改寫 > 極座標形式 | F | value | ✓ | ✓ |
+| `rewrite_rectangular` | 改寫 > 直角座標形式（a + bi） | F | value | ✓ | ✓ |
+| `rewrite_normal` | 改寫 > 標準形式（通分成一個分式） | F | value | ✓ | ✓ |
+| `combine_exp` | 合併 > 指數 | F | value | ✓ | ✓ |
+| `combine_log` | 合併 > 對數（要先 assume(positive)，如 5.5） | F | value | ✓ | ✓ |
+| `combine_powers` | 合併 > 冪次 | F | value | ✓ | ✓ |
+| `combine_trig` | 合併 > 三角函數 | F | value | ✓ | ✓ |
+| `combine_arctan` | 合併 > 反正切 | F | value | ✓ | ✓ |
+| `combine_hyp` | 合併 > 雙曲三角函數 | F | value | ✓ | ✓ |
+| `eqs_to_matrix` | 改寫 > 方程組成矩陣（參數：變數；回答增廣矩陣，label「, Corresponding matrix: 」） | F+p | solutions | ✓ | ✓ |
+| `matrix_to_eqs` | 改寫 > 矩陣成方程組（參數：變數；最後一行是右邊，方陣右邊是 0） | F+p | solutions | ✓ | ✓ |
+| `mode` | 統計 > 眾數（[眾數], 出現次數） | F | solutions | ✓ | ✓ |
+| `geomean` | 統計 > 幾何平均數 | F | solutions | ✓ | ✓ |
+| `harmonicmean` | 統計 > 調和平均數 | F | solutions | ✓ | ✓ |
+| `meandev` | 統計 > 平均差 | F | solutions | ✓ | ✓ |
+| `moment` | 統計 > 動差（參數：[次數, 原點]，或 [次數, 'mean']：對平均數） | F+p | solutions | ✓ | ✓ |
+| `quantile` | 統計 > 分位數（參數：[q]，0 < q < 1） | F+p | solutions | ✓ | ✓ |
+| `correlation` | 統計 > 相關係數矩陣 | F | solutions | ✓ | ✓ |
+| `covariance` | 統計 > 共變異數矩陣 | F | solutions | ✓ | ✓ |
+| `fitcurve` | 統計 > 資料曲線擬合（參數：'regression'、'noconstant' 或 'polynomial'，'first' 或 'last'：應變數在哪一行，多項式的次數） | F+p | solutions | ✓ | ✓ |
+| `randomnumbers` | 統計 > 亂數（公式不用；參數：分佈 'beta' 'binomial' 'cauchy' 'chisquare' 'exponential' 'f' 'gamma' 'normal' 'poisson' 't' 'uniform' 'weibull'，個數，分佈的參數） | F+p | value | ✓ | ✓ |
+| `divide` | 多項式 > 除法（商 + 餘式/除式） | F+p | value | ✓ | ✓ |
+| `roots` | 多項式 > 根（重根重複列出） | F+p | solutions | ✓ | ✓ |
+| `sort` | 多項式 > 排序（次數由高到低） | F+p | value | ✓ | ✓ |
+| `companion` | 多項式 > 友矩陣 | F+p | solutions | ✓ | ✓ |
+| `interpret` | 解讀（Ctrl+?）：公式被讀成什麼，不再計算 | F | value | ✓ | ✓ |
+| `inversefourier` | 轉換 > 反傅立葉轉換（label：, Is Fourier transform of） | F | solutions | ✓ | ✓ |
+| `odelaplace` | 解常微分方程 > 拉氏（O：["OdeSystem", 方程, 初值 [名, x0, 值, 階], "Nothing", 自變數或 "Nothing"]；只解常係數線性方程；label：, Laplace solution is:） | O | solutions | ✓ | ✓ |
+| `odeseries` | 解常微分方程 > 級數（O，第 4 項是項數，"Nothing"：設定裡的 ODE 級數次數；label：, Series solution is:） | O | solutions | ✓ | ✓ |
+| `setoptions` | 計算設定（S：{"digits", "threshold", "comp_digits", "imaginary_j", "bessel_subscripts", "ode_series_order"}；之後的答案照它） | S | text | ✓ | ✓ |
 <!-- /ops -->

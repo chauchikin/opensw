@@ -8,7 +8,7 @@ const check = (ok, what) => { console.log(ok ? 'ok  ' : 'FAIL', what); if (!ok) 
 const b = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium-1243/chrome-linux64/chrome' });
 const page = await b.newPage({ viewport: { width: 1280, height: 800 } });
 const errs = []; page.on('pageerror', (e) => errs.push(e.message));
-await page.goto('http://localhost:4173/?lang=zh-TW'); await page.waitForTimeout(700);
+await page.goto(`http://localhost:${process.env.OPENSW_PORT || 4173}/?lang=zh-TW`); await page.waitForTimeout(700);
 const call = (cmd, args) => page.evaluate(([c, a]) => window.sw.call(c, a), [cmd, args]);
 const menu = async (top, ...items) => {
   await page.click(`.menu-top:has-text("${top}")`);

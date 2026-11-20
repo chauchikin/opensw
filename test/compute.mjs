@@ -3,7 +3,7 @@ import { chromium } from 'playwright';
 const b = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium-1243/chrome-linux64/chrome' });
 const page = await b.newPage();
 const errs = []; page.on('pageerror', (e) => errs.push(e.message));
-await page.goto('http://localhost:4173/?lang=zh-TW'); await page.waitForTimeout(600);
+await page.goto(`http://localhost:${process.env.OPENSW_PORT || 4173}/?lang=zh-TW`); await page.waitForTimeout(600);
 let fails = 0;
 const check = (name, ok, detail) => { if (!ok) fails++; console.log(ok ? 'ok  ' : 'FAIL', name, JSON.stringify(detail ?? '').slice(0, 160)); };
 const call = (cmd, args) => page.evaluate(([c, a]) => window.sw.call(c, a), [cmd, args]);
@@ -39,12 +39,14 @@ const cases = [
   ['extrema', 'x^3-3x', (x) => x.solutions.join(';') === 'x=-1, f=2;x=1, f=-2'],
   ['numericsolve', '\\cos x=x', (x) => x.solutions[0] === 'x=0.73909'],
   ['ode', "y''+y=0", (x) => /C_\{1\} \\sin/.test(x.solutions[0])],
-  ['laplace', '\\sin t', (x) => x.latex.replace(/\s/g, '') === '\\frac{1}{s^{2}+1}'],
+  // as 5.5: ", Laplace transform is: 1/(s^2+1)"
+  ['laplace', '\\sin t', (x) => /Laplace|拉氏/.test(x.label) && x.solutions[0].replace(/\s/g, '') === '\\frac{1}{s^{2}+1}'],
   ['rank', '\\begin{pmatrix}1&2\\\\2&4\\end{pmatrix}', (x) => x.latex === '1'],
   ['charpoly', '\\begin{pmatrix}1&2\\\\3&4\\end{pmatrix}', (x) => x.latex.replace(/\s/g, '') === 'X^{2}-5X-2'],
   ['combine', '\\sin^2 x+\\cos^2 x', (x) => x.latex === '1'],
-  ['mean', '\\begin{pmatrix}1&2&3&4\\end{pmatrix}', (x) => x.latex === '\\frac{5}{2}'],
-  ['stddev', '\\begin{pmatrix}1&2&3&4\\end{pmatrix}', (x) => x.latex === '\\frac{1}{3} \\sqrt{15}'],
+  // 5.5 writes these after a label: ", Mean(s): 5/2"; the standard deviation as MuPAD: 1/3 sqrt 3 sqrt 5
+  ['mean', '\\begin{pmatrix}1&2&3&4\\end{pmatrix}', (x) => /Mean|平均/.test(x.label) && x.solutions[0] === '\\frac{5}{2}'],
+  ['stddev', '\\begin{pmatrix}1&2&3&4\\end{pmatrix}', (x) => x.solutions[0] === '\\frac{1}{3} \\sqrt{3} \\sqrt{5}'],
   // as 5.5: the differentiated equation, after "Derivative:"
   ['implicitdiff', 'x^2+y^2=1', (x) => /Derivative|導數/.test(x.label) && x.solutions[0].replace(/\s/g, '') === '2x+2yy^{\\prime}=0'],
 ];
@@ -79,7 +81,7 @@ for (const [op, latex, params, ok] of more) {
 await call('set', { latex: 'Find $\\int x\\sin x\\,dx$.' });
 await page.evaluate(() => document.querySelectorAll('.math-inline')[0]._mathView.enter(false));
 await page.click('.menu-top:has-text("計算")');
-for (const it of ['微積分', '分部積分…']) await page.click(`.menu-list button:has(> span:text-is("${it}"))`);
+for (const it of ['微積分', '分部積分...']) await page.click(`.menu-list button:has(> span:text-is("${it}"))`);
 await page.fill('#d-u', 'x');
 await page.click('#dialog-ok');
 await page.waitForFunction(() => window.swEditor.state.doc.textContent !== null && JSON.stringify(window.swEditor.state.doc.toJSON()).includes('\\\\cos'), null, { timeout: 30000 });

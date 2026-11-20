@@ -1,4 +1,4 @@
-// Help > Manual: opensw's own manual, written for opensw (not 5.5's help files). It opens as a
+// Help > Contents: opensw's own manual, written for opensw (not 5.5's help files). It opens as a
 // document, so it can be read, searched (Edit > Find), printed or exported like any other.
 // Other languages: src/locales/manual.<language>.tex. Its pictures are public/manual/<language>/*.png,
 // made by scripts/manual-shots.mjs from the web version.
@@ -125,7 +125,7 @@ A fragment is a saved piece of text and formulas that can be put into any docume
 
 \begin{itemize}
 \item View: zoom in and out; show or hide markers, index entries, helper lines, TeX fields; toolbars (each can be turned on or off, with ${'`'}${'`'}Reset'').
-\item View \TEXTsymbol{>} Changes and LaTeX source (Ctrl+Shift+D; not in 5.5, closed until opened): on the left the document as it was opened, read only; on the right three tabs. Working document: the blocks changed since are tinted, purple where an AI changed them, yellow where you did. LaTeX source: what saving writes, read only and kept up to date; the parts written again are marked, the rest is the file's own text. Changes and errors: each change, to accept (it stays and is no longer shown) or undo (the original comes back); the errors of the last typesetting in plain words, with the block they are in; and a check of derivations: each step $a=b$ of the displayed formulas (also $=b$ on the next line) is proved equal, shown not equal with a point where the two sides differ, or marked as not decided (never called wrong then).
+\item View \TEXTsymbol{>} Changes and LaTeX source (Ctrl+Shift+D; not in 5.5, closed until opened): on the left the document as it was opened, read only; on the right three tabs. Working document: the blocks changed since are tinted, purple where an AI changed them, yellow where you did. LaTeX source: what saving writes, read only and kept up to date; the parts written again are marked, the rest is the file's own text. Changes and errors: each change, to accept (it stays and is no longer shown) or undo (the original comes back); the errors of the last typesetting in plain words, with the block they are in; and a check of derivations: each step $a=b$ of the displayed formulas (also $=b$ on the next line) is proved equal, shown not equal with a point where the two sides differ, or marked as not decided (never called wrong then). Below them, the line-by-line check: every named step (a displayed formula with a \TEXTsymbol{\backslash}label, or one an AI named) with its result (passed, failed, cannot decide, not checked, trusted) and why; a row takes you to its formula, and Check all named steps checks them again.
 \item Go: previous section, next section, marker, link (cursor on a link), previous position, next position.
 \item Tag: F2 to F12 apply tags (change them in Tag \TEXTsymbol{>} Function keys); item tags (lists, theorems), section/body tags (section, subsection), text tags (bold, emphasized, sizes).
 \item Tag \TEXTsymbol{>} Appearance: the screen font, size and color of each tag; typesetting is not affected.
@@ -157,7 +157,7 @@ A fragment is a saved piece of text and formulas that can be put into any docume
 
 \section{Compute}
 
-Put the cursor in a formula and choose an action from the Compute menu. The result follows the formula. Computing uses SymPy, which takes a few seconds to load the first time; in the desktop app, Tools > Computation engine can switch to Mathematica installed on this computer. Computing is opensw's own: 5.5 computed with MuPAD, which opensw does not have, so an answer may be written in a different (equal) form from 5.5's, and some commands may give more or fewer answers.
+Put the cursor in a formula and choose an action from the Compute menu. The result follows the formula. Computing uses SymPy, which takes a few seconds to load the first time; in the desktop app, Tools > Engine Setup can switch to Mathematica installed on this computer. Computing is opensw's own: 5.5 computed with MuPAD, which opensw does not have, so an answer may be written in a different (equal) form from 5.5's, and some commands may give more or fewer answers.
 
 \includegraphics{manual/en/menu-compute.png}
 
@@ -170,7 +170,7 @@ Put the cursor in a formula and choose an action from the Compute menu. The resu
 \item Solve ODE \TEXTsymbol{>} Numeric solves an initial-value problem typed as a one-column matrix, one equation or initial value in each row (for example $y'=-y$ and $y(0)=1$; equations of any order, or a system of them: an equation of order $n$ in $y$ needs the initial values $y(x_0)$, $y'(x_0)$, \ldots, $y^{(n-1)}(x_0)$, as $y''+y=0$, $y(0)=1$, $y'(0)=0$). As in 5.5 it answers ${'`'}${'`'}Functions defined: $y$'': the solution becomes a function, so evaluating $y(1)$ afterwards gives a number, $y$ applied to a column of numbers gives a column of values, and plotting $y$ (Plot 2D \TEXTsymbol{>} Rectangular or ODE) draws the solution.
 \item Polynomials: partial fractions, collect by variable.
 \item Calculus: differentiate, integrate, integrate by parts, change variable, approximate integral, plot approximate integral, power series, Padé approximant, find extrema, iterate, implicit differentiation.
-\item Vector calculus: gradient, divergence, curl, Laplacian, Hessian, Jacobian, Wronskian, scalar potential, vector potential. The basis variables are $x,y,z$ by default; Vector calculus \TEXTsymbol{>} Set basis variables (or Tools \TEXTsymbol{>} Computation engine) changes them, for $\nabla$ in Evaluate too: with $u,v,w$, $\nabla (cuv)$ is $(cv,cu,0)$.
+\item Vector calculus: gradient, divergence, curl, Laplacian, Hessian, Jacobian, Wronskian, scalar potential, vector potential. The basis variables are $x,y,z$ by default; Vector calculus \TEXTsymbol{>} Set basis variables (or Tools \TEXTsymbol{>} Engine Setup) changes them, for $\nabla$ in Evaluate too: with $u,v,w$, $\nabla (cuv)$ is $(cv,cu,0)$.
 \item Simplex: maximize, minimize, feasibility, standardize, dual. Type a one-row matrix: the first entry is the objective, the others are constraints; all variables are taken as $\geq 0$.
 \item Statistics, Laplace transform, Fourier transform, matrices (determinant, inverse, eigenvalues, rank, null space…).
 \item Definitions: for example choose ${'`'}${'`'}New definition'' on $f(x)=x^{2}$; later computations use it. Defining a name with a letter subscript, such as $a_{i}=3i$, asks how to interpret the subscript, as 5.5 does: as a function argument ($a_{2}$ is then $6$, and $i$ on the right is the argument, not the imaginary unit), or as part of the name ($a_{2}$ stays $a_{2}$).
@@ -231,25 +231,28 @@ Uses the current document as a template to make several versions of an exam, wit
 \begin{itemize}
 \item Exam (or Quiz, Test): marks the document as an exam template. Comment: a note only, not in the exams.
 \item Text: text put into the exam as it is. Part: divides the exam into parts, each with its own setup.
-\item Setup: settings. For example $a:=\func{rand}(1,9)$ (computed once), $b=1/a$ (computed again each time it is used), ${'`'}${'`'}Condition: $(a\neq b)$'' (draw again until it holds), ${'`'}${'`'}Questions: number, permute'' (number and shuffle the questions), ${'`'}${'`'}Choices: permute'' (shuffle the choices), ${'`'}${'`'}Seed: 123'' (fixed random numbers).
+\item Setup: settings. For example $a:=\func{rand}(1,9)$ (computed once), $b=1/a$ (computed again each time it is used), ${'`'}${'`'}Condition: $(a\neq b)$'' (draw again until it holds), ${'`'}${'`'}Questions: number, permute'' (number and shuffle the questions), ${'`'}${'`'}Choices: permute'' (shuffle the choices), ${'`'}${'`'}Seed: 123'' (fixed random numbers). The keywords are 5.5's: ${'`'}${'`'}Questions: Number, Permute'' (number the questions, which are not numbered without it; shuffle them), ${'`'}${'`'}Choices: Permute, No Break, Check'' (shuffle the choices; put them on one line, ${'`'}${'`'}Choice Space: 2'' em apart; check boxes, each choice worth the points of its item label such as \TEXTsymbol{\backslash}item[-1]), ${'`'}${'`'}Question Space: 1'' (empty lines after each question), ${'`'}${'`'}Print Choices: a, b, c'' (what a printed exam shows instead of buttons), ${'`'}${'`'}Select: 2'' (in a Question's Setup: how many of its variants to ask), ${'`'}${'`'}Points: 6'' (what a question is worth in the online quiz), ${'`'}${'`'}Text Area: 5, 60'' (the size of a Response area). Compute, CSTFile, Errors and OutputTap are about 5.5's own quiz program and are not used.
 \item Random numbers: $\func{rand}()$; $\func{rand}(n)$ is 0 to $n-1$; $\func{rand}(n,m)$ is $n$ to $m$; $\func{rand}(\{2,3,5\})$ picks one from the set; $\func{randmat}(3,3,1,(1,9))$ is a random matrix (third number: 1 any, 2 symmetric, 3 antisymmetric, 4 determinant 1).
 \item Question: one question. Statement: the question. Substatement: a part of it. Response: a list of choices, or a blank (write InputField). Put \TEXTsymbol{\backslash}correctchoice (a TeX field) after the correct choice. A choice tagged fixed stays last.
 \item Answer, Solution: only in the answers. Variant: another wording of the same question; one is picked at random.
 \item Where a question needs a number, use Insert \TEXTsymbol{>} Exam formula, for example $a+b$; it is computed when the exams are made.
 \end{itemize}
 
-The exams open as a new document; the template stays in the Window menu. Not done: answering and grading online, a grade database.
+The exams open as a new document, with the template's pictures; the template stays in the Window menu.
+
+Online quiz (a box in the dialog): one version is also saved as a web page to answer in a browser: choices as buttons (check boxes with ${'`'}${'`'}Choices: Check'', pictures with ${'`'}${'`'}Images: first.bmp, next.bmp''), InputField as a box, a Response section as a text area. ${'`'}${'`'}Title'' is the page's title and ${'`'}${'`'}Submit'' its button. Without Action the page grades itself (the key is in the page, only encoded, so it is for practice): a box is right when it has the values of GradeProc's ${'`'}${'`'}givecredit(response = ...)'' (or else the Answer's text). With ${'`'}${'`'}Action: address'' (${'`'}${'`'}Method: post'' or get, ${'`'}${'`'}Database'', ${'`'}${'`'}ItemId'', ${'`'}${'`'}Record: Never, Always or Student Choice''), the page sends the answers to that address, for a grading server of your own; 5.5 sent them to MacKichan's server program, which no longer exists.
 
 \subsection{Other tools}
 
 \begin{itemize}
-\item Spell check: English, built into the browser.
+\item Spelling: goes through the words not in the English dictionary (5.5's en-US dictionary), one at a time: Change, Change all, Ignore, Ignore all, Add to dictionary. Spell check (at the end of the menu): the browser's own underlining.
+\item Save user preferences, Restore saved preferences: every setting of opensw (function keys, tag appearance, fragments, the dictionary's added words ...) as one .json file, to take to another computer.
 \item Document manager: lists the pictures and subdocuments the document uses and whether they were found; packs them into a .zip (.sci, 5.x .tex and pictures together) to give to others; opens a .zip or a 5.5 .rap package. In the desktop app, as 5.5: Copy (the saved document and its files to another folder), Rename, Delete and Clean Up auxiliary files (.aux, .log, .bak ...); deleted files go to the Recycle Bin, and each file beside the document can be left out.
 \item Automatic substitution: a string of letters typed in a formula (for example sum10) becomes a formula. It can be turned off.
 \item User setup: default matrix and table sizes, the document shown when the program opens, keeping .bak files, the formula color, the interface language.
 \item Export settings: MathML or MathJax for formulas in HTML; the resolution of Copy as picture.
-\item Computation engine: choose SymPy or Mathematica (desktop app, installed on the computer) and see the versions. Lean setup: the Lean project folder.
-\item Computation engine also holds the settings that change answers, as 5.5's computation setup: Solve gives the principal value only; the base for the log function changes from $e$ to $10$ ($\log x$ is then $\log_{10}x$, and Evaluate shows it so; $\ln$ stays the natural logarithm); the basis variables of vector calculus and $\nabla$ (default $x,y,z$).
+\item Engine setup: choose SymPy or Mathematica (desktop app, installed on the computer) and see the versions. Lean setup: the Lean project folder.
+\item Engine setup also holds the settings that change answers, as 5.5's computation setup: Solve gives the principal value only; the base for the log function changes from $e$ to $10$ ($\log x$ is then $\log_{10}x$, and Evaluate shows it so; $\ln$ stays the natural logarithm); the basis variables of vector calculus and $\nabla$ (default $x,y,z$).
 \end{itemize}
 
 \includegraphics{manual/en/user-setup.png}
@@ -258,11 +261,11 @@ The exams open as a new document; the template stays in the Window menu. Not don
 
 \includegraphics{manual/en/engine.png}
 
-\emph{Tools > Computation engine: the engine and the settings that change answers.}
+\emph{Tools > Engine Setup: the engine and the settings that change answers.}
 
 \section{Window}
 
-Several documents can be open at once. Switch in the Window menu; Ctrl+F6 or Ctrl+Tab goes to the next one.
+Several documents can be open at once. Switch in the Window menu; Ctrl+F6 or Ctrl+Tab goes to the next one. File > Close (Ctrl+F4) or the × at the right end of the menu bar closes the one on screen, asking first whether to save its changes; Window > Close All closes them all.
 
 \section{Help}
 

@@ -22,7 +22,7 @@ await page.addInitScript((b64) => {
     },
   };
 }, original.toString('base64'));
-await page.goto('http://localhost:4173/?lang=zh-TW'); await page.waitForTimeout(800);
+await page.goto(`http://localhost:${process.env.OPENSW_PORT || 4173}/?lang=zh-TW`); await page.waitForTimeout(800);
 let fails = 0;
 const check = (name, ok, detail) => { if (!ok) fails++; console.log(ok ? 'ok  ' : 'FAIL', name, ok ? '' : JSON.stringify(detail ?? '').slice(0, 300)); };
 const call = (cmd, args) => page.evaluate(([c, a]) => window.sw.call(c, a), [cmd, args]);

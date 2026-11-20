@@ -1,6 +1,6 @@
 import 'mathlive';
 import { EditorState, NodeSelection, TextSelection } from 'prosemirror-state';
-import { Fragment } from 'prosemirror-model';
+import { Fragment, Slice } from 'prosemirror-model';
 import { EditorView } from 'prosemirror-view';
 import { keymap } from 'prosemirror-keymap';
 import { baseKeymap, chainCommands } from 'prosemirror-commands';
@@ -20,19 +20,23 @@ import { writeSci, sciMathML, blankSci } from './sciwriter.js';
 import { readLatex } from './tex55.js';
 import { SAMPLES } from './samples.js';
 import JSZip from 'jszip';
-import { isDesktop, pickAndRead, readPath, writeBytes, typeset, serveApi, onCloseWindow, backupFile, startupPath, fetchUrl, aiHome } from './desktop.js';
+import { isDesktop, pickAndRead, readPath, writeBytes, typeset, serveApi, onCloseWindow, backupFile, startupPath, fetchUrl, aiHome, fileExists, pickSavePath } from './desktop.js';
 import { setupUI } from './ui55.js';
+import { definitionsOnOpen, definitionsOnSave } from './c55_defsmisc.js';
 import { settings, applySettings } from './settings.js';
 import { makeApi } from './api.js';
+import { stepsFollow } from './steps.js';
 import { aiChangesPlugin, aiStart, aiEnd, aiEdit, aiBusy } from './aiedits.js';
 import { reviewPlugin, reviewKey, setupReview } from './review.js';
 import { numberingPlugin } from './numbering.js';
-import { preloadEngine, plotPoints, compute } from './compute.js';
-import { parsePlot, drawable, plotSVG, plotSVG3D, plotKind, is3D } from './plots.js';
-import { plotData } from './plotdata.js';
+import { preloadEngine, plotPoints, compute, definitionsNow, setDefinitions, setEngineNotice } from './compute.js';
+import { parsePlot, drawable, plotSVG, plotSVG3D, plotKind, is3D, steadyFrames, animFrames } from './plots.js';
+import { plotData, plotFrames } from './plotdata.js';
+import { ImageView, framesOf, setFrames, isAnimatedFrame } from './animview.js';
 import { candidates, TEX_IMAGE, WEB_IMAGE, mimeOf } from './graphics.js';
 import './style.css';
 import { _t, _tm, translatePage } from './i18n.js';
+import PACKAGE from '../package.json';
 
 translatePage();
 
@@ -80,6 +84,7 @@ const view = new EditorView(document.querySelector('#editor'), {
     math_inline: (n, v, g) => new MathView(n, v, g),
     math_display: (n, v, g) => new MathView(n, v, g),
     note: (n, v, g) => new NoteView(n, v, g),
+    image: (n) => new ImageView(n), // an animated plot gets a bar to play it (animview.js)
   },
   dispatchTransaction(tr) {
     // the person changed the document: the AI's edit is over (aiedits.js)
@@ -123,6 +128,7 @@ function setDoc(doc, m = {}, src = null, path = null) {
   // a document the user opens goes in a window of its own (5.5's Window menu); the one on
   // screen stays open unless it is an untouched one without a name
   if (opening && (!view.state.doc.eq(loadedDoc) || currentPath || meta.name)) others.push(currentRecord());
+  if (opening) setDefinitions(null); // a document opened or new: its own definitions (5.5), none yet
   opening = false;
   assets = new Map();
   subFiles = new Map();
@@ -147,15 +153,18 @@ function setDoc(doc, m = {}, src = null, path = null) {
 const others = [];
 let opening = false; // set by the user's File > New / Open: the next setDoc keeps the current one
 function currentRecord() {
-  return { state: view.state, meta, source, path: currentPath, original55, loadedDoc, assets, subFiles, scroll: $('#scroller').scrollTop };
+  return { state: view.state, meta, source, path: currentPath, original55, loadedDoc, assets, subFiles, scroll: $('#scroller').scrollTop, defs: definitionsNow() };
 }
 function showRecord(r) {
+  aiEnd(); // what an AI changed was in the document that leaves the screen
   meta = r.meta; source = r.source; currentPath = r.path; original55 = r.original55 || null; loadedDoc = r.loadedDoc; assets = r.assets; subFiles = r.subFiles;
+  setDefinitions(r.defs); // its own Compute definitions (5.5: each document has its own)
   view.updateState(r.state);
   ui?.refresh();
   review?.refresh();
   $('#scroller').scrollTop = r.scroll || 0;
   showTitle();
+  showAi();
   scheduleSave();
 }
 const docName = (m, path) => m.name || (path ? path.split(/[\\/]/).pop() : _t('Untitled'));
@@ -194,24 +203,78 @@ function nextWindow() { if (others.length) switchTo(0); }
 const windowMenu = [];
 function refreshWindowMenu() {
   windowMenu.length = 0;
+  // 5.5's order: Close All, then the open documents (5.5's window-arranging items are not needed: one document is shown at a time)
+  windowMenu.push([_t('Close All'), null, closeAll], '-');
   windowMenu.push([`✓ ${docName(meta, currentPath)}${view.state.doc.eq(loadedDoc) ? '' : ' *'}`, null, () => {}]);
   others.forEach((r, i) => windowMenu.push([`　${docName(r.meta, r.path)}${r.state.doc.eq(r.loadedDoc) ? '' : ' *'}`, null, () => switchTo(i)]));
   windowMenu.push('-', [_t('Next document'), 'Ctrl+F6', nextWindow]);
 }
-// File > Close: the document on screen goes (asking first if it was changed)
-function closeDoc() {
-  const close = () => {
-    if (others.length) { showRecord(others.pop()); return; }
-    opening = false;
-    setDoc(schema.nodes.doc.create(null, [schema.nodes.paragraph.create()]));
-  };
-  if (view.state.doc.eq(loadedDoc)) { close(); return; }
-  $('#confirm-text').textContent = _t('This document has unsaved changes, which will be lost if you close it. Close it?');
-  $('#confirm-ok').textContent = _t('Close');
-  $('#confirm').hidden = false;
-  $('#confirm-ok').onclick = () => { $('#confirm').hidden = true; $('#confirm-ok').textContent = _t('Replace'); close(); };
-  $('#confirm-cancel').onclick = () => { $('#confirm').hidden = true; $('#confirm-ok').textContent = _t('Replace'); };
+// The document on screen has unsaved changes: save it, lose them, or stay? -> 'saved' | 'discard' | 'cancel'
+const askSave = () => new Promise((resolve) => {
+  $('#closeask').hidden = false;
+  const done = (v) => { $('#closeask').hidden = true; resolve(v); };
+  $('#closeask-cancel').onclick = () => done('cancel');
+  $('#closeask-discard').onclick = () => done('discard');
+  $('#closeask-save').onclick = async () => done((await save()) ? 'saved' : 'cancel');
+});
+// every changed document is shown and asked about in turn -> false when the user chose to stay
+async function askSaveAll() {
+  const skipped = new Set();
+  for (;;) {
+    if (!view.state.doc.eq(loadedDoc) && !skipped.has(view.state)) {
+      const a = await askSave();
+      if (a === 'cancel') return false;
+      if (a === 'discard') skipped.add(view.state);
+      continue;
+    }
+    const i = others.findIndex((r) => !r.state.doc.eq(r.loadedDoc) && !skipped.has(r.state));
+    if (i < 0) return true;
+    switchTo(i);
+  }
 }
+// the document on screen goes: another open one takes its place, or an empty one
+function dropCurrent() {
+  if (others.length) { showRecord(others.pop()); return; }
+  opening = false;
+  setDefinitions(null); // the definitions went with the document
+  setDoc(schema.nodes.doc.create(null, [schema.nodes.paragraph.create()]));
+}
+// File > Close, and the × at the end of the menu bar: the document on screen goes (asking first if it was changed)
+async function closeDoc() {
+  if (view.state.doc.eq(loadedDoc) || (await askSave()) !== 'cancel') dropCurrent();
+}
+// Window > Close All
+async function closeAll() {
+  if (!(await askSaveAll())) return;
+  others.length = 0;
+  dropCurrent();
+}
+// File > Save All: every open document with unsaved changes is saved (one without a file asks where)
+async function saveAll() {
+  const start = view.state;
+  let saved = 0;
+  if (!view.state.doc.eq(loadedDoc)) { if (!(await save())) return; saved++; }
+  for (const r of others.filter((x) => !x.state.doc.eq(x.loadedDoc))) {
+    const i = others.indexOf(r);
+    if (i < 0) continue;
+    switchTo(i);
+    if (!(await save())) break;
+    saved++;
+  }
+  const back = others.findIndex((r) => r.state === start);
+  if (back >= 0) switchTo(back);
+  toast(saved ? _t('Saved {0} documents', saved) : _t('No open document has unsaved changes'));
+}
+// File > Exit: the window closes (each changed document is asked about first)
+async function exitApp() {
+  if (!(await askSaveAll())) return;
+  if (isDesktop) { const { getCurrentWindow } = await import('@tauri-apps/api/window'); await getCurrentWindow().destroy(); return; }
+  window.close();
+  toast(_t('Close this browser tab to leave opensw'));
+}
+// for an AI (api.js): the open documents, the one on screen first, then in the Window menu's order
+const openDocuments = () => [{ meta, path: currentPath, state: view.state, loadedDoc }, ...others]
+  .map((r, doc) => ({ doc, name: r.meta.name || null, path: r.path || null, changed: !r.state.doc.eq(r.loadedDoc) }));
 document.addEventListener('keydown', (e) => {
   if ((e.ctrlKey || e.metaKey) && (e.key === 'F6' || e.key === 'Tab')) { e.preventDefault(); nextWindow(); }
 }, true);
@@ -244,6 +307,7 @@ async function openBytes(bytes, fileName, path) {
       // its pictures are files next to it (only the desktop app can read them)
       await loadPictures(path ? path.replace(/[\\/][^\\/]*$/, '') : null);
       renderPlots(); // needs the engine: may take a few seconds
+      definitionsOnOpen(); // Compute > Settings > Definition Options: its definitions restored
     } catch (err) { toast(_t('Could not open: ') + err.message); }
     return;
   }
@@ -252,7 +316,47 @@ async function openBytes(bytes, fileName, path) {
     setDoc(r.doc, { ...r.meta, name: fileName.replace(/\.sci$/i, '') }, r, path);
     for (const [p, bytes] of r.files) assets.set(p, bytes);
     toast(_t('Opened {0}', fileName) + keptAsTeX());
+    definitionsOnOpen();
   } catch (err) { toast(_t('Could not open: ') + err.message); }
+}
+// File > Import Contents: the body of another document (5.x .tex or .sci) put in at the cursor
+async function importContents() {
+  let picked;
+  if (isDesktop) {
+    try { picked = await pickAndRead(); } catch (err) { toast(_t('Could not open: ') + err); return; }
+  } else {
+    picked = await new Promise((resolve) => {
+      const input = document.createElement('input');
+      input.type = 'file';
+      input.accept = '.tex,.sci,.qiz';
+      input.onchange = async () => { const f = input.files[0]; resolve(f ? { path: f.name, bytes: new Uint8Array(await f.arrayBuffer()) } : null); };
+      input.click();
+    });
+  }
+  if (!picked) return;
+  const name = picked.path.split(/[\\/]/).pop();
+  try {
+    let doc;
+    if (/\.sci$/i.test(name)) {
+      const r = await readSci(picked.bytes);
+      doc = r.doc;
+      for (const [p, bytes] of r.files) assets.set(p, bytes);
+    } else doc = readLatex(decode55(picked.bytes)).doc;
+    view.dispatch(view.state.tr.replaceSelection(new Slice(doc.content, 0, 0)).scrollIntoView());
+    toast(_t('Imported the contents of {0}', name));
+    if (isDesktop && !/\.sci$/i.test(name)) await loadPictures(picked.path.replace(/[\\/][^\\/]*$/, ''));
+    renderPlots();
+  } catch (err) { toast(_t('Could not import: ') + (err.message || err)); }
+}
+// Go > Links, Tools > Action: a file the document names, next to it (desktop app), opened
+async function openRelative(file) {
+  if (!isDesktop) { toast(_t('Opening another file needs the desktop app')); return; }
+  const dir = currentPath ? currentPath.replace(/[\\/][^\\/]*$/, '') : null;
+  const path = /^([a-zA-Z]:)?[\\/]/.test(file) || !dir ? file : dir + (currentPath.includes('\\') ? '\\' : '/') + file.replace(/[\\/]/g, currentPath.includes('\\') ? '\\' : '/');
+  const named = /\.(tex|sci|qiz)$/i.test(path) ? path : path + '.tex';
+  confirmReplace(async () => {
+    try { await openBytes(await readPath(named), named.split(/[\\/]/).pop(), named); } catch (err) { toast(_t('Could not open: ') + named); }
+  });
 }
 // File > Recent Files (desktop app): the menu items, kept up to date in place
 const recentMenu = [];
@@ -356,12 +460,15 @@ async function loadPictures(dir, files = null) {
 // engine. The picture is kept as PNG (for TeX and .sci) and shown as SVG.
 async function renderPlots() {
   const todo = [];
-  view.state.doc.descendants((n) => { if (n.type.name === 'image' && n.attrs.plot && n.attrs.frame && !n.attrs.src) todo.push(n.attrs); });
+  // an animated plot also when its frames are not drawn yet (it may have a picture from the file)
+  const unplayed = (a) => isAnimatedFrame(a.frame) && !framesOf(a.path) && !animFailed.has(a.frame);
+  view.state.doc.descendants((n) => { if (n.type.name === 'image' && n.attrs.plot && n.attrs.frame && (!n.attrs.src || unplayed(n.attrs))) todo.push(n.attrs); });
   for (const a of todo) {
-    if (assets.has(a.path)) continue;
+    if (assets.has(a.path) && !unplayed(a)) continue;
     const plot = parsePlot(a.frame.slice(a.frame.indexOf('\\special')));
     if (!drawable(plot)) continue;
     const kind = plotKind(plot);
+    if (plot.anim) { await renderAnimated(a, plot, kind); continue; }
     let data;
     try { data = await plotData(plot); } catch (e) { console.warn(_t('Could not compute the plot: '), e.message); continue; }
     const w = a.width || 432;
@@ -379,6 +486,51 @@ async function renderPlots() {
     view.dispatch(tr.setMeta('addToHistory', false));
     if (unchanged) { loadedDoc = view.state.doc; showTitle(); } // still unchanged: no * in the title
   }
+}
+// Compute > Settings > Plot Behavior, Recompute Plot When Definitions Change: every plot drawn again
+// (its formula may use what was defined)
+async function redrawPlots() {
+  const tr = view.state.tr;
+  view.state.doc.descendants((n, pos) => {
+    if (n.type.name === 'image' && n.attrs.plot && n.attrs.frame && n.attrs.src) {
+      assets.delete(n.attrs.path);
+      setFrames(n.attrs.path, null);
+      tr.setNodeMarkup(pos, null, { ...n.attrs, src: null });
+    }
+  });
+  if (!tr.docChanged) return;
+  const unchanged = view.state.doc.eq(loadedDoc);
+  view.dispatch(tr.setMeta('addToHistory', false));
+  if (unchanged) loadedDoc = view.state.doc;
+  await renderPlots();
+}
+// 5.5's animated plots: every frame drawn in one window; the picture kept for TeX and .sci is
+// the frame at currentAnimationTime (the first when not set), animview.js plays the rest
+const animFailed = new Set();
+async function renderAnimated(a, plot, kind) {
+  const w = a.width || 432;
+  const h = a.height || 288;
+  const count = animFrames(plot);
+  let frames;
+  try {
+    frames = await plotFrames(plot, count);
+  } catch (e) { console.warn(_t('Could not compute the plot: '), e.message); animFailed.add(a.frame); return; }
+  const svgs = steadyFrames(plot, frames).map(([p, d]) => (is3D(kind) ? plotSVG3D(p, d, w, h) : plotSVG(p, d, w, h)));
+  const an = plot.anim;
+  const at = an.current == null ? 0 : Math.round(((an.current - an.start) / (an.end - an.start)) * (count - 1));
+  const index = Math.min(count - 1, Math.max(0, at || 0));
+  const urls = svgs.map((svg) => URL.createObjectURL(new Blob([svg], { type: 'image/svg+xml' })));
+  let png;
+  try { png = await toPng(new TextEncoder().encode(svgs[index]), 'plot.svg', 3); } catch (e) { animFailed.add(a.frame); return; }
+  assets.set(a.path, png);
+  setFrames(a.path, { urls, values: frames.map((f) => f.value), delay: Math.max(40, ((an.end - an.start) * 1000) / (count - 1)), param: an.param, index });
+  const tr = view.state.tr;
+  view.state.doc.descendants((n, pos) => {
+    if (n.type.name === 'image' && n.attrs.path === a.path && n.attrs.frame === a.frame) tr.setNodeMarkup(pos, null, { ...n.attrs, src: urls[index] });
+  });
+  const unchanged = view.state.doc.eq(loadedDoc);
+  view.dispatch(tr.setMeta('addToHistory', false));
+  if (unchanged) { loadedDoc = view.state.doc; showTitle(); }
 }
 const isPng = (b) => b && b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4e && b[3] === 0x47;
 
@@ -463,21 +615,45 @@ window.swSaveSci = async () => { // for tests
 // opened from a .sci is saved as .sci again. asNew: true = Save As (.tex), 'sci' = Save As .sci.
 // The old file is kept as .bak first. An unchanged 5.x document is not written again.
 // the open file is LaTeX that 5.x did not write: saving over it would replace the author's file
-const latexKept = (target) => !!target && /\.tex$/i.test(target) && target === currentPath && original55?.is5x === false;
+// (the same file: on Windows letter case and the kind of slash do not count)
+const samePath = (a, b) => a.replace(/\\/g, '/').toLowerCase() === b.replace(/\\/g, '/').toLowerCase();
+const latexKept = (target) => !!target && !!currentPath && /\.tex$/i.test(target) && samePath(target, currentPath) && original55?.is5x === false;
 async function save(asNew = false) {
   if (inFrame) { toast(_t('The demo page cannot download files; saving needs the desktop app')); return false; }
   const kind = asNew === 'sci' || (!asNew && currentPath && /\.sci$/i.test(currentPath)) ? 'sci' : 'tex';
   try {
-    const target = asNew || latexKept(currentPath) ? null : currentPath;
+    const kept = latexKept(currentPath) ? currentPath : null;
+    let target = asNew || kept ? null : currentPath;
+    if (kept && kind === 'tex' && isDesktop) {
+      // where to is asked first: the new 5.x file may not take the place of the LaTeX file
+      target = await pickSavePath(`${meta.name || 'document'}_5x.tex`, TEX55_FILTERS);
+      if (!target) return false;
+      if (samePath(target, kept)) { toast(_t('Choose another name: {0} is the LaTeX file you opened, and it is kept as it is', kept.split(/[\\/]/).pop())); return false; }
+    }
+    await definitionsOnSave(); // the definitions in force kept with the document (Definition Options)
     const path = await writeDocument(kind, target);
     if (!path) return false;
-    toast(path === true ? _t('No changes; the file is as it was') : _t('Saved: ') + path);
+    toast(path === true ? _t('No changes; the file is as it was')
+      : kept && kind === 'tex' ? _t('Saved as a Scientific Word 5.x file: {0}. The LaTeX file you opened ({1}) is unchanged.', path, kept.split(/[\\/]/).pop())
+        : _t('Saved: ') + path);
     return true;
   } catch (err) { toast(_t('Could not save: ') + (err.message || err)); return false; }
 }
+// the steps file beside the document (steps.js): its text (null: there is none), and writing it
+const stepFiles = isDesktop ? {
+  read: async (path) => ((await fileExists(path)) ? new TextDecoder().decode(await readPath(path)) : null),
+  write: (path, text) => writeBytes(new TextEncoder().encode(text), path),
+} : null;
 // writes the document as kind ('tex' or 'sci') to target (null: ask, or download in the
-// web page) -> the path written, true when nothing needed writing, null when cancelled
+// web page) -> the path written, true when nothing needed writing, null when cancelled.
+// Under another name than before, the steps file goes with it (steps.js)
 async function writeDocument(kind, target) {
+  const before = currentPath;
+  const path = await writeAs(kind, target);
+  if (typeof path === 'string') await stepsFollow(stepFiles, before, path).catch(() => {}); // the document is saved either way
+  return path;
+}
+async function writeAs(kind, target) {
   if (kind === 'sci') {
     const bytes = await sciBytes();
     const name = (meta.name || 'document') + '.sci';
@@ -818,17 +994,29 @@ function texForTypesetting(pics) {
 // Typeset > Preamble changed the preamble of the file that was opened
 const preambleEdited = () => !!original55?.spans && meta.preamble55raw != null && meta.preamble55raw !== original55.spans.preamble;
 window.swTypesetTexForTests = () => texForTypesetting({ names: new Map(), list: [] });
+// the folder the open document is in (null: not saved anywhere): the files it names are there
+const documentFolder = () => (currentPath ? currentPath.replace(/[\\/][^\\/]*$/, '') : null);
 let typesetting = false;
-async function pdf() {
+// mode: 'open' (Typeset > Preview PDF), 'print' (Print PDF: sent to the printer), 'none' (Compile PDF:
+// saved where the user says); done: what to say when it worked (Typeset > Tools > Run BibTeX ...)
+async function pdf(mode = 'open', done = null) {
+  if (typeof mode !== 'string') mode = 'open';
   if (typesetting) return;
   typesetting = true;
   toast(_t('Typesetting…'));
   try {
     const pics = await texPictureFiles();
-    const { errors } = await typeset(texForTypesetting(pics), meta.name || 'document', pics.list);
+    const opens = mode === 'open' || (mode === 'none' && settings().openAfterCompile !== false);
+    const r = await typeset(texForTypesetting(pics), meta.name || 'document', pics.list, documentFolder(), opens ? 'open' : mode);
+    const { errors } = r;
     review.setErrors(errors);
-    if (errors.length) showExport(_t('PDF opened, but TeX reported {0} errors; those parts may look wrong', errors.length), errors.join('\n'), 'typeset-errors.txt');
-    else toast(_t('PDF opened'));
+    if (mode === 'none') {
+      const target = await writeBytes(await readPath(r.pdf), null, (meta.name || 'document') + '.pdf', [{ name: 'PDF', extensions: ['pdf'] }]);
+      if (target) toast(done || _t('Saved: ') + target);
+    }
+    if (errors.length && settings().showTexErrors !== false) showExport(_t('PDF made, but TeX reported {0} errors; those parts may look wrong', errors.length), errors.join('\n'), 'typeset-errors.txt');
+    else if (mode === 'print') toast(_t('PDF sent to the printer'));
+    else if (mode === 'open') toast(done || _t('PDF opened'));
   } catch (err) {
     showExport(_t('Typesetting failed'), String(err), 'typeset-log.txt');
   } finally { typesetting = false; }
@@ -848,6 +1036,7 @@ ui = setupUI({
   meta: () => meta,
   setMeta: (m) => { meta = m; scheduleSave(); },
   renderPlots: () => renderPlots(),
+  redrawPlots: () => redrawPlots(),
   forgetPicture: (p) => assets.delete(p),
   exportHtml,
   exportDocx,
@@ -861,7 +1050,29 @@ ui = setupUI({
   packDoc,
   openPackage: (bytes, name) => confirmReplace(() => openPackage(bytes, name).catch((err) => toast(_t('Could not open the package: ') + (err.message || err)))),
   // a document made here (Tools > Exam Builder) opens in a window of its own
-  newDocument: (doc, m) => { opening = true; setDoc(doc, m); },
+  // keepPictures: the pictures of the document on screen go with it (Exam Builder: the template's)
+  newDocument: async (doc, m, { keepPictures = false } = {}) => {
+    const kept = keepPictures ? new Map(assets) : null;
+    opening = true;
+    setDoc(doc, m);
+    if (!kept) return;
+    const want = imagePaths();
+    const files = new Map([...kept].filter(([p]) => want.has(p)));
+    if (files.size) await loadPictures(null, files);
+  },
+  // Exam Builder > online quiz: the page (examquiz.js), with the pictures of the document on screen
+  saveQuizHtml: async (doc, key, quizSettings, name) => {
+    const pics = new Map();
+    for (const [p, bytes] of assets) pics.set(p, `data:${isPng(bytes) ? 'image/png' : mimeOf(p)};base64,${base64(bytes)}`);
+    const { quizHtml } = await import('./examquiz.js');
+    const text = quizHtml(toHtml(doc, { ...meta, name }, pics, { math: settings().htmlMath }), key, quizSettings);
+    window.swQuizHtmlForTests = text;
+    if (inFrame) return;
+    const bytes = new TextEncoder().encode(text);
+    if (!isDesktop) { download(new Blob([bytes], { type: 'text/html' }), name + '.html'); return; }
+    const path = await writeBytes(bytes, null, name + '.html', [{ name: 'HTML', extensions: ['html'] }]);
+    if (path) toast(_t('Exported: ') + path);
+  },
   // Help > Full manual: its pictures (manual/<language>/*.png) are files of the program (public/manual)
   openManual: async (latex, m) => {
     opening = true;
@@ -873,9 +1084,18 @@ ui = setupUI({
     }
     if (files.size) await loadPictures(null, files);
   },
-  pdf: isDesktop ? pdf : null,
+  pdf: isDesktop ? () => pdf() : null,
+  typesetAs: (mode, done) => (isDesktop ? pdf(mode, done) : toast(_t('Typesetting PDF needs the desktop app'))),
+  saveAll,
+  importContents,
+  openRelative,
+  exit: exitApp,
+  printHtml,
+  applySettings,
+  version: PACKAGE.version,
   newDoc: () => confirmReplace(() => openSample('blank')),
   closeDoc,
+  closeAll,
   windows: windowMenu,
   refreshWindows: refreshWindowMenu,
   samples: [['demo', _t('Getting started')], ['blank', _t('Blank document')], ...SAMPLES.map((s) => [s.id, s.label])],
@@ -897,7 +1117,7 @@ function reviewSource() {
   }
   return { text: toTex55File(doc, meta) };
 }
-review = setupReview({ view, toast, compute, source: reviewSource });
+review = setupReview({ view, toast, compute, source: reviewSource, steps: () => window.sw.steps(), checkSteps: () => window.sw.checkSteps() });
 setZoom(zoom);
 ui.refresh();
 applySettings();
@@ -910,19 +1130,46 @@ window.sw = makeApi({
   setDoc: (doc, m) => { aiSetting = true; try { setDoc(doc, m, source, currentPath); } finally { aiSetting = false; } },
   aiStart: () => aiStart(view.state.doc, meta),
   aiHome: isDesktop ? aiHome : null,
+  stepFiles,
   openPath: async (path) => {
     if (!isDesktop) throw new Error(_t('The web version cannot open files by path; give LaTeX with set'));
     const bytes = await readPath(path);
-    await openBytes(bytes, path.split(/[\\/]/).pop(), path);
+    // a document with unsaved changes is not lost: it stays open (the Window menu) and the new one gets the screen
+    opening = !view.state.doc.eq(loadedDoc);
+    try { await openBytes(bytes, path.split(/[\\/]/).pop(), path); } finally { opening = false; }
   },
+  documents: openDocuments,
+  showDocument: (n) => switchTo(n - 1),
+  dropDocument: (n) => { if (n) others.splice(n - 1, 1); else dropCurrent(); },
+  // an AI asks to close a document without saving it: the user decides; no answer within 4 minutes is no
+  askDiscard: (name) => new Promise((resolve) => {
+    $('#dialog-title').textContent = _t('AI wants to close this document without saving');
+    $('#dialog-body').innerHTML = '<p></p><p></p>';
+    const [which, how] = $('#dialog-body').querySelectorAll('p');
+    which.textContent = name;
+    how.textContent = _t('Its unsaved changes will be lost. OK closes it; Cancel keeps it open.');
+    $('#dialog').hidden = false;
+    const done = (yes) => { clearTimeout(timer); $('#dialog').hidden = true; resolve(yes); };
+    const timer = setTimeout(() => done(false), 240000);
+    $('#dialog-cancel').onclick = () => done(false);
+    $('#dialog-ok').onclick = () => done(true);
+    $('#dialog-body').onkeydown = null;
+    $('#dialog-ok').focus();
+  }),
   saveTo: async (path) => {
     if (!isDesktop) throw new Error(_t('The web version cannot save to a path'));
-    if (!path && latexKept(currentPath)) throw new Error(_t('This is a LaTeX file 5.x did not write: give a new path, so it is kept as it is'));
+    const kept = latexKept(currentPath) ? currentPath : null;
+    if (kept && (!path || samePath(path, kept))) throw new Error(_t('This is a LaTeX file 5.x did not write: give a new path, so it is kept as it is'));
     const target = path || currentPath;
     if (!target) throw new Error(_t('Give a path (the .tex file to save to; ending in .sci saves a .sci)'));
-    const written = await writeDocument(/\.sci$/i.test(target) ? 'sci' : 'tex', target);
-    return written === true ? target : written;
+    const sci = /\.sci$/i.test(target);
+    const written = await writeDocument(sci ? 'sci' : 'tex', target);
+    const saved = written === true ? target : written;
+    // (said to the AI, in English: what it saved is not the file it opened)
+    return kept ? { path: saved, note: `The LaTeX file that was open (${kept}) is unchanged; ${saved} is a new ${sci ? '.sci' : 'Scientific Word 5.x'} file, and it is the open document now.` } : saved;
   },
+  // was the open document written by Scientific Word 5.x (or is it a 5.x file now, after saving)?
+  from55: () => (original55 ? original55.is5x !== false : /\\input\{tcilatex\}/.test(meta.preamble55 || '')),
   // an AI asks to open or save outside the allowed folders (api.js): the user decides;
   // no answer within 4 minutes is no (the AI app stops waiting after 5)
   askAllow: (path, action) => new Promise((resolve) => {
@@ -942,36 +1189,16 @@ window.sw = makeApi({
   typesetNow: async () => {
     if (!isDesktop) throw new Error(_t('The web version cannot typeset; get the LaTeX with get'));
     const pics = await texPictureFiles();
-    const r = await typeset(texForTypesetting(pics), meta.name || 'document', pics.list);
+    const r = await typeset(texForTypesetting(pics), meta.name || 'document', pics.list, documentFolder());
     review.setErrors(r.errors || []);
     return r;
   },
 });
 // closing the window with unsaved changes asks first: save, discard, or stay
 if (isDesktop) {
-  // every changed document is shown and asked about in turn
-  const askOne = () => new Promise((resolve) => {
-    $('#closeask').hidden = false;
-    const done = (v) => { $('#closeask').hidden = true; resolve(v); };
-    $('#closeask-cancel').onclick = () => done('cancel');
-    $('#closeask-discard').onclick = () => done('discard');
-    $('#closeask-save').onclick = async () => done((await save()) ? 'saved' : 'cancel');
-  });
-  onCloseWindow(async () => {
-    const skipped = new Set();
-    for (;;) {
-      if (!view.state.doc.eq(loadedDoc) && !skipped.has(view.state)) {
-        const a = await askOne();
-        if (a === 'cancel') return false;
-        if (a === 'discard') skipped.add(view.state);
-        continue;
-      }
-      const i = others.findIndex((r) => !r.state.doc.eq(r.loadedDoc) && !skipped.has(r.state));
-      if (i < 0) return true;
-      switchTo(i);
-    }
-  }).catch((e) => console.error(_t('Asking before closing is not set up: '), e));
+  onCloseWindow(askSaveAll).catch((e) => console.error(_t('Asking before closing is not set up: '), e));
 }
+setEngineNotice((line) => { console.warn(line); toast(line); });
 if (isDesktop) setTimeout(preloadEngine, 3000);
 // opened by double-clicking a document: show it
 if (isDesktop) {

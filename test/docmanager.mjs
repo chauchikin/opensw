@@ -10,7 +10,7 @@ const check = (name, ok, detail) => { if (!ok) fails++; console.log(ok ? 'ok  ' 
 let page = await b.newPage();
 const errs = []; page.on('pageerror', (e) => errs.push(e.message));
 await page.addInitScript(() => localStorage.setItem('opensw-fragments', JSON.stringify({ pq7: '$x^{2}+1$', fq: '$y$' })));
-await page.goto('http://localhost:4173/?lang=zh-TW'); await page.waitForTimeout(800);
+await page.goto(`http://localhost:${process.env.OPENSW_PORT || 4173}/?lang=zh-TW`); await page.waitForTimeout(800);
 let call = (cmd, args) => page.evaluate(([c, a]) => window.sw.call(c, a), [cmd, args]);
 const latex = async () => (await call('get', { format: 'latex' })).result?.latex ?? JSON.stringify(await call('get', { format: 'latex' }));
 await call('set', { latex: 'Start.' });
@@ -55,7 +55,7 @@ await page.addInitScript(() => {
     },
   };
 });
-await page.goto('http://localhost:4173/?lang=zh-TW'); await page.waitForTimeout(800);
+await page.goto(`http://localhost:${process.env.OPENSW_PORT || 4173}/?lang=zh-TW`); await page.waitForTimeout(800);
 call = (cmd, args) => page.evaluate(([c, a]) => window.sw.call(c, a), [cmd, args]);
 const menu = async (top, ...items) => {
   await page.click(`.menu-top:has-text("${top}")`);

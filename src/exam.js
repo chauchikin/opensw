@@ -5,6 +5,23 @@
 // each time b is used), conditions ("Condition: (a ≠ b)") and keyword paragraphs ("Questions:
 // number, permute"). \FORMULA{expr}{value}{operation} in a formula is worked out with the
 // values; a choice marked \correctchoice is the right one; "InputField" is a blank to fill in.
+// The keyword paragraphs of a Setup (5.5's Exam Builder reference, ebrefkeyword.tex; an Exam's,
+// a Part's or a Question's Setup, the nearest one counts):
+//   Questions: Number, Permute (No ...)   number the questions (they are not numbered otherwise);
+//                        shuffle them
+//   Choices: Break | No Break, Permute, Radio Buttons | Check   choices one a line or on one
+//                        line; shuffled; one right answer, or check boxes, each choice worth the
+//                        points of its item label (\item[-1], \item[1])
+//   Choice Space: 2      the space between choices on one line (No Break), in em
+//   Question Space: 1    empty lines after each question
+//   Print Choices: a, b, c   what a printed exam shows instead of the buttons (default (A), (B) ...)
+//   Select: 2            (a Question's) how many of its variants to ask, each a question
+//   Points: 6            what the question is worth (the online quiz's score)
+//   Text Area: 5, 60     the size of a free-form Response area (lines, characters)
+//   Images: a.bmp, b.bmp the pictures an image-select question shows instead of buttons (online)
+//   InputField(MATH) and GradeProc: givecredit(response = ...) in Choices: a blank and its answer
+//   Title, Submit, Action, Method, Database, ItemId, Record: the online quiz page (examquiz.js)
+//   Compute, CSTFile, Errors, OutputTap: about 5.5's own quiz program; read and not used
 import { Fragment } from 'prosemirror-model';
 import { schema } from './schema.js';
 import { latexToMathJson, examFormulas } from './compute.js';
@@ -26,6 +43,20 @@ export function isTemplate(doc) {
   return file && question;
 }
 
+// GradeProc: givecredit(response = x ln bx - x): the right side is worked out with the question's
+// values like a \FORMULA, for the online quiz to compare the answer with
+function gradeProcFormula(n) {
+  if (n.type.name !== 'paragraph' || !/^\s*GradeProc\s*:/i.test(n.textContent)) return n;
+  const kids = [];
+  n.forEach((c) => {
+    const m = c.type.name === 'math_inline' && c.attrs.latex.match(/^([^]*?response\}?\s*=)([^]*)$/);
+    const expr = m && m[2].replace(/\\allowbreak\s*/g, '').trim();
+    // its value, and its values at a few points (for the quiz page to compare a typed answer with)
+    kids.push(m && !/\\FORMULA/.test(m[2]) ? c.type.create({ ...c.attrs, latex: `${m[1]}\\FORMULA{${expr}}{}{evaluate}\\FORMULA{${expr}}{}{opensw-sample}` }) : c);
+  });
+  return n.copy(Fragment.from(kids));
+}
+
 // the template's parts, questions and texts, in order
 function parseTemplate(doc) {
   const exam = { setup: [], items: [] };
@@ -36,7 +67,7 @@ function parseTemplate(doc) {
   const newQuestion = () => ({ setup: [], statement: [], subs: [], response: [], answer: [], solution: [], variants: [] });
   doc.forEach((n) => {
     const k = keyword(n);
-    if (!k) { if (into) into.push(n); return; }
+    if (!k) { if (into) into.push(gradeProcFormula(n)); return; }
     if (k === 'exam' || k === 'comment') { into = null; return; }
     if (k === 'part') { newPart(); q = null; into = null; return; }
     if (k === 'question') { q = newQuestion(); q.top = q; (part || newPart()).items.push({ question: q }); into = q.statement; return; }
@@ -52,7 +83,11 @@ function parseTemplate(doc) {
     if (!q) { into = null; return; }
     if (k === 'statement') into = q.statement;
     else if (k === 'substatement') { const s = { statement: [], response: [] }; q.subs.push(s); into = s.statement; }
-    else if (k === 'response' || k === 'choices') into = q.subs.length ? q.subs[q.subs.length - 1].response : q.response;
+    else if (k === 'response' || k === 'choices') {
+      const at = q.subs.length ? q.subs[q.subs.length - 1] : q;
+      at.kind = k; // Response: a free-form answer area (Text Area); Choices: choices or a blank
+      into = at.response;
+    }
     else if (k === 'answer') into = q.answer;
     else if (k === 'solution') into = q.solution;
   });
@@ -73,11 +108,26 @@ async function readSetup(blocks) {
       for (const l of maths) statements.push({ cond: await latexToMathJson(l) });
       continue;
     }
-    if (kw && !maths.length) { settings[kw[1].toLowerCase()] = text.slice(kw[0].length).trim().toLowerCase(); continue; }
+    if (kw && !maths.length) {
+      const key = kw[1].trim().toLowerCase().replace(/\s+/g, ' ');
+      settings[key] = text.slice(kw[0].length).trim().toLowerCase();
+      settings['raw ' + key] = text.slice(kw[0].length).trim(); // as written (an address for Action)
+      continue;
+    }
     for (const l of maths) {
+      // v := ..: its two sides read apart (u_{1} := .. read whole is a subscripted function)
+      const set = l.match(/^([^]*?):=([^]*)$/);
+      if (set) {
+        const [name, expr] = [await latexToMathJson(set[1]), await latexToMathJson(set[2])];
+        if (typeof name === 'string') { statements.push({ name, expr }); continue; }
+      }
       const j = await latexToMathJson(l);
       if (Array.isArray(j) && j[0] === 'Assign' && typeof j[1] === 'string') statements.push({ name: j[1], expr: j[2] });
       else if (Array.isArray(j) && j[0] === 'Equal' && typeof j[1] === 'string') statements.push({ name: j[1], expr: j[2], delayed: true });
+      // a function: f(x, n) = .. (used in the questions' formulas and GradeProc)
+      else if (Array.isArray(j) && j[0] === 'Equal' && Array.isArray(j[1]) && typeof j[1][0] === 'string' && j[1].length > 1 && j[1].slice(1).every((x) => typeof x === 'string')) {
+        statements.push({ name: j[1][0], params: j[1].slice(1), expr: j[2] });
+      }
     }
   }
   return { statements, settings };
@@ -143,12 +193,22 @@ function randomFrom(seed) {
 const shuffle = (list, rnd) => { const l = [...list]; for (let i = l.length - 1; i > 0; i--) { const j = Math.floor(rnd() * (i + 1)); [l[i], l[j]] = [l[j], l[i]]; } return l; };
 const has = (setting, word) => new RegExp(`(^|,)\\s*${word}\\s*(,|$)`).test(setting || '');
 const LETTERS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+const pointsOf = (settings) => { const p = Number(String(settings.points ?? '').trim()); return settings.points != null && Number.isFinite(p) && p >= 0 ? p : null; };
+const numbers = (setting) => String(setting || '').split(/[\s,x×]+/).map(Number).filter((x) => Number.isFinite(x) && x > 0);
+// Print Choices: a, b, c -> the labels; none: (A), (B) ...
+const choiceLabels = (settings) => (settings['raw print choices'] || '').split(',').map((x) => x.trim()).filter(Boolean);
+// an invisible mark in the text for the online quiz: a choice (Q<id>:<letter>) or a blank (I<id>)
+export const QUIZ_MARK = '\u2063';
 
-// a Response's blocks -> { choices: [{ blocks, correct, fixed }], input, other: [blocks] }
+// a Choices or Response section's blocks -> { choices: [{ blocks, correct, fixed, points }], input,
+// grade (GradeProc's answer, LaTeX), other: [blocks] }. A choice is right when it has \correctchoice
+// (a TeX field, or in a formula), or an item label that is a positive number (Choices: Check)
 function readResponse(blocks) {
   const choices = [];
   const other = [];
   let input = false;
+  let grade = null;
+  let sample = null; // GradeProc's answer at a few points: { vars, points, values }
   for (const b of blocks) {
     if (b.type.name === 'bullet_list' || b.type.name === 'ordered_list') {
       b.forEach((item) => {
@@ -157,15 +217,33 @@ function readResponse(blocks) {
         item.forEach((p) => {
           if (p.type.name !== 'paragraph') { kept.push(p); return; }
           const inl = [];
-          p.forEach((c) => { if (c.type.name === 'tex_field' && /^\\correctchoice\b/.test(c.attrs.tex)) correct = true; else inl.push(c); });
+          p.forEach((c) => {
+            if (c.type.name === 'tex_field' && /^\\correctchoice\b/.test(c.attrs.tex)) correct = true;
+            else if (c.type.name === 'math_inline' && /\\correctchoice\b/.test(c.attrs.latex)) {
+              correct = true;
+              const rest = c.attrs.latex.replace(/\\correctchoice\s*(\{\s*\})?/g, '').trim();
+              if (rest) inl.push(c.type.create({ ...c.attrs, latex: rest }));
+            } else inl.push(c);
+          });
           if (inl.some((c) => !(c.isText && !c.text.trim()))) kept.push(p.copy(Fragment.from(inl)));
         });
-        choices.push({ blocks: kept, correct, fixed: /^fixed$/i.test(item.attrs.label || '') });
+        const label = (item.attrs.label || '').trim();
+        const points = /^[-+]?\d+(\.\d+)?$/.test(label) ? Number(label) : null;
+        if (points != null && points > 0) correct = true;
+        choices.push({ blocks: kept, correct, fixed: /^fixed\b/i.test(label), points });
       });
-    } else if (b.type.name === 'paragraph' && /^input\s*field$/i.test(b.textContent.trim())) input = true;
-    else other.push(b);
+    } else if (b.type.name === 'paragraph' && /^input\s*field\s*(\(\s*\w*\s*\))?$/i.test(b.textContent.trim())) input = true;
+    else if (b.type.name === 'paragraph' && /^\s*GradeProc\s*:/i.test(b.textContent)) {
+      b.forEach((c) => {
+        const m = c.type.name === 'math_inline' && c.attrs.latex.match(/response\}?\s*=\s*\{([^]*)\}\{SAMPLE:([^]*)\}\s*$/);
+        if (m) { grade = m[1].trim(); try { sample = JSON.parse(m[2]); } catch (e) { /* only the text then */ } } else {
+          const t = c.type.name === 'math_inline' && c.attrs.latex.match(/response\}?\s*=([^]*)$/);
+          if (t) grade = t[1].trim();
+        }
+      });
+    } else other.push(b);
   }
-  return { choices, input, other };
+  return { choices, input, grade, sample, other };
 }
 
 const para = (...inline) => schema.nodes.paragraph.create(null, inline.flat().filter(Boolean));
@@ -179,8 +257,26 @@ function labelled(label, blocks) {
   return [first.copy(Fragment.from(schema.text(label)).append(first.content)), ...rest];
 }
 
+// the Exam's own Setup settings for the online quiz (Title, Submit, Action, Method, Database,
+// ItemId, Record), as written
+export function examSettings(doc) {
+  const out = {};
+  let inSetup = false, before = true;
+  doc.forEach((n) => {
+    const k = keyword(n);
+    if (k) { inSetup = k === 'setup' && before; if (k === 'question' || k === 'part') before = false; return; }
+    if (!inSetup || n.type.name !== 'paragraph') return;
+    const m = n.textContent.trim().match(/^(Title|Submit|Action|Method|Database|ItemId|Record)\s*:\s*(.*)$/i);
+    if (m) out[m[1].toLowerCase()] = m[2].trim();
+  });
+  return out;
+}
+
 // -> { doc } the exams (versions) and their answers
-export async function buildExams(doc, { versions = 1, seed = null, answers = true } = {}) {
+// quiz: an array to fill with the online quiz's key (one version, no answers; the choices and
+// blanks are marked in the text, see examquiz.js)
+export async function buildExams(doc, { versions = 1, seed = null, answers = true, quiz = null } = {}) {
+  if (quiz) { versions = 1; answers = false; }
   const t = parseTemplate(doc);
   const top = await readSetup(t.setup);
   const baseSeed = seed ?? (Number(top.settings.seed) || Math.floor(Math.random() * 2 ** 31));
@@ -201,16 +297,25 @@ export async function buildExams(doc, { versions = 1, seed = null, answers = tru
       const pp = { setup: ps.statements, formulas: [], questions: [] };
       for (const it of p.items) {
         if (it.text) { part.items.push({ text: it.text }); pp.formulas.push(...(await formulaList(it.text))); continue; }
-        const forms = [it.question, ...it.question.variants];
-        const q = forms[Math.floor(rnd() * forms.length)];
-        const qs = await readSetup(q.setup);
-        const blocks = [q.statement, ...q.subs.flatMap((s) => [s.statement, s.response]), q.response, q.answer, q.solution];
-        part.items.push({ question: q, settings: { ...part.settings, ...qs.settings } });
-        pp.questions.push({ setup: qs.statements, formulas: (await Promise.all(blocks.map(formulaList))).flat() });
+        // a question with variants: one of them at random, or as many as its Select says (each a
+        // question); a Question whose own text is empty (only a Setup, then Variants) is not one
+        const top = it.question;
+        const ts = await readSetup(top.setup);
+        const own = [top.statement, top.response, ...top.subs.map((x) => x.statement)].some((b) => b.length);
+        const forms = [...(own || !top.variants.length ? [top] : []), ...top.variants];
+        const select = Math.round(Number({ ...part.settings, ...ts.settings }.select)) || 1;
+        const picked = select <= 1 ? [forms[Math.floor(rnd() * forms.length)]] : shuffle(forms, rnd).slice(0, select).sort((a, b) => forms.indexOf(a) - forms.indexOf(b));
+        for (const q of picked) {
+          const qs = q === top ? ts : await readSetup(q.setup);
+          const blocks = [q.statement, ...q.subs.flatMap((x) => [x.statement, x.response]), q.response, q.answer, q.solution];
+          part.items.push({ question: q, settings: { ...part.settings, ...ts.settings, ...qs.settings } });
+          pp.questions.push({ setup: q === top ? ts.statements : [...ts.statements, ...qs.statements], formulas: (await Promise.all(blocks.map(formulaList))).flat() });
+        }
       }
       plan.parts.push(part);
       payload.parts.push(pp);
     }
+    globalThis.swExamPayloadForTests = payload; // (for tests)
     const values = await examFormulas(payload);
     // the exam, the formulas replaced by their values
     let n = 0;
@@ -233,10 +338,14 @@ export async function buildExams(doc, { versions = 1, seed = null, answers = tru
       for (const it of items) {
         if (it.text) { out.push(...mapFormulas(it.text, partText)); continue; }
         const one = order[k++];
-        const numbered = !has(one.settings.questions, 'no number');
+        // Questions: Number numbers them (5.5: not numbered without it)
+        const numbered = has(one.settings.questions, 'number') && !has(one.settings.questions, 'no number');
         n++;
-        const [qOut, answer] = renderQuestion(one.question, take(one.values), one.settings, rnd, numbered ? `${n}. ` : '');
+        const points = pointsOf(one.settings) ?? 1;
+        const [qOut, answer] = renderQuestion(one.question, take(one.values), one.settings, rnd, numbered ? `${n}. ` : '', quiz && { list: quiz, id: n, points });
         out.push(...qOut);
+        // Question Space: empty lines after it
+        for (let i = 0; i < Math.min(50, Math.round(numbers(one.settings['question space'])[0] || 0)); i++) out.push(para());
         // the answers: by the question's number (an unnumbered question with an answer: by its place)
         if (numbered || answer.length) key.push(...labelled(numbered ? `${n}. ` : _t('(Question {0}, no number)', n), answer.length ? answer : [para(text(_t('(no model answer)')))]));
       }
@@ -256,33 +365,82 @@ async function formulaList(blocks) {
 }
 
 // one question -> [its blocks in the exam, its answer (correct choices, Answer, Solution)]
-function renderQuestion(q, next, settings, rnd, number) {
+// quiz: { list, id, points }: marks the choices, blanks and answer areas, and puts the key in list
+function renderQuestion(q, next, settings, rnd, number, quiz = null) {
   const out = [];
   const answer = [];
   const statement = mapFormulas(q.statement, next);
   out.push(...labelled(number, statement));
-  const responses = [...q.subs.map((s) => ({ statement: s.statement, response: s.response })), { statement: null, response: q.response }];
+  const responses = [...q.subs.map((s) => ({ statement: s.statement, response: s.response, kind: s.kind })), { statement: null, response: q.response, kind: q.kind }];
   const many = q.subs.length > 0;
   let sub = 0;
   const keyLine = [];
+  const parts = []; // the online quiz's key for this question
+  const printed = choiceLabels(settings);
+  const check = has(settings.choices, 'check');
+  const oneLine = has(settings.choices, 'no break');
+  const gap = '\u2003'.repeat(Math.max(1, Math.min(20, Math.round(numbers(settings['choice space'])[0] || 1))));
   for (const r of responses) {
     if (r.statement) out.push(...labelled(`(${'abcdefghij'[sub]}) `, mapFormulas(r.statement, next)));
     const res = readResponse(mapFormulas(r.response, next));
-    if (!r.statement && !res.choices.length && !res.input && !res.other.length) continue;
+    const freeForm = r.kind === 'response' && !res.choices.length && !res.input;
+    if (!r.statement && !res.choices.length && !res.input && !res.other.length && !freeForm) continue;
     out.push(...res.other);
     const permute = has(settings.choices, 'permute') && !has(settings.choices, 'no permute');
     const free = res.choices.filter((c) => !c.fixed);
     const chosen = [...(permute ? shuffle(free, rnd) : free), ...res.choices.filter((c) => c.fixed)];
+    const qid = quiz ? `${quiz.id}${many && r.statement ? 'abcdefghij'[sub] : ''}` : '';
+    const mark = (s) => (quiz ? `${QUIZ_MARK}${s}${QUIZ_MARK}` : '');
+    // what a printed exam shows instead of a button: Print Choices' items, else (A), (B) ...
+    const labelOf = (i) => printed[i] ?? `(${LETTERS[i]})`;
     const right = [];
+    const line = [];
     chosen.forEach((c, i) => {
-      out.push(...labelled(`(${LETTERS[i]}) `, c.blocks));
-      if (c.correct) right.push(LETTERS[i]);
+      const l = `${mark(`Q${qid}:${LETTERS[i]}`)}${labelOf(i)} `;
+      // Choices: No Break: on one line, Choice Space apart (a choice of one paragraph)
+      if (oneLine && c.blocks.length <= 1 && (!c.blocks[0] || c.blocks[0].type.name === 'paragraph')) {
+        line.push(schema.text((i ? gap : '') + l), ...(c.blocks[0] ? c.blocks[0].content.content : []));
+      } else out.push(...labelled(l, c.blocks));
+      if (c.correct) right.push(i);
     });
-    if (res.input) out.push(para(text(_t('Answer: __________'))));
-    if (right.length) keyLine.push((many && r.statement ? `(${'abcdefghij'[sub]}) ` : '') + right.map((x) => `(${x})`).join(' '));
+    if (line.length) out.push(para(line));
+    if (res.input) out.push(para(text(quiz ? mark(`I${qid}`) : _t('Answer: __________'))));
+    // a Response section: a free-form answer area, Text Area lines high
+    const [rows, cols] = numbers(settings['text area']);
+    if (freeForm) {
+      if (quiz) out.push(para(text(mark(`T${qid}:${rows || 3}:${cols || 60}`))));
+      else for (let i = 0; i < Math.min(60, rows || 3); i++) out.push(para());
+    }
+    if (quiz && (chosen.length || res.input || freeForm)) {
+      const images = (settings['raw images'] || '').split(',').map((x) => x.trim()).filter(Boolean);
+      parts.push(chosen.length
+        ? { id: qid, kind: images.length ? 'image' : check ? 'check' : 'radio', choices: right.map((i) => LETTERS[i]),
+          ...(check && { choicePoints: Object.fromEntries(chosen.map((c, i) => [LETTERS[i], c.points ?? (c.correct ? 1 : 0)])) }),
+          ...(images.length && { images: chosen.map((c, i) => images[i % images.length]) }) }
+        : res.input ? { id: qid, kind: 'input', grade: res.grade, sample: res.sample } : { id: qid, kind: 'text' });
+    }
+    if (right.length) keyLine.push((many && r.statement ? `(${'abcdefghij'[sub]}) ` : '') + right.map((i) => labelOf(i)).join(' '));
     if (r.statement) sub++;
   }
   if (keyLine.length) answer.push(para(text(keyLine.join('　'))));
-  answer.push(...mapFormulas(q.answer, next), ...mapFormulas(q.solution, next));
+  const model = mapFormulas(q.answer, next);
+  answer.push(...model, ...mapFormulas(q.solution, next));
+  // (a question with several parts: its points shared among them; a free-form one is not graded)
+  if (quiz) {
+    const graded = parts.filter((x) => x.kind !== 'text');
+    for (const x of parts) {
+      quiz.list.push({ ...x, points: x.kind === 'text' ? 0 : quiz.points / graded.length,
+        ...(x.kind === 'input' && { answer: x.grade ? x.grade.replace(/^\{([^]*)\}$/, '$1') : plainAnswer(model) }) });
+      delete quiz.list.at(-1).grade;
+    }
+  }
   return [out, answer];
+}
+
+// the model answer of a blank (InputField) as plain text for the online quiz to compare with:
+// its text and formulas (their LaTeX, the \FORMULAs with their values)
+function plainAnswer(blocks) {
+  let s = '';
+  for (const b of blocks) b.descendants((c) => { if (c.isText) s += c.text; else if (c.type.name.startsWith('math')) s += c.attrs.latex; });
+  return s.trim();
 }

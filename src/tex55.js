@@ -116,7 +116,8 @@ export function readTex55(bytes) {
 // an Exam Builder formula is %TCIMACRO{\FORMULA{expr}{value}{operation}}% with the value as
 // its expansion: kept as \FORMULA{..}{..}{..} in the formula (shown as the value)
 const FORMULA_MACRO = /%TCIMACRO\{((?:[^\n]|\r?\n%)*?)\}%[ \t]*\r?\n%BeginExpansion\r?\n[^]*?%EndExpansion/g;
-const formulaRep = (all, inner) => { const m = inner.replace(/\r?\n%/g, ''); return /^\\FORMULA\{/.test(m) ? m : all; };
+// (a long one is broken across lines, "%TCIMACRO{%" then "%\FORMULA{..": a % at a line's end goes too)
+const formulaRep = (all, inner) => { const m = inner.replace(/(?<!\\)%?\r?\n%/g, ''); return /^\\FORMULA\{/.test(m) ? m : all; };
 const HTML_MACRO = /%TCIMACRO\{\\HTML\{([^\n]*)\}\s*\}%[ \t]*\r?\n%BeginExpansion\r?\n[^]*?%EndExpansion[^\n]*\n?[ \t]*/g;
 const htmlRep = (all, inner) => `\\HTML{${inner}}`;
 
@@ -635,7 +636,9 @@ export class Parser {
         if (FRONT_CMDS.has(name)) {
           const { args, end } = Parser.args(s, i + cmd.length + 1, 1);
           flush();
-          out.push(schema.nodes.front_field.create({ cmd: name }, this.inline(args[0] || '')));
+          const f = schema.nodes.front_field.create({ cmd: name }, this.inline(args[0] || ''));
+          // between \title and \maketitle (as 5.x writes them): shown after the title and author
+          if (this.title != null && !this.titled) (this.fronts ||= []).push(f); else out.push(f);
           i = end;
           continue;
         }
@@ -649,6 +652,8 @@ export class Parser {
           flush();
           if (this.title != null) out.push(schema.nodes.title.create({ date: this.date ?? null }, this.inline(this.title)));
           if (this.author) out.push(schema.nodes.env.create({ kind: 'centered' }, [schema.nodes.paragraph.create(null, this.inline(this.author))]));
+          if (this.fronts) { out.push(...this.fronts); this.fronts = null; }
+          this.titled = true;
           this.started = true;
           i += cmd.length + 1;
           continue;
@@ -683,6 +688,7 @@ export class Parser {
     }
     note(i);
     flush();
+    if (this.fronts && this.depth === 1) { out.push(...this.fronts); this.fronts = null; } // \title without \maketitle
     this.depth--;
     return out;
   }
@@ -847,16 +853,19 @@ export class Parser {
       if (c === '{') {
         const g = Parser.groupEnd(s, i);
         const inner = s.slice(i + 1, g - 1);
-        const sw = inner.match(/^\s*\\([a-zA-Z]+)\b\s*/);
         let m = marks;
         let body = inner;
-        const col = inner.match(/^\s*\\color\s*\{([^}]*)\}\s*/);
-        if (sw && (SWITCH_MARKS[sw[1]] || SIZES.has(sw[1]))) {
-          m = SWITCH_MARKS[sw[1]] ? withMark(marks, SWITCH_MARKS[sw[1]]) : sw[1] === 'normalsize' ? marks : withMark(marks, sizeMark(sw[1]));
-          body = inner.slice(sw[0].length);
-        } else if (col) {
-          m = withMark(marks, schema.marks.color.create({ color: col[1].trim() }));
-          body = inner.slice(col[0].length);
+        // the switches the group starts with, one after another ({\LARGE\bfseries Title}): each holds to its end
+        for (;;) {
+          const sw = body.match(/^\s*\\([a-zA-Z]+)\b\s*/);
+          const col = body.match(/^\s*\\color\s*\{([^}]*)\}\s*/);
+          if (sw && (SWITCH_MARKS[sw[1]] || SIZES.has(sw[1]))) {
+            m = SWITCH_MARKS[sw[1]] ? withMark(m, SWITCH_MARKS[sw[1]]) : sw[1] === 'normalsize' ? m : withMark(m, sizeMark(sw[1]));
+            body = body.slice(sw[0].length);
+          } else if (col) {
+            m = withMark(m, schema.marks.color.create({ color: col[1].trim() }));
+            body = body.slice(col[0].length);
+          } else break;
         }
         push(this.inline(body, m));
         i = g;
@@ -866,9 +875,15 @@ export class Parser {
         const cmd = Parser.cmdAt(s, i);
         const after = i + 1 + cmd.length;
         if (cmd === '\\') { // line break, optional [length]
-          const k = s.slice(after).match(/^\*?\s*(\[[^\]]*\])?\s*/); // TeX skips the spaces after it
+          // TeX skips the spaces after it; \\{} is how a break before a [ or * is written (export.js)
+          const k = s.slice(after).match(/^(?:\{\}|\*?\s*(\[[^\]]*\])?)\s*/);
           push([schema.nodes.hard_break.create()]);
           i = after + k[0].length;
+          continue;
+        }
+        if (cmd === 'newline') { // 5.5 writes a line break so, with {} at the start of the next line when that starts with [ or *
+          push([schema.nodes.hard_break.create()]);
+          i = after + s.slice(after).match(/^\s*(?:\{\}\s*)?/)[0].length;
           continue;
         }
         if (cmd in TEXT_CHARS) { text += TEXT_CHARS[cmd]; i = after; continue; }
@@ -978,7 +993,7 @@ export class Parser {
         // word eats the spaces after it, as in TeX)
         let end = /^[a-zA-Z]/.test(cmd) ? after + s.slice(after).match(/^[ \t]*/)[0].length : after;
         while (s[end] === '{' || (s[end] === '[' && end === after)) end = s[end] === '{' ? Parser.groupEnd(s, end) : s.indexOf(']', end) + 1;
-        // \newline{} is \newline (the {} only stops it eating a following letter; saving adds it again)
+        // \today{} is \today (the {} only stops it eating a following letter; saving adds it again)
         push([schema.nodes.tex_field.create({ tex: s.slice(i, end).replace(/[ \t]+$/, '').replace(/^(\\[a-zA-Z]+)\{\}$/, '$1') })]);
         i = end;
         continue;

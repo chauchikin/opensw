@@ -227,8 +227,11 @@ buildHead[h : "Integrate" | "Sum" | "Product", {f_, lims___}] := Module[{body, v
 (* x -> a^+, a^- (a third argument 1, -1), or from both sides (undefined if they differ) *)
 buildHead["Limit", {f_, a_, side___}] := Module[{body, v, r}, {body, v} = functionBody[f];
   If[v === None, unsupported["A limit needs a variable"]];
-  r = Limit[body, v -> build[a], Sequence @@ Switch[{side}, {1}, {Direction -> "FromAbove"}, {-1}, {Direction -> "FromBelow"}, _, {}]];
-  If[Head[r] === Interval, Indeterminate, r]];
+  (* definitions go in first, as for a derivative (w_0 defined with the variable in it is not a
+     constant of the limit); the answer is simplified, as 5.5 gives it: Limit itself leaves
+     (a^2-b^2)/(a-b) as it is *)
+  r = Limit[applyDefs[body], v -> build[a], Sequence @@ Switch[{side}, {1}, {Direction -> "FromAbove"}, {-1}, {Direction -> "FromBelow"}, _, {}]];
+  If[Head[r] === Interval, Indeterminate, Simplify[r]]];
 (* definitions go in before differentiating: w(x,y) or w_0 defined, then d/dx of it; cases case by case *)
 buildHead["D", {f_, vs___}] := With[{g = applyDefs[build[f]], xs = build /@ {vs}},
   If[Head[g] === Piecewise, Piecewise[{D[#[[1]], Sequence @@ xs], #[[2]]} & /@ g[[1]], D[g[[2]], Sequence @@ xs]], D[g, Sequence @@ xs]]];
@@ -572,7 +575,8 @@ define[j_, full_, subscript_ : None] := Module[{lhs, r, m},
     True, unsupported["The left side must be a name or a function such as f(x)"]]];
 
 showDefinitions[] := solutions[Join[KeyValueMap[Function[{name, d},
-  tex[eq[If[d[[1]] === None, var[name], var[name] @@ d[[1]]], d[[2]]]]], $defs],
+  If[KeyExistsQ[$mapShown, name] && $mapShown[name][[1]] === d, $mapShown[name][[2]],
+    tex[eq[If[d[[1]] === None, var[name], var[name] @@ d[[1]]], d[[2]]]]]], $defs],
   DeleteDuplicates[$problems[#[[1]]]["shown"] & /@ Values[$numeric]]]]; (* a system once *)
 
 (* Assumptions about variables (5.5's assume, additionally, unassume, about). Variables are
@@ -752,7 +756,8 @@ namedFunctions = <|Erf -> "\\operatorname{erf}", Erfc -> "\\operatorname{erfc}",
   Sech -> "\\operatorname{sech}", Csch -> "\\operatorname{csch}", Max -> "\\max", Min -> "\\min", GCD -> "\\gcd",
   LCM -> "\\operatorname{lcm}", nextprime -> "\\operatorname{nextprime}", divisors -> "\\operatorname{divisors}",
   contfrac -> "\\operatorname{contfrac}"|>;
-bessel = <|BesselJ -> "J", BesselY -> "Y", BesselI -> "I", BesselK -> "K"|>;
+(* as 5.5 by default (Compute > Settings, Use I, J, K, and Y with Subscripts not checked): BesselJ_0(x); setOptions55 changes it *)
+bessel = <|BesselJ -> "\\operatorname{BesselJ}", BesselY -> "\\operatorname{BesselY}", BesselI -> "\\operatorname{BesselI}", BesselK -> "\\operatorname{BesselK}"|>;
 plainHeads = {Times, Power, Rational, Complex, DirectedInfinity, unit55, idx};
 compoundQ[u_] := !FreeQ[u, _Plus | (h_Symbol /; !MemberQ[plainHeads, h])[___] | _Integrate | _Sum | _Limit | _Derivative];
 negativeQ[u_] := (NumberQ[u] && Im[u] == 0 && u < 0) || (Head[u] === Times && negativeQ[First[u]]) ||
@@ -874,13 +879,22 @@ orderTerms[ts_] := Module[{consts = Select[ts, FreeQ[#, _Symbol?isVar] &], other
   If[Length[ts] == 2 && Length[consts] == 1 && NumberQ[First[consts]] && Im[First[consts]] == 0 && First[consts] > 0 && negativeQ[First[others]],
     Return[Join[consts, others]]];
   vs = SortBy[DeleteDuplicates[Cases[others, _Symbol?isVar, {0, Infinity}]], nameOf];
-  Join[SortBy[others, Function[t, -(Quiet[Exponent[t, #]] & /@ vs) /. -Infinity -> 0]], consts]];
+  (* ties as SymPy and 5.5 write them: a term that is only a denominator after the one with a
+     numerator (\frac{1}{2}e^{x}-\frac{1}{2}e^{-x}), sin before cos; a real constant before an
+     imaginary one (\frac{1}{2}\sqrt{3}+\frac{1}{2}i) *)
+  Join[SortBy[others, {Function[t, -(Quiet[Exponent[t, #]] & /@ vs) /. -Infinity -> 0], Numerator[termPart[#]] === 1 &, trigRank[termPart[#]] &}],
+    SortBy[consts, {TrueQ[Quiet[N[Im[#]]] != 0] &}]]];
+termPart[t_] := If[Head[t] === Times && NumericQ[First[t]], Rest[t], t]; (* without its number *)
+trigRank[f_] := Switch[Head[f], Sin | sinI, 1, Cos | cosI, 2, _, 3];
 
 (* a product as 5.5 writes it: the sign first, a fraction first (\frac{1}{2}\sqrt{2}), the
    negative powers as a fraction (sec, csc as 1/cos, 1/sin) *)
 denominatorQ[f_] := MatchQ[f, Power[b_, n_] /; b =!= E && negativeQ[n]];
 texTimes[fs0_] := Module[{fs = fs0, c = 1, num = {}, den = {}, move, numStr, denStr, coef},
   If[fs =!= {} && NumberQ[First[fs]], c = First[fs]; fs = Rest[fs]];
+  (* \frac{1}{2}\sqrt{3}i: an imaginary fraction times numbers has its i last, as SymPy and 5.5 write it *)
+  If[Head[c] === Complex && Re[c] == 0 && Abs[Im[c]] =!= 1 && fs =!= {} && AllTrue[fs, NumericQ],
+    Return[texTimes[Prepend[fs, Im[c]]] <> " i"]];
   If[negativeQ[c], Return["-" <> texTimes[If[c == -1, fs, Prepend[fs, -c]]]]];
   move = c =!= 1 || Length[fs] > 1;
   Do[Which[
@@ -897,9 +911,13 @@ texTimes[fs0_] := Module[{fs = fs0, c = 1, num = {}, den = {}, move, numStr, den
   If[den === {}, numStr, "\\frac{" <> numStr <> "}{" <> If[Length[den] == 1, texE[First[den]], product[SortBy[den, !NumberQ[#] &]]] <> "}"]];
 (* the factors of a product: numbers, then the variables and their powers (2\pi k, a e^{ax}, x \sin x) *)
 product[fs_] := Module[{out = ""},
-  Do[With[{s = paren[f, 21]}, out = If[out == "", s, out <> joiner[s] <> s]], {f, SortBy[fs, Which[NumericQ[#], 0, MatchQ[#, _Symbol?isVar | Power[_Symbol?isVar, _]], 1, True, 2] &]}];
+  Do[With[{s = paren[f, 21]}, out = If[out == "", s, out <> joiner[s] <> s]], {f, SortBy[fs, productKey]}];
   out];
-joiner[next_String] := If[StringMatchQ[next, RegularExpression["^[0-9-].*"]], " \\cdot ", " "];
+(* the order of the factors, as SymPy (and 5.5) write them: numbers, variables, sums, then the
+   functions, sin before cos (\sin x\cos x), the shorter first (n!\left(m-n\right)!) *)
+productKey[f_] := With[{g = Which[NumericQ[f], 0, MatchQ[f, _Symbol?isVar | Power[_Symbol?isVar, _] | C[_]], 1, MatchQ[f, _Plus | Power[_Plus, _]], 2, True, 3]},
+  {g, If[MatchQ[f, Power[E, _]], 0, trigRank[f]], If[g == 3, LeafCount[f], 0]}]; (* a e^{ax}\sin bx, c_{1}\cos x *)
+joiner[next_String] := If[StringMatchQ[next, RegularExpression["^[0-9-].*"]] && !StringMatchQ[next, RegularExpression["^[0-9]+\\^.*"]], " \\cdot ", " "]; (* 2^{x} 2^{y} *)
 
 (* a^b: \sqrt{x}, \sqrt[3]{x}, 1/x^n as a fraction, e^x, \sin^{2} x, (g(x))^2 *)
 texPower[b_, n_] := Which[
@@ -1006,7 +1024,8 @@ rewriteSinCos[e_] := Module[{r = e /. Power[E, u_] /; !FreeQ[u, Complex] :> ExpT
     r /. {Tan[u_] :> sinI[u] / cosI[u], Cot[u_] :> cosI[u] / sinI[u], Sec[u_] :> 1 / cosI[u], Csc[u_] :> 1 / sinI[u], Sin -> sinI, Cos -> cosI}]];
 (* Rewrite > Exponential: tanh x = (e^(2x) - 1)/(e^(2x) + 1) as 5.5 writes it; a power such as (x + 1)^2 stays *)
 rewriteExp[e_?MatrixQ] := Map[rewriteExp, e, {2}];
-rewriteExp[e_] := TrigToExp[e /. {Tanh[u_] :> (E^(2 u) - 1) / (E^(2 u) + 1), Coth[u_] :> (E^(2 u) + 1) / (E^(2 u) - 1)}];
+rewriteExp[e_] := TrigToExp[e /. {Tanh -> tanhH55, Coth -> cothH55}] /. {
+  tanhH55[u_] :> (E^(2 TrigToExp[u]) - 1) / (E^(2 TrigToExp[u]) + 1), cothH55[u_] :> (E^(2 TrigToExp[u]) + 1) / (E^(2 TrigToExp[u]) - 1)}; (* one fraction, as 5.5 *)
 
 (* ---------------- Solve ---------------- *)
 
@@ -1133,7 +1152,22 @@ texE[ivlSet[c_, x_]] := intervalsTeX[c, x];
 
 (* A x = b: 5.5 answers with the vector of the unknowns, in the order they are written; an
    unknown left free is a parameter, named as 5.5 names it: \hat{t}_3 for the third *)
+(* Solve Options (Compute > Settings > Engine Setup): a polynomial equation with letters in its coefficients
+   (solved case by case unless Ignore Special Cases) or with a factor above the Maximum Degree (its roots
+   rho_1 ..) is answered by SymPy, which writes them as 5.5 (engine/opensw_compute.py, part core55) *)
+solveOptionsFallback[e_, unknowns_, principal_] := Module[{f, free, x, cs, params},
+  If[!MatchQ[e, _Equal | _eq] || !FreeQ[e, _Real] || !FreeQ[e, Derivative], Return[Null]]; (* eq: an equation as it is read; u' = ..: not a polynomial equation *)
+  f = Expand[e[[1]] - e[[2]]];
+  free = SortBy[userVariables[f], ToString];
+  x = Which[Length[unknowns] == 1, First[unknowns], Length[unknowns] > 1 || free === {}, Return[Null], True, First[free]];
+  If[!PolynomialQ[f, x] || Exponent[f, x] < 1, Return[Null]];
+  cs = CoefficientList[f, x];
+  params = Complement[userVariables[cs], {x}];
+  If[params =!= {} && !$options55["ignore_special"] && !principal && !FreeQ[Last[cs], Alternatives @@ params], fallback[]];
+  If[params === {} && AnyTrue[FactorList[f][[All, 1]], Exponent[#, x] > $options55["max_degree"] &], fallback[]];
+  Null];
 solveAnswer[e_, unknowns_, principal_] := Module[{vs, sols},
+  solveOptionsFallback[e, unknowns, principal];
   If[Head[e] === eq && MatrixQ[e[[1]]] && MatrixQ[e[[2]]] && unknowns === {},
     vs = Select[var /@ $names, MemberQ[userVariables[e], #] &];
     (* more unknowns than equations: the first ones in terms of the others *)
@@ -1657,9 +1691,10 @@ operations = <|
   "differentiate" -> (With[{f = lastSide[#]}, D[f, mainVariable[f]]] &),
   "integrate" -> (With[{f = lastSide[#]}, Integrate[f, mainVariable[f]]] &),
   "laplace" -> (With[{f = lastSide[#]}, LaplaceTransform[f, mainVariable[f], var["s"]]] &),
-  "inverselaplace" -> (With[{f = lastSide[#]}, InverseLaplaceTransform[f, If[MemberQ[userVariables[f], var["s"]], var["s"], mainVariable[f]], var["t"]]] &),
-  (* the same convention as SymPy: F(k) = integral of f(x) e^(-2 pi i k x) dx *)
-  "fourier" -> (With[{f = lastSide[#]}, FourierTransform[f, mainVariable[f], var["k"], FourierParameters -> {0, -2 Pi}]] &),
+  "inverselaplace" -> (With[{f = lastSide[#]}, transform[f, If[MemberQ[userVariables[f], var["s"]], var["s"], mainVariable[f]], var["t"], "InverseLaplaceTransform"]] &),
+  (* 5.5's (MuPAD's): F f(w) = integral of f(x) e^(iwx) dx, from x to w *)
+  "fourier" -> (With[{f = lastSide[#], vs = userVariables[lastSide[#]]}, With[{x = If[MemberQ[vs, var["x"]] || vs === {}, var["x"], mainVariable[f]]},
+    transform[f, x, If[x === var["w"], var["t"], var["w"]], "FourierTransform"]]] &),
   "rank" -> (MatrixRank[matrixOf[#]] &),
   "rref" -> (RowReduce[matrixOf[#]] &),
   "nullspace" -> (With[{n = NullSpace[matrixOf[#]]}, If[n === {}, {{0}}, Transpose[n]]] &),
@@ -1727,6 +1762,9 @@ compute["define", j_?paramsQ] := fallback[];
 compute[op_String, j_] /; paramsQ[j] && MemberQ[optionOps, op] := withOptions[op, j];
 compute["define", {"Assign", n_, f_}] := (* z := 25a, f := x -> ..: 5.5's assignment (full evaluation) *)
   define[{"Equal", If[startsWith[f, "Function"] && AllTrue[Drop[f, 2], StringQ], Join[{n}, Drop[f, 2]], n], If[startsWith[f, "Function"], f[[2]], f]}, True];
+(* the rest of 5.5's Compute menu: op -> function of the request (the parts near the end of this file) *)
+$extraOps = <||>;
+compute[op_String, j_] /; KeyExistsQ[$extraOps, op] := $extraOps[op][j];
 compute[op_String, j_] := Switch[op,
   "version", solutions[{"Mathematica " <> ToString[$VersionNumber]}],
   "cleardefs", $defs = <||>; $matDelims = <||>; $sequences = <||>; $numeric = <||>; $problems = <||>; $assumed = <||>; $ranges = <||>; solutions[{}],
@@ -1782,6 +1820,866 @@ answer[op_String, data_ByteArray] := Module[{r, j},
 answer[op_String, text_String] := answer[op, StringToByteArray[text, "UTF-8"]];
 
 OpenSWCompute[op_String, b64_String] := WriteString["stdout", "@@OPENSW@@" <> BaseEncode[answer[op, BaseDecode[b64]]] <> "\n"];
+
+(* =============================================================================
+   The rest of 5.5's Compute menu, one part per group of items. Each part defines its functions
+   here and sets $extraOps["op"] = function of the request (it returns the answer association).
+   ============================================================================= *)
+
+(* -----------------------------------------------------------------------------
+   part: matdecomp
+   ----------------------------------------------------------------------------- *)
+
+(* Compute > Matrices: the decompositions and normal forms, answered as 5.5 (MuPAD) answers them:
+   a factorization "A = P L U" (the factors after "="), or ", label: result" after the matrix.
+   The same steps as the SymPy part (md_* in opensw_compute.py), from SW6's MuPAD code
+   (computelib/swfcns.mu) and the examples of 5.5's help (dm8-3, dm8-6, dm8-7, dm8-8). *)
+
+mdMatrix[j_] := With[{x = withParams[j]}, {matrixOf[expr[x[[1]]]], x[[2]]}];
+mdFloatQ[m_] := !FreeQ[m, _Real];
+mdZeroQ[x_] := PossibleZeroQ[x];
+mdTidy[x_, numeric_] := If[numeric, Chop[N[x], 10^-13], Simplify[Together[x]]];
+mdProduct[ms__] := <|"kind" -> "value", "latex" -> StringRiffle[tex /@ {ms}, " "]|>;
+mdLabelled[label_Rule, latex_] := <|"kind" -> "solutions", label, "solutions" -> {latex}|>;
+mdSquare[m_] := If[Length[m] != Length[First[m]], unsupported["Needs a square matrix"], m];
+
+(* row echelon form as MuPAD's linalg::gaussElim: the first nonzero entry of the column as pivot
+   (the largest with decimals), rows swapped only for that; fraction free: Bareiss.
+   -> {U, L, perm}: Q A = L U with row i of Q A row perm[[i]] of A *)
+mdEchelon[m0_, ff_, largest_] := Module[{a = m0, rows, cols, low, perm, r = 1, prev = 1, found, p, piv, f, q},
+  {rows, cols} = Dimensions[a];
+  low = ConstantArray[0, {rows, rows}];
+  perm = Range[rows];
+  Do[
+    If[r > rows, Break[]];
+    found = Select[Range[r, rows], !mdZeroQ[a[[#, c]]] &];
+    If[found =!= {},
+      p = If[largest, First[MaximalBy[found, Abs[N[a[[#, c]]]] &]], First[found]];
+      If[p != r, a[[{p, r}]] = a[[{r, p}]]; low[[{p, r}]] = low[[{r, p}]]; perm[[{p, r}]] = perm[[{r, p}]]];
+      piv = a[[r, c]];
+      Do[
+        f = a[[i, c]];
+        If[ff,
+          a[[i]] = Expand[Cancel[(piv a[[i]] - f a[[r]]) / prev]],
+          q = Cancel[f / piv]; low[[i, r]] = q; a[[i]] = Cancel[a[[i]] - q a[[r]]]; a[[i, c]] = 0],
+        {i, r + 1, rows}];
+      prev = piv; r++],
+    {c, cols}];
+  {a, low + IdentityMatrix[rows], perm}];
+
+mdGauss[j_] := Module[{m = First[mdMatrix[j]]},
+  mdLabelled["label" -> ", Gaussian elimination: ", tex[Map[mdTidy[#, mdFloatQ[m]] &, First[mdEchelon[m, False, False]], {2}]]]];
+mdFFGauss[j_] := Module[{m = First[mdMatrix[j]]},
+  If[mdFloatQ[m], unsupported["Matrix entries must be polynomials over the rationals"]];
+  mdLabelled["label" -> ", fraction-free Gaussian elimination: ", tex[First[mdEchelon[m, True, False]]]]];
+
+mdPLU[j_] := Module[{m = First[mdMatrix[j]], num, u, low, perm, p},
+  num = mdFloatQ[m];
+  {u, low, perm} = mdEchelon[m, False, num];
+  p = ConstantArray[0, {Length[m], Length[m]}];
+  Do[p[[perm[[i]], i]] = 1, {i, Length[perm]}];
+  If[num,
+    low = MapIndexed[If[#2[[1]] == #2[[2]], 1., mdTidy[#1, True]] &, low, {2}]; u = Map[mdTidy[#, True] &, u, {2}],
+    low = Map[mdTidy[#, False] &, low, {2}]; u = Map[mdTidy[#, False] &, u, {2}]];
+  mdProduct[p, low, u]];
+
+(* Gram-Schmidt on the columns (linalg::factorQR): Q is m x m, completed with the unit vectors *)
+mdQR[j_] := Module[{m = First[mdMatrix[j]], num, rows, qs = {}, w, q, r},
+  num = mdFloatQ[m];
+  rows = Length[m];
+  Do[
+    If[Length[qs] == rows, Break[]];
+    w = If[qs === {}, v, v - Total[((Conjugate[#] . v) #) & /@ qs]];
+    w = mdTidy[#, num] & /@ w;
+    If[If[num, Norm[N[w]] < 10^-12, AllTrue[w, mdZeroQ]], Continue[]];
+    AppendTo[qs, mdTidy[#, num] & /@ (w / Sqrt[Conjugate[w] . w])],
+    {v, Join[Transpose[m], IdentityMatrix[rows]]}];
+  q = Transpose[qs];
+  r = Map[mdTidy[#, num] &, ConjugateTranspose[q] . m, {2}];
+  r = MapIndexed[If[#2[[2]] < #2[[1]], 0, #1] &, r, {2}];
+  mdProduct[q, r]];
+
+mdCholesky[j_] := Module[{m = mdSquare[First[mdMatrix[j]]], num, u, g},
+  num = mdFloatQ[m];
+  If[!SymmetricMatrixQ[m], unsupported["Cholesky decomposition needs a symmetric matrix"]];
+  u = Quiet[Check[CholeskyDecomposition[m], unsupported["Cholesky decomposition needs a positive definite matrix"]]];
+  g = Map[mdTidy[#, num] &, Transpose[u], {2}];
+  mdProduct[g, Transpose[g]]];
+
+(* MuPAD's numeric::singularvectors (always decimals); each pair signed so that the row of V
+   starts with a positive number, as 5.5's examples *)
+mdSVDParts[m_] := Module[{u, w, v, vh, n},
+  {u, w, v} = SingularValueDecomposition[N[m]];
+  vh = ConjugateTranspose[v];
+  n = Min[Dimensions[m]];
+  Do[With[{first = SelectFirst[vh[[i]], Abs[#] > 10^-13 &, 1]},
+      If[Re[first] < 0, vh[[i]] = -vh[[i]]; u[[All, i]] = -u[[All, i]]]], {i, n}];
+  {Chop[u, 10^-13], Chop[w, 10^-13], Chop[vh, 10^-13]}];
+mdSVD[j_] := Module[{m = First[mdMatrix[j]]}, mdProduct @@ mdSVDParts[m]];
+mdSingularValues[j_] := Module[{m = First[mdMatrix[j]], w, shown},
+  w = mdSVDParts[m][[2]];
+  shown = "\\left[ " <> StringRiffle[tex /@ Table[N[w[[i, i]]] /. 0 -> 0., {i, Min[Dimensions[m]]}], ","] <> "\\right] ";
+  mdLabelled["label" -> ", singular values: ", shown]];
+
+(* the null space as SymPy's nullspace finds it (the same vectors, in the same order): from the
+   reduced row echelon form, one vector for each free column from the left, that entry 1 *)
+mdNull[m_] := Module[{r = Map[Simplify, RowReduce[m], {2}], n = Length[First[m]], piv = {}, k},
+  Do[k = SelectFirst[Range[n], !PossibleZeroQ[r[[i, #]]] &]; If[!MissingQ[k], AppendTo[piv, {i, k}]], {i, Length[r]}];
+  Table[Module[{v = ConstantArray[0, n]}, v[[f]] = 1; Scan[(v[[#[[2]]]] = -r[[#[[1]], f]]) &, piv]; v],
+    {f, Complement[Range[n], piv[[All, 2]]]}]];
+(* SymPy's order of the eigenvalues (default_sort_key): the rational ones from the smallest, then
+   the others by their real and imaginary parts (2, 2-\sqrt{2}, 2+\sqrt{2}; -i, i) *)
+mdEigKey[x_] := {If[MatchQ[x, _Integer | _Rational], 0, 1], N[Re[x]], N[Im[x]]};
+(* P and J with A = P J P^-1 (J's ones above the diagonal), step by step as SymPy's jordan_form,
+   so that both engines answer with the same P *)
+mdSympyJordan[a_] := Module[{n = Length[a], vals, v, mult, em, blocks = {}, d, nul, i, sizes, jm, basis = {}, eigBasis, big, small, vec, newVecs, pos = 1},
+  vals = SortBy[Tally[Simplify /@ Eigenvalues[a]], mdEigKey[First[#]] &];
+  em[v_, k_] := em[v, k] = Map[Simplify, MatrixPower[a - v IdentityMatrix[n], k], {2}];
+  If[Length[vals] == n,
+    Return[{Transpose[First[mdNull[em[#, 1]]] & /@ vals[[All, 1]]], DiagonalMatrix[vals[[All, 1]]]}]];
+  Do[{v, mult} = {val[[1]], val[[2]]};
+    d = {0}; nul = n - MatrixRank[em[v, 1]]; i = 2;
+    While[nul != Last[d], AppendTo[d, nul]; If[nul == mult, Break[]]; nul = n - MatrixRank[em[v, i]]; i++];
+    sizes = Join[Table[2 d[[k]] - d[[k - 1]] - d[[k + 1]], {k, 2, Length[d] - 1}], If[Length[d] > 1, {d[[-1]] - d[[-2]]}, {d[[1]]}]];
+    Do[Do[AppendTo[blocks, {v, size}], {sizes[[size]]}], {size, Length[sizes], 1, -1}],
+    {val, vals}];
+  jm = ConstantArray[0, {n, n}];
+  Do[Do[jm[[pos + k, pos + k]] = b[[1]]; If[k < b[[2]] - 1, jm[[pos + k, pos + k + 1]] = 1], {k, 0, b[[2]] - 1}]; pos += b[[2]], {b, blocks}];
+  Do[eigBasis = {};
+    Do[If[b[[1]] === val[[1]],
+        big = mdNull[em[b[[1]], b[[2]]]];
+        small = If[b[[2]] == 1, {}, mdNull[em[b[[1]], b[[2]] - 1]]];
+        small = Join[small, eigBasis];
+        vec = If[small === {}, First[big], SelectFirst[big, MatrixRank[Append[small, #]] > MatrixRank[small] &]];
+        newVecs = Table[Simplify[MatrixPower[a - b[[1]] IdentityMatrix[n], k] . vec], {k, 0, b[[2]] - 1}];
+        eigBasis = Join[eigBasis, newVecs]; basis = Join[basis, Reverse[newVecs]]],
+      {b, blocks}],
+    {val, vals}];
+  {Transpose[basis], jm}];
+
+(* A = P J P^-1 with J's ones below the diagonal: tcijordan takes the Jordan form of A^T
+   (A^T = s j s^-1) and answers (s^-1)^T, j^T, s^T; each chain scaled so that its eigenvector
+   (the chain's last column) starts with 1, as 5.5 *)
+mdJordan[j_] := Module[{m = mdSquare[First[mdMatrix[j]]], num, a, s, jj, p, jl, n, st = 1, e, first},
+  num = mdFloatQ[m];
+  a = If[num, Rationalize[m, 0], m];
+  {s, jj} = mdSympyJordan[Transpose[a]];
+  p = Transpose[Inverse[s]]; jl = Transpose[jj]; n = Length[a];
+  While[st <= n,
+    e = st;
+    While[e + 1 <= n && jl[[e + 1, e]] === 1, e++];
+    first = SelectFirst[p[[All, e]], !mdZeroQ[#] &, 1];
+    Do[p[[All, k]] = p[[All, k]] / first, {k, st, e}];
+    st = e + 1];
+  p = Map[mdTidy[#, num] &, p, {2}];
+  mdProduct[p, Map[mdTidy[#, num] &, jl, {2}], Map[mdTidy[#, num] &, Inverse[p], {2}]]];
+
+(* the ring 5.5's normal forms use: the integers, or polynomials in one variable *)
+mdRing[m_] := Module[{vs = userVariables[m]}, Which[
+  AllTrue[Flatten[m], IntegerQ], {"Z", None},
+  Length[vs] == 1 && AllTrue[Flatten[m], PolynomialQ[#, First[vs]] && AllTrue[CoefficientList[#, First[vs]], # \[Element] Rationals &] &], {"P", First[vs]},
+  True, unsupported["The entries must be integers, or polynomials in one variable with rational coefficients"]]];
+mdGcd[l_List, ring_] := If[ring === "Z", GCD @@ l, PolynomialGCD @@ l];
+mdMonic[p_, x_] := If[x === None, Abs[p], If[p === 0, 0, Expand[p / Coefficient[p, x, Exponent[p, x]]]]];
+(* the invariant factors from the determinantal divisors: d_k = gcd of the k x k minors / d_(k-1) *)
+mdInvariantFactors[m_, ring_, x_] := Module[{prev = 1, out = {}, dk},
+  Do[
+    dk = mdMonic[mdGcd[Flatten[Minors[m, k]] /. {} -> {0}, ring], x];
+    If[dk === 0, AppendTo[out, 0], AppendTo[out, mdMonic[Cancel[dk / prev], x]]; prev = dk],
+    {k, Min[Dimensions[m]]}];
+  out];
+mdSmith[j_] := Module[{m = First[mdMatrix[j]], ring, x, d},
+  {ring, x} = mdRing[m];
+  d = mdInvariantFactors[m, ring, x];
+  mdLabelled["label" -> ", Smith normal form: ", tex[Table[If[i == k && i <= Length[d], d[[i]], 0], {i, Length[m]}, {k, Length[First[m]]}]]]];
+
+(* row Hermite normal form over the integers (linalg::hermiteForm): upper echelon, pivots
+   positive, the entries above a pivot from 0 to the pivot - 1 *)
+mdHermite[j_] := Module[{m = First[mdMatrix[j]], a, rows, cols, r = 1, nz, p, clean, q},
+  If[!AllTrue[Flatten[m], IntegerQ], unsupported["Hermite normal form needs a matrix of integers"]];
+  a = m; {rows, cols} = Dimensions[a];
+  Do[
+    If[r > rows, Break[]];
+    While[True,
+      nz = Select[Range[r, rows], a[[#, c]] != 0 &];
+      If[nz === {}, Break[]];
+      p = First[MinimalBy[nz, Abs[a[[#, c]]] &]];
+      a[[{p, r}]] = a[[{r, p}]];
+      clean = True;
+      Do[q = Floor[a[[i, c]] / a[[r, c]]]; a[[i]] = a[[i]] - q a[[r]]; clean = clean && a[[i, c]] == 0, {i, r + 1, rows}];
+      If[clean, Break[]]];
+    If[a[[r, c]] != 0,
+      If[a[[r, c]] < 0, a[[r]] = -a[[r]]];
+      Do[a[[i]] = a[[i]] - Floor[a[[i, c]] / a[[r, c]]] a[[r]], {i, r - 1}];
+      r++],
+    {c, cols}];
+  mdLabelled["label" -> ", Hermite normal form: ", tex[a]]];
+
+(* MuPAD's companion matrix: ones below the diagonal, the last column -a_0, .., -a_(n-1) *)
+mdCompanion[d_, x_] := Module[{c = CoefficientList[d, x], n},
+  n = Length[c] - 1;
+  Table[Which[k == n, -c[[i]], i == k + 1, 1, True, 0], {i, n}, {k, n}]];
+
+(* A = P B P^-1, B in rational canonical (Frobenius) form (tcifrob): blocks the companion
+   matrices of the invariant factors, largest first; P's columns for a block v, Av, ..,
+   A^(k-1) v with d(A) v = 0, the unit vectors tried first *)
+mdRationalCanonical[j_] := Module[{m = mdSquare[First[mdMatrix[j]]], a, n, x, facs, cols = {}, blocks = {}, dA, ns, cands, kry, ok},
+  a = Rationalize[m, 0]; n = Length[a];
+  If[!AllTrue[Flatten[a], # \[Element] Rationals &], unsupported["Rational canonical form needs a matrix of rational numbers"]];
+  x = Unique["x"];
+  facs = Reverse[Select[mdInvariantFactors[x IdentityMatrix[n] - a, "P", x], Exponent[#, x] > 0 &]];
+  Do[
+    dA = Fold[#1 . a + #2 IdentityMatrix[n] &, ConstantArray[0, {n, n}], Reverse[CoefficientList[f, x]]];
+    ns = NullSpace[dA]; (* the last free variable first, as MuPAD (SymPy's order reversed) *)
+    cands = Join[Select[IdentityMatrix[n], AllTrue[dA . #, # == 0 &] &], ns, Flatten[Table[ns[[i]] + ns[[k]], {i, Length[ns]}, {k, i + 1, Length[ns]}], 1]];
+    ok = False;
+    Do[
+      kry = NestList[a . # &, v, Exponent[f, x] - 1];
+      If[MatrixRank[Join[cols, kry]] == Length[cols] + Length[kry], cols = Join[cols, kry]; ok = True; Break[]],
+      {v, cands}];
+    If[!ok, unsupported["Could not find the rational canonical form"]];
+    AppendTo[blocks, mdCompanion[f, x]],
+    {f, facs}];
+  With[{p = Transpose[cols]}, mdProduct[p, mdBlockDiag[blocks], Inverse[p]]]];
+mdBlockDiag[bs_] := Module[{n = Total[Length /@ bs], out, o = 0},
+  out = ConstantArray[0, {n, n}];
+  Do[out[[o + 1 ;; o + Length[b], o + 1 ;; o + Length[b]]] = b; o += Length[b], {b, bs}];
+  out];
+
+(* a polynomial from the highest power down, a coefficient with several terms in brackets *)
+mdPolyTeX[c_, v_] := Module[{out = {}, t, k, cf, pw},
+  If[FreeQ[c, _Symbol?isVar], Return[tex[Expand[c . v^Range[0, Length[c] - 1]]]]];
+  Do[
+    cf = Expand[c[[k + 1]]];
+    If[cf =!= 0,
+      pw = If[k == 0, "", tex[v^k]];
+      t = Which[
+        pw == "", If[Head[cf] === Plus && out =!= {}, "\\left( " <> tex[cf] <> "\\right)", tex[cf]],
+        cf === 1, pw,
+        cf === -1, "-" <> pw,
+        Head[cf] === Plus, "\\left( " <> tex[cf] <> "\\right) " <> pw,
+        True, tex[cf] <> " " <> pw];
+      AppendTo[out, t]],
+    {k, Length[c] - 1, 0, -1}];
+  StringReplace[StringRiffle[out, " + "], "+ -" -> "- "]];
+
+mdMinpoly[j_] := Module[{m, params, v, n, powers, ns, c},
+  {m, params} = mdMatrix[j];
+  mdSquare[m];
+  v = Which[params =!= {}, First[params],
+    AnyTrue[userVariables[m], StringContainsQ[nameOf[#], "X"] &], unsupported["The matrix has X in it: give the polynomial variable"],
+    True, var["X"]];
+  n = Length[m];
+  powers = {IdentityMatrix[n]};
+  Do[
+    AppendTo[powers, Expand[Last[powers] . m]];
+    ns = NullSpace[Transpose[Flatten /@ powers]];
+    If[ns =!= {},
+      c = Together[First[ns] / First[ns][[-1]]];
+      Return[mdLabelled["label" -> ", minimum polynomial: ", mdPolyTeX[c, v]], Module]],
+    {k, n}];
+  unsupported["Could not find the minimum polynomial"]];
+
+(* each eigenvalue with the set of its eigenvectors: {v1, v2} <-> c (tcieigenvectors), from the
+   smallest eigenvalue; with decimals one vector of length 1 for each eigenvalue *)
+mdEigenvectors[j_] := Module[{m = mdSquare[First[mdMatrix[j]]], pairs, key},
+  key = If[NumericQ[#], {N[Re[#]], N[Im[#]]}, {0, 0}] &;
+  pairs = If[mdFloatQ[m],
+    With[{es = Eigensystem[N[m]]},
+      Table[With[{v = Normalize[es[[2, i]]]}, {Chop[es[[1, i]], 10^-13], {Chop[If[Re[First[MaximalBy[v, Abs]]] < 0, -v, v], 10^-13]}}], {i, Length[es[[1]]]}]],
+    Table[{Simplify[val], Reverse[mdNull[m - val IdentityMatrix[Length[m]]]]}, {val, DeleteDuplicates[Simplify /@ Eigenvalues[m]]}]]; (* SymPy's vectors, the last free variable first *)
+  If[AllTrue[pairs[[All, 1]], NumericQ], pairs = SortBy[pairs, key[First[#]] &]];
+  mdLabelled["label" -> ", eigenvectors: ",
+    StringRiffle[("\\left\\{ " <> StringRiffle[tex /@ #[[2]], ","] <> "\\right\\} \\leftrightarrow " <> tex[#[[1]]]) & /@ pairs, ","]]];
+
+$extraOps["cholesky"] = mdCholesky;
+$extraOps["plu"] = mdPLU;
+$extraOps["qr"] = mdQR;
+$extraOps["svd"] = mdSVD;
+$extraOps["singularvalues"] = mdSingularValues;
+$extraOps["jordan"] = mdJordan;
+$extraOps["hermite"] = mdHermite;
+$extraOps["smith"] = mdSmith;
+$extraOps["rationalcanonical"] = mdRationalCanonical;
+$extraOps["ffgauss"] = mdFFGauss;
+$extraOps["gauss"] = mdGauss;
+$extraOps["minpoly"] = mdMinpoly;
+$extraOps["eigenvectors"] = mdEigenvectors;
+
+(* (end of part: matdecomp) *)
+
+
+(* -----------------------------------------------------------------------------
+   part: matmisc
+   ----------------------------------------------------------------------------- *)
+
+(* Compute > Matrices: Column Basis, Row Basis, Concatenate, Stack, Reshape, Fill Matrix, Random Matrix,
+   Condition Number, Definiteness Tests, Norm, Orthogonality Test, Permanent, Spectral Radius, Hermitian
+   Transpose; the answers as 5.5 writes them (as the Python part matmisc: ", column basis: [..]",
+   " is positive definite", ", 2-norm: 9.3268") *)
+mmReq[j_] := If[paramsQ[j], {j["expr"], Lookup[j, "params", {}]}, {j, {}}];
+mmMatrix[j_] := With[{m = lastSide[expr[First[mmReq[j]]]]}, If[MatrixQ[m], m, unsupported["Put the insertion point in a matrix"]]];
+mmLabel[label_, latex_] := <|"kind" -> "solutions", "label" -> label, "solutions" -> {latex}|>;
+mmText[text_] := <|"kind" -> "text", "text" -> text|>;
+mmSquare[m_, what_] := If[Length[m] != Length[First[m]], unsupported[what], m];
+(* the matrices written next to each other: A B *)
+mmFactors[f_] := Which[startsWith[f, "Equal"], mmFactors[Last[f]], startsWith[f, "Multiply"], Join @@ (mmFactors /@ Rest[f]), True, {f}];
+mmSideBySide[j_] := Module[{ms = lastSide[expr[#]] & /@ mmFactors[First[mmReq[j]]]},
+  If[Length[ms] < 2 || !AllTrue[ms, MatrixQ], unsupported["Place two matrices next to each other"]]; ms];
+(* the first vectors independent of those before them, in order (MuPAD's linalg::basis) *)
+mmIndependent[vs_] := Fold[If[MatrixRank[Append[#1, #2]] > Length[#1], Append[#1, #2], #1] &, {}, vs];
+mmBasis[j_, rows_] := Module[{m = mmMatrix[j], vs},
+  vs = mmIndependent[If[rows, m, Transpose[m]]];
+  If[vs === {}, vs = {ConstantArray[0, If[rows, Length[First[m]], Length[m]]]}];
+  "\\left[ " <> StringRiffle[tex[If[rows, {#}, List /@ #]] & /@ vs, ","] <> "\\right] "];
+mmRowsTeX[rows_] := With[{d = answerDelim[]},
+  "\\left" <> d <> "\\begin{matrix}" <> StringRiffle[StringRiffle[If[# === Null, "", tex[#]] & /@ #, " & "] & /@ rows, "\\\\"] <> "\\end{matrix}\\right" <> If[d == "[", "]", ")"]];
+mmBare[m_] := "\\begin{matrix}" <> StringRiffle[StringRiffle[tex /@ #, " & "] & /@ m, "\\\\"] <> "\\end{matrix}";
+mmReshape[j_] := Module[{f, ps, n, items, e},
+  {f, ps} = mmReq[j];
+  If[ps === {}, unsupported["Give the number of columns"]];
+  n = expr[First[ps]];
+  If[!IntegerQ[n] || n < 1, unsupported["The number of columns must be a positive whole number"]];
+  e = lastSide[expr[f]];
+  items = Flatten[{e}];
+  mmLabel[" to " <> ToString[n] <> " columns: ", mmRowsTeX[Partition[PadRight[items, n Ceiling[Length[items]/n], Null], n]]]];
+mmNumeric[m_] := With[{v = N[m]}, If[AllTrue[Flatten[v], NumericQ], v, unsupported["This needs a matrix of numbers"]]];
+mmNorm2[m_] := Max[SingularValueList[mmNumeric[m]]];
+mmNorm[j_] := With[{m = mmMatrix[j]},
+  mmLabel[", 2-norm: ", tex[If[MemberQ[Dimensions[m], 1], Sqrt[Total[Abs[Flatten[m]]^2]], N[mmNorm2[m]]]]]];
+mmCondition[j_] := With[{m = mmSquare[mmMatrix[j], "The condition number is for a square matrix"]},
+  If[Simplify[Det[m]] === 0, unsupported["The matrix has no inverse"]];
+  mmLabel[", condition number: ", tex[N[mmNorm2[m] mmNorm2[Inverse[m]]]]]];
+mmSpectral[j_] := With[{m = mmSquare[mmMatrix[j], "The spectral radius is for a square matrix"]},
+  mmLabel[", spectral radius: ", tex[N[Max[Abs[Eigenvalues[mmNumeric[m]]]]]]]];
+(* 5.5: a Hermitian matrix with all eigenvalues positive "is positive definite", any other "is indefinite" *)
+mmDefinite[j_] := Module[{m = mmSquare[mmMatrix[j], "Definiteness tests are for a square matrix"], n, minors, signs},
+  n = Length[m];
+  If[!AllTrue[Flatten[Simplify[m - ConjugateTranspose[m]]], # === 0 &] && !(userVariables[m] =!= {} && m === Transpose[m]),
+    Return[mmText[" is indefinite"]]];
+  minors = Table[Simplify[Det[m[[;; k, ;; k]]]], {k, n}];
+  signs = If[NumericQ[#], TrueQ[# > 0], Simplify[# > 0]] & /@ minors;
+  Which[AllTrue[signs, # === True &], mmText[" is positive definite"],
+    MemberQ[signs, False], mmText[" is indefinite"],
+    True, mmText[" is indeterminant"]]];
+mmOrthogonal[j_] := With[{m = mmMatrix[j]},
+  mmLabel[", orthogonal? ", tex[Length[m] == Length[First[m]] && AllTrue[Flatten[Simplify[ConjugateTranspose[m].m - IdentityMatrix[Length[m]]]], # === 0 &]]]];
+mmPermanent[j_] := mmLabel[", permanent: ", tex[Expand[Permanent[mmSquare[mmMatrix[j], "The permanent is for a square matrix"]]]]];
+mmHTranspose[j_] := mmLabel[", Hermitian transpose: ", tex[ConjugateTranspose[mmMatrix[j]]]];
+mmSize[ps_] := Module[{r = expr /@ Take[ps, UpTo[2]]},
+  If[Length[r] < 2 || !AllTrue[r, IntegerQ[#] && # > 0 &], unsupported["Give the numbers of rows and columns"]]; r];
+(* MuPAD's matrix(d, d, [.., diagonal, ..], Banded) cut to rows x cols: the middle item on the diagonal *)
+mmBand[items_, {r_, c_}] := Module[{k = (Length[items] - 1)/2},
+  If[!IntegerQ[k], unsupported["The band list needs an odd number of entries"]];
+  Table[If[Abs[jj - ii] <= k, items[[k + 1 + jj - ii]], 0], {ii, r}, {jj, c}]];
+mmFill[j_] := Module[{ps = mmReq[j][[2]], kind, size, item, e},
+  kind = If[ps === {}, "zero", StringTrim[First[ps], "'"]];
+  size = mmSize[Drop[ps, 1]];
+  item = If[Length[ps] > 3, ps[[4]], None];
+  If[MemberQ[{"jordan", "function", "band"}, kind] && item === None, unsupported["Fill in the entry"]];
+  <|"kind" -> "value", "latex" -> mmBare[Switch[kind,
+    "zero", ConstantArray[0, size],
+    "identity", IdentityMatrix[size],
+    "random", RandomInteger[{-999, 999}, size],
+    "jordan", mmBand[{0, expr[item], 1}, size],
+    "band", e = expr[item]; mmBand[If[ListQ[e], Flatten[e], {e}], size],
+    "function", If[StringQ[item] && !StringStartsQ[item, "'"],
+      Table[expr[{item, ii, jj}], {ii, size[[1]]}, {jj, size[[2]]}], ConstantArray[expr[item], size]],
+    _, unsupported[kind]]]|>];
+mmRandom[j_] := Module[{ps = mmReq[j][[2]], kind, size, lo, hi, m},
+  kind = If[ps === {}, "unrestricted", StringTrim[First[ps], "'"]];
+  size = mmSize[Drop[ps, 1]];
+  {lo, hi} = If[Length[ps] >= 5 && AllTrue[expr /@ ps[[4 ;; 5]], IntegerQ], Sort[expr /@ ps[[4 ;; 5]]], {-9, 9}];
+  m = RandomInteger[{lo, hi}, size];
+  Do[Switch[kind,
+      "symmetric", If[jj < ii && ii <= size[[2]] && jj <= size[[1]], m[[ii, jj]] = m[[jj, ii]]],
+      "antisymmetric", If[jj == ii, m[[ii, jj]] = 0, If[jj < ii && ii <= size[[2]], m[[ii, jj]] = -m[[jj, ii]]]],
+      "triangular", If[jj < ii, m[[ii, jj]] = 0]],
+    {ii, size[[1]]}, {jj, Min[ii, size[[2]]]}];
+  <|"kind" -> "value", "latex" -> mmBare[m]|>];
+$extraOps["colbasis"] = Function[j, mmLabel[", column basis: ", mmBasis[j, False]]];
+$extraOps["rowbasis"] = Function[j, mmLabel[", row basis: ", mmBasis[j, True]]];
+$extraOps["concat"] = Function[j, With[{ms = mmSideBySide[j]}, If[Length[DeleteDuplicates[Length /@ ms]] > 1, unsupported["Concatenate needs matrices with the same number of rows"]]; mmLabel[", concatenate: ", tex[Join[##, 2] & @@ ms]]]];
+$extraOps["stack"] = Function[j, With[{ms = mmSideBySide[j]}, If[Length[DeleteDuplicates[Length[First[#]] & /@ ms]] > 1, unsupported["Stack needs matrices with the same number of columns"]]; mmLabel[", stack: ", tex[Join @@ ms]]]];
+$extraOps["reshape"] = mmReshape;
+$extraOps["fillmatrix"] = mmFill;
+$extraOps["randommatrix"] = mmRandom;
+$extraOps["condition"] = mmCondition;
+$extraOps["definiteness"] = mmDefinite;
+$extraOps["norm"] = mmNorm;
+$extraOps["orthogonal"] = mmOrthogonal;
+$extraOps["permanent"] = mmPermanent;
+$extraOps["spectralradius"] = mmSpectral;
+$extraOps["htranspose"] = mmHTranspose;
+
+(* (end of part: matmisc) *)
+
+
+(* -----------------------------------------------------------------------------
+   part: rewrite
+   ----------------------------------------------------------------------------- *)
+
+(* Compute > Rewrite and Compute > Combine, as 5.5 does them: MuPAD's rewrite(e, target) and
+   combine(e, target) (SW6's swfcns.mu, tcirewrite and tcicomb2; 5.5's own table: Combine > Powers
+   and Trig Functions are simplify there). Each works on the formula's last side, entry by entry on
+   a matrix. Functions Mathematica would turn back (Sin/Cos -> Tan, 1/Sin -> Csc, Sinh/Cosh -> Tanh)
+   are written with inert heads. *)
+AssociateTo[bareNames, {sinhI -> "\\sinh", coshI -> "\\cosh", tanI -> "\\tan", ArcCot -> "\\operatorname{arccot}"}];
+rwPlain[f_] := Function[j, Module[{x = lastSide[expr[First[withParams[j]]]]},
+  value[finish[If[MatrixQ[x], Map[f, x, {2}], f[x]]]]]];
+(* the same with \binom{m}{5} kept as it is written until f has rewritten it *)
+rwBinomial[f_] := Function[j, Module[{x = Block[{Binomial}, With[{y = lastSide[expr[First[withParams[j]]]]}, If[MatrixQ[y], Map[f, y, {2}], f[y]]]]},
+  value[finish[x]]]];
+
+rwRational[e_] := e /. r_Real :> Rationalize[r, 0]; (* 6.9\pi -> \frac{69}{10}\pi *)
+rwFloat[e_] := N[e];
+rwFactorial[e_] := e /. {Binomial[m_, n_] :> m! / (n! (m - n)!), Gamma[u_] :> (u - 1)!};
+rwGamma[e_] := e /. {Binomial[m_, n_] :> Gamma[m + 1] / (Gamma[n + 1] Gamma[m - n + 1]), Factorial[u_] :> Gamma[u + 1]};
+(* rewrite(e, ln): arccosh x = ln(x + sqrt(x^2 - 1)), as MuPAD writes them *)
+rwLog[e_] := TrigToExp[e /. {ArcSinh[u_] :> Log[u + Sqrt[u^2 + 1]], ArcCosh[u_] :> Log[u + Sqrt[u^2 - 1]],
+  ArcTanh[u_] :> Log[u + 1] / 2 - Log[1 - u] / 2, ArcCoth[u_] :> Log[u + 1] / 2 - Log[u - 1] / 2,
+  ArcSech[u_] :> Log[1 / u + Sqrt[1 / u^2 - 1]], ArcCsch[u_] :> Log[1 / u + Sqrt[1 / u^2 + 1]]}];
+(* rewrite(e, sinhcosh): e^x = cosh x + sinh x *)
+rwSinhCosh[e_] := e /. {Tanh[u_] :> sinhI[u] / coshI[u], Coth[u_] :> coshI[u] / sinhI[u], Sech[u_] :> 1 / coshI[u],
+  Csch[u_] :> 1 / sinhI[u], Power[E, u_] /; FreeQ[u, Complex] :> coshI[u] + sinhI[u], Sinh -> sinhI, Cosh -> coshI};
+(* rewrite(e, sin), (e, cos), (e, tan) by the half angle: cos x = 1 - 2 sin^2(x/2),
+   sin x = 2 cos^2(x/2 - pi/4) - 1, sin x = 2 tan(x/2)/(tan^2(x/2) + 1) *)
+rwHalf["sin", u_] := {sinI[u], 1 - 2 sinI[u / 2]^2};
+rwHalf["cos", u_] := {2 cosI[u / 2 - Pi / 4]^2 - 1, cosI[u]};
+rwHalf["tan", u_] := With[{t = tanI[u / 2]}, {2 t / (t^2 + 1), (1 - t^2) / (t^2 + 1)}];
+rwTrig[target_][e_] := e /. {
+  Sin[u_] :> rwHalf[target, u][[1]], Cos[u_] :> rwHalf[target, u][[2]],
+  Tan[u_] :> If[target === "tan", tanI[u], rwHalf[target, u][[1]] / rwHalf[target, u][[2]]],
+  Cot[u_] :> If[target === "tan", 1 / tanI[u], rwHalf[target, u][[2]] / rwHalf[target, u][[1]]],
+  Sec[u_] :> 1 / rwHalf[target, u][[2]], Csc[u_] :> 1 / rwHalf[target, u][[1]]};
+(* rewrite(e, arcsin) .. (e, arccot): arctan x = arcsin(x/sqrt(x^2 + 1)), arccos x = pi/2 - arcsin x *)
+rwArc["asin"] = {ArcCos[u_] :> Pi / 2 - ArcSin[u], ArcTan[u_] :> ArcSin[u / Sqrt[u^2 + 1]], ArcCot[u_] :> Pi / 2 - ArcSin[u / Sqrt[u^2 + 1]]};
+rwArc["acos"] = {ArcSin[u_] :> Pi / 2 - ArcCos[u], ArcCot[u_] :> ArcCos[u / Sqrt[u^2 + 1]], ArcTan[u_] :> Pi / 2 - ArcCos[u / Sqrt[u^2 + 1]]};
+rwArc["atan"] = {ArcSin[u_] :> ArcTan[u / Sqrt[1 - u^2]], ArcCos[u_] :> Pi / 2 - ArcTan[u / Sqrt[1 - u^2]], ArcCot[u_] :> Pi / 2 - ArcTan[u]};
+rwArc["acot"] = {ArcTan[u_] :> Pi / 2 - ArcCot[u], ArcCos[u_] :> ArcCot[u / Sqrt[1 - u^2]], ArcSin[u_] :> Pi / 2 - ArcCot[u / Sqrt[1 - u^2]]};
+rwArcOf[target_][e_] := e /. rwArc[target];
+(* abs(e) exp(i arg(e)), kept as written (Mathematica would turn e^(i arctan(5/3)) back into a number) *)
+rwPolar[e_] := If[NumericQ[e], Inactive[Times][Abs[e], Inactive[Power][E, I Arg[e]]], Inactive[Times][Inactive[Power][E, I Arg[e]], Abs[e]]];
+(* rectform, the letters real; sqrt(a + bi) of numbers as sqrt((|z| + a)/2) + i sqrt((|z| - a)/2) *)
+rwRect[e_] := ComplexExpand[e /. Power[z_?NumericQ, 1/2] /; Im[z] != 0 :>
+  Sqrt[Expand[(Abs[z] + Re[z]) / 2]] + I Sign[Im[z]] Sqrt[Expand[(Abs[z] - Re[z]) / 2]]];
+rwNormal[e_] := With[{t = Together[e]}, Expand[Numerator[t]] / Expand[Denominator[t]]];
+
+cbExp[e_] := (e //. {Power[Power[E, a_], b_] :> E^Expand[a b], Power[E, a_] Power[E, b_] :> E^Expand[a + b]}) /. Power[E, u_] :> E^Expand[u];
+cbPositive[u_] := TrueQ[Simplify[u > 0, assumptions[u]]];
+cbLog[e_] := e //. c_. Log[a_] + d_. Log[b_] /; cbPositive[a] && cbPositive[b] && MemberQ[{1, -1}, c] && MemberQ[{1, -1}, d] :> Log[a^c b^d];
+cbPowers[e_] := e /. Power[b_, p_Plus] :> Power[b, Expand[p]];
+cbTrig[e_] := Expand[TrigReduce[e]];
+cbHyp[e_] := Expand[TrigReduce[e]];
+(* combine(e, arctan): arctan x + arctan y = -arctan((x + y)/(xy - 1)) *)
+cbLead[p_] := With[{vs = Variables[p]}, If[vs === {}, p, First[Values[CoefficientRules[p, vs, "DegreeLexicographic"]]]]];
+cbArctan[e_] := Module[{items = {}, rest = 0, u, n, d, s = 1},
+  If[Head[e] =!= Plus, Return[e]];
+  Scan[Function[t, Which[
+    MatchQ[t, ArcTan[_]], AppendTo[items, {1, t[[1]]}],
+    MatchQ[t, k_Integer ArcTan[_]], items = Join[items, ConstantArray[{Sign[t[[1]]], t[[2, 1]]}, Abs[t[[1]]]]],
+    True, rest += t]], List @@ e];
+  If[Length[items] < 2, Return[e]];
+  u = items[[1, 1]] items[[1, 2]];
+  Scan[(u = Together[(u + #[[1]] #[[2]]) / (1 - #[[1]] u #[[2]])]) &, Rest[items]];
+  {n, d} = {Expand[Numerator[u]], Expand[Denominator[u]]};
+  If[cbLead[d] < 0, {n, d} = {-n, Expand[-d]}];
+  If[cbLead[n] < 0, {s, n} = {-1, Expand[-n]}];
+  rest + s ArcTan[n / d]];
+
+rwItems[j_] := expr /@ If[MatchQ[j, {"Set" | "List", ___}] && !MatchQ[j, {"List", {"List", ___}}], Rest[j], itemsJson[j]];
+rwVars[ps_, count_] := With[{vs = Select[ps, isVar]}, Which[
+  vs =!= {}, vs,
+  count === None, {},
+  count <= 3, var /@ Take[{"x", "y", "z"}, count],
+  True, var["x_" <> ToString[#]] & /@ Range[count]]];
+(* Rewrite > Equations as Matrix (5.5 asks the variables): the augmented matrix [A | b] *)
+eqsToMatrix[j_] := Module[{x = withParams[j], es, vs, b, a},
+  es = If[MatchQ[#, eq[_, _]], #[[1]] - #[[2]], #] & /@ rwItems[x[[1]]];
+  vs = rwVars[x[[2]], None];
+  If[vs === {}, vs = userVariables[es]];
+  {b, a} = Normal[CoefficientArrays[es, vs]];
+  <|"kind" -> "solutions", "label" -> ", Corresponding matrix: ", "solutions" -> {tex[MapThread[Append, {a, -b}]]}|>];
+(* Rewrite > Matrix as Equations: the last column is the right side; a square matrix has 0 there *)
+matrixToEqs[j_] := Module[{x = withParams[j], m, s, c, vs},
+  m = matrixOf[expr[x[[1]]]];
+  {s, c} = If[Length[m] == Length[First[m]], {m, ConstantArray[0, Length[m]]}, {m[[All, ;; -2]], m[[All, -1]]}];
+  vs = rwVars[x[[2]], Length[First[s]]];
+  If[Length[vs] != Length[First[s]], unsupported["Give " <> ToString[Length[First[s]]] <> " variables"]];
+  <|"kind" -> "solutions", "label" -> ", Corresponding equations: ",
+    "solutions" -> {"\\left\\{" <> StringRiffle[MapThread[texEq[#1 . vs, #2] &, {s, c}], ", "] <> "\\right\\}"}|>];
+
+(* the decimals made fractions before Mathematica reads the formula (6.9\pi would be 21.677 at once) *)
+$extraOps["rewrite_rational"] = Function[j, rwPlain[rwRational][j /. r_Real :> With[{q = Rationalize[r, 0]}, {"Rational", Numerator[q], Denominator[q]}]]];
+$extraOps["rewrite_float"] = rwPlain[rwFloat];
+$extraOps["rewrite_factorial"] = rwBinomial[rwFactorial];
+$extraOps["rewrite_gamma"] = rwBinomial[rwGamma];
+$extraOps["rewrite_log"] = rwPlain[rwLog];
+$extraOps["rewrite_sinhcosh"] = rwPlain[rwSinhCosh];
+$extraOps["rewrite_sin"] = rwPlain[rwTrig["sin"]];
+$extraOps["rewrite_cos"] = rwPlain[rwTrig["cos"]];
+$extraOps["rewrite_tan"] = rwPlain[rwTrig["tan"]];
+$extraOps["rewrite_arcsin"] = rwPlain[rwArcOf["asin"]];
+$extraOps["rewrite_arccos"] = rwPlain[rwArcOf["acos"]];
+$extraOps["rewrite_arctan"] = rwPlain[rwArcOf["atan"]];
+$extraOps["rewrite_arccot"] = rwPlain[rwArcOf["acot"]];
+$extraOps["rewrite_polar"] = rwPlain[rwPolar];
+$extraOps["rewrite_rectangular"] = rwPlain[rwRect];
+$extraOps["rewrite_normal"] = rwPlain[rwNormal];
+$extraOps["eqs_to_matrix"] = eqsToMatrix;
+$extraOps["matrix_to_eqs"] = matrixToEqs;
+(* combine(e, exp) joins the exponentials only: 2^x 2^y stays as it is (Mathematica would join
+   the powers of 2 as soon as it reads them, so the factors are read one by one) *)
+cbExpRequest[j_] := Module[{e0 = First[withParams[j]], fs, es, os},
+  If[MatchQ[e0, {"Multiply", _, __}],
+    fs = expr /@ Rest[e0];
+    es = Select[fs, MatchQ[#, Power[E, _]] &]; os = Select[fs, !MatchQ[#, Power[E, _]] &];
+    If[Length[Cases[os, Power[_?NumericQ, _]]] > Length[DeleteDuplicates[Cases[os, Power[b_?NumericQ, _] :> b]]],
+      Return[value[Inactive[Times] @@ Join[If[es === {}, {}, {cbExp[Times @@ es]}], os]], Module]]];
+  rwPlain[cbExp][j]];
+$extraOps["combine_exp"] = cbExpRequest;
+$extraOps["combine_log"] = rwPlain[cbLog];
+$extraOps["combine_powers"] = rwPlain[cbPowers];
+$extraOps["combine_trig"] = rwPlain[cbTrig];
+$extraOps["combine_arctan"] = rwPlain[cbArctan];
+$extraOps["combine_hyp"] = rwPlain[cbHyp];
+
+(* (end of part: rewrite) *)
+
+
+(* -----------------------------------------------------------------------------
+   part: statpoly
+   ----------------------------------------------------------------------------- *)
+
+(* Compute > Statistics, as 5.5 (MuPAD's tcimean, tcimedian ... in SW6's swfcns.mu): a list is one
+   set of data; a matrix gives one answer per column (its first row left out when it starts with a
+   name: a labeled matrix); the answer follows a label (", Mean(s): ..."). Same as the SymPy part. *)
+statRequest[j_] := If[paramsQ[j], j["expr"], j];
+statPlain[req_] := ListQ[req] && req =!= {} && MemberQ[{"Tuple", "Set", "Delimiter", "Sequence"}, First[req]];
+(* -> {columns of data, the labels (a first row of names) or None} *)
+statData[j_] := Module[{req = statRequest[j], e, m, labels = None},
+  e = lastSide[expr[req]];
+  If[Head[e] === fset, e = {List @@ e}];
+  If[!MatrixQ[e], Return[{{{e}}, None}]];
+  If[statPlain[req], Return[{{Flatten[e]}, None}]];
+  m = If[Length[e] == 1, Transpose[e], e]; (* a vector comes in as a row *)
+  If[Length[m] > 1 && isVar[m[[1, 1]]], labels = m[[1]]; m = Rest[m]];
+  {Transpose[m], labels}];
+statList[parts_List] := "\\left[" <> StringRiffle[parts, ","] <> "\\right]";
+(* the caller adds the label *)
+statAnswer[j_, one_] := With[{parts = one /@ First[statData[j]]},
+  <|"kind" -> "solutions", "solutions" -> {If[Length[parts] == 1, First[parts], statList[parts]]}|>];
+statMean[xs_] := Expand[Total[xs]/Length[xs]];
+statMedian[xs_] := SortBy[xs, N][[Floor[(Length[xs] - 1)/2] + 1]]; (* of two middle numbers the smaller, as MuPAD *)
+statMode[xs_] := Module[{t = Tally[xs], most}, most = Max[t[[All, 2]]];
+  statList[tex /@ Select[t, #[[2]] == most &][[All, 1]]] <> "," <> ToString[most]];
+statGeo[xs_] := Module[{p = Times @@ xs, n = Length[xs], r},
+  r = p^(1/n);
+  If[MatchQ[p, _Integer | _Rational] && !MatchQ[r, _Integer | _Rational],
+    If[n == 2, "\\sqrt{" <> tex[p] <> "}", "\\sqrt[" <> ToString[n] <> "]{" <> tex[p] <> "}"], (* \sqrt[4]{4704}, as MuPAD leaves it *)
+    tex[r]]];
+statHarm[xs_] := Length[xs]/Total[1/xs];
+statMeanDev[xs_] := With[{m = statMean[xs]}, Total[Abs[# - m] & /@ xs]/Length[xs]];
+statSq[d_] := With[{e = Expand[d]}, If[(Head[e] === Plus && MatchQ[First[e], _?Negative | Times[_?Negative, __]]) || (NumericQ[e] && TrueQ[e < 0]), (-e)^2, e^2]];
+statVar[xs_] := If[Length[xs] < 2, 0, With[{m = statMean[xs]}, Total[statSq[# - m] & /@ xs]/(Length[xs] - 1)]];
+(* sqrt(p/q) as MuPAD writes it: (a/(b q')) sqrt(q') sqrt(p'), p = a^2 p', q = b^2 q' *)
+statSqrtPart[n_Integer] := Module[{a = Times @@ (#[[1]]^Quotient[#[[2]], 2] & /@ FactorInteger[n])}, {a, n/a^2}];
+statSqrt[v_] := Module[{a, p1, b, q1, c, parts},
+  If[!MatchQ[v, _Rational] || v < 0, Return[tex[Sqrt[v]]]];
+  {a, p1} = statSqrtPart[Numerator[v]]; {b, q1} = statSqrtPart[Denominator[v]];
+  c = a/(b q1);
+  parts = Join[If[c === 1, {}, {tex[c]}], tex[Sqrt[#]] & /@ Select[{q1, p1}, # != 1 &]];
+  If[parts === {}, "1", StringRiffle[parts, " "]]];
+statMoment[xs_, r_, about_] := With[{a = If[about === None, statMean[xs], about]}, Total[N[(# - a)^r] & /@ xs]/Length[xs]];
+(* stats::empiricalQuantile(data)(q, Averaged): the k-th smallest, k = ceil(n q); n q whole: the mean of it and the next *)
+statQuantile[xs_, q_] := Module[{s = SortBy[xs, N], n = Length[xs], k},
+  k = Rationalize[q, 0] n;
+  Which[k <= 0, First[s], k >= n, Last[s], IntegerQ[k], (s[[k]] + s[[k + 1]])/2, True, s[[Ceiling[k]]]]];
+statCov[a_, b_] := With[{ma = statMean[a], mb = statMean[b]}, Total[MapThread[N[(#1 - ma) (#2 - mb)] &, {a, b}]]/(Length[a] - 1)];
+statCorr[a_, b_] := statCov[a, b]/Sqrt[statCov[a, a] statCov[b, b]];
+statMatrix[j_, f_] := Module[{e = lastSide[expr[statRequest[j]]], cols},
+  If[!MatrixQ[e], unsupported["The selection must be a matrix"]];
+  cols = First[statData[j]];
+  <|"kind" -> "solutions", "solutions" -> {tex[Table[N[f[cols[[i]], cols[[k]]]], {i, Length[cols]}, {k, Length[cols]}]]}|>];
+statWords[j_] := With[{ps = If[paramsQ[j], Lookup[j, "params", {}], {}]},
+  {StringTrim[#, "'"] & /@ Select[ps, StringQ[#] && StringStartsQ[#, "'"] &], Select[ps, !(StringQ[#] && StringStartsQ[#, "'"]) &]}];
+(* Fit Curve to Data: params 'regression' | 'noconstant' | 'polynomial', 'first' | 'last', degree *)
+statFit[j_] := Module[{w, nums, kind, first, m, labels = None, exact, num, key, x, y, deg, X, c, fit, dep, ind},
+  {w, nums} = statWords[j];
+  kind = SelectFirst[w, MemberQ[{"regression", "noconstant", "polynomial"}, #] &, "regression"];
+  first = MemberQ[w, "first"];
+  m = lastSide[expr[statRequest[j]]];
+  If[!MatrixQ[m], unsupported["The selection must be a matrix"]];
+  If[isVar[m[[1, 1]]], labels = m[[1]]; m = Rest[m]];
+  exact = !AllTrue[Flatten[m], NumericQ] || (kind == "regression" && Length[First[m]] == 2 && FreeQ[m, _Real]);
+  num = If[exact, Simplify, N];
+  If[kind == "polynomial",
+    If[Length[First[m]] != 2, unsupported["The selection must be a matrix of 2 columns"]];
+    key = If[labels === None, {var["x"], var["y"]}, labels];
+    {x, y} = If[first, {2, 1}, {1, 2}];
+    deg = Min[If[nums === {}, 2, Round[build[First[nums]]]], Length[m] - 1];
+    X = Table[m[[i, x]]^k, {i, Length[m]}, {k, 0, deg}];
+    c = LinearSolve[Transpose[X].X, Transpose[X].m[[All, y]]];
+    fit = Sum[num[c[[k + 1]]] key[[x]]^k, {k, 0, deg}];
+    Return[<|"kind" -> "solutions", "label" -> ", Polynomial fit: ", "solutions" -> {tex[eq[key[[y]], fit]]}|>]];
+  If[Length[First[m]] < 2, unsupported["The selection must be a matrix of at least 2 columns"]];
+  If[labels === None, unsupported["The columns must be labeled (a first row of names)"]];
+  dep = If[first, 1, Length[First[m]]];
+  ind = DeleteCases[Range[Length[First[m]]], dep];
+  X = m[[All, ind]];
+  If[kind == "regression", X = Join[X, ConstantArray[{1}, Length[m]], 2]];
+  c = LinearSolve[Transpose[X].X, Transpose[X].m[[All, dep]]];
+  fit = Sum[num[c[[k]]] labels[[ind[[k]]]], {k, Length[ind]}] + If[kind == "regression", num[Last[c]], 0];
+  <|"kind" -> "solutions", "label" -> ", Regression is: ", "solutions" -> {tex[eq[labels[[dep]], fit]]}|>];
+(* Random Numbers: params the distribution ('normal' ...), how many, its parameters *)
+statRandom[j_] := Module[{w, nums, n, a, b, d},
+  {w, nums} = statWords[j];
+  nums = N[build /@ nums];
+  If[nums === {} || !IntegerQ[Rationalize[First[nums]]] || First[nums] < 1, unsupported["How many: a whole number from 1 on"]];
+  n = Round[First[nums]]; {a, b} = PadRight[Rest[nums], 2, None];
+  d = Switch[If[w === {}, "uniform", First[w]],
+    "beta", BetaDistribution[a, b], "binomial", BinomialDistribution[Round[a], b], "cauchy", CauchyDistribution[a, b],
+    "chisquare", ChiSquareDistribution[a], "exponential", ExponentialDistribution[1/a], "f", FRatioDistribution[a, b],
+    "gamma", GammaDistribution[a, b], "normal", NormalDistribution[a, b], "poisson", PoissonDistribution[a],
+    "t", StudentTDistribution[a], "uniform", UniformDistribution[{a, b}], "weibull", WeibullDistribution[a, b],
+    _, unsupported["Unknown distribution: " <> First[w]]];
+  If[!FreeQ[d, None], unsupported["Give the parameters of the distribution"]];
+  <|"kind" -> "value", "latex" -> StringRiffle[If[IntegerQ[#], ToString[#], tex[N[#]]] & /@ RandomVariate[d, n], ","]|>];
+statMomentAnswer[j_] := Module[{w, nums, r, about},
+  {w, nums} = statWords[j];
+  If[nums === {}, unsupported["Give the moment number"]];
+  r = build[First[nums]];
+  about = If[MemberQ[w, "mean"] || Length[nums] < 2, None, build[nums[[2]]]];
+  Append[statAnswer[j, tex[statMoment[#, r, about]] &], "label" -> ", Moment(s): "]];
+statQuantileAnswer[j_] := Module[{w, nums, q, shown},
+  {w, nums} = statWords[j];
+  If[nums === {}, unsupported["Give the quantile q (0 < q < 1)"]];
+  q = build[First[nums]];
+  If[!(NumericQ[q] && 0 < q < 1), unsupported["The quantile must be between 0 and 1"]];
+  shown = If[NumberQ[First[nums]], ToString[First[nums]], tex[q]];
+  Append[statAnswer[j, tex[statQuantile[#, q]] &], "label" -> ", " <> shown <> "th Quantile(s): "]];
+$extraOps["mean"] = Function[j, Append[statAnswer[j, tex[statMean[#]] &], "label" -> ", Mean(s): "]];
+$extraOps["median"] = Function[j, Append[statAnswer[j, tex[statMedian[#]] &], "label" -> ", Median(s): "]];
+$extraOps["mode"] = Function[j, Append[statAnswer[j, statMode], "label" -> ", Mode(s): "]];
+$extraOps["geomean"] = Function[j, Append[statAnswer[j, statGeo], "label" -> ", Geometric Mean(s): "]];
+$extraOps["harmonicmean"] = Function[j, Append[statAnswer[j, tex[statHarm[#]] &], "label" -> ", Harmonic Mean(s): "]];
+$extraOps["meandev"] = Function[j, Append[statAnswer[j, tex[statMeanDev[#]] &], "label" -> ", Mean deviation(s): "]];
+$extraOps["variance"] = Function[j, Append[statAnswer[j, tex[statVar[#]] &], "label" -> ", Variance(s): "]];
+$extraOps["stddev"] = Function[j, Append[statAnswer[j, statSqrt[statVar[#]] &], "label" -> ", Standard deviation(s): "]];
+$extraOps["moment"] = statMomentAnswer;
+$extraOps["quantile"] = statQuantileAnswer;
+$extraOps["correlation"] = Function[j, Append[statMatrix[j, statCorr], "label" -> ", Correlation matrix: "]];
+$extraOps["covariance"] = Function[j, Append[statMatrix[j, statCov], "label" -> ", Covariance matrix: "]];
+$extraOps["fitcurve"] = statFit;
+$extraOps["randomnumbers"] = statRandom;
+
+(* Compute > Polynomials, as 5.5 (tcidiv, tciroot, tcisort, tcicollect, tcicompanion): without a
+   variable given (params), the one there is, else the editor asks on the error below *)
+polyNeed[] := unsupported["Choose the polynomial variable (there are several)"];
+polyRequest[j_] := {lastSide[expr[statRequest[j]]],
+  Flatten[If[paramsQ[j], expr /@ Select[Lookup[j, "params", {}], !(StringQ[#] && StringStartsQ[#, "'"]) &], {}]]};
+polyVariable[e_, vs_] := With[{free = userVariables[e]}, Which[
+  vs =!= {}, First[vs], Length[free] == 1, First[free], free === {}, unsupported["The expression has no variable"], True, polyNeed[]]];
+polyDivide[j_] := Module[{e, vs, num, den, a, b, both, x, q, r},
+  {e, vs} = polyRequest[j];
+  {num, den} = {Numerator[#], Denominator[#]} &[Together[e]];
+  x = If[vs =!= {}, First[vs], a = userVariables[num]; b = userVariables[den]; both = Intersection[a, b];
+    Which[Length[a] == 1, First[a], Length[b] == 1, First[b], Length[both] == 1, First[both], True, polyNeed[]]];
+  If[Exponent[num, x] < Exponent[den, x], Return[value[e]]];
+  {q, r} = Expand /@ PolynomialQuotientRemainder[num, den, x];
+  If[r === 0, value[q], <|"kind" -> "value", "latex" -> tex[q] <> " + \\frac{" <> tex[r] <> "}{" <> tex[den] <> "}"|>]];
+polyRoots[j_] := Module[{e, vs, p, x, deg, rs},
+  {e, vs} = polyRequest[j];
+  p = Expand[e]; x = polyVariable[p, vs]; deg = Exponent[p, x];
+  If[deg < 1, Return[<|"kind" -> "solutions", "label" -> ", roots: ", "solutions" -> {tex[fset[]]}|>]];
+  rs = If[deg < 5 && FreeQ[p, _Real], x /. Solve[p == 0, x], x /. NSolve[p == 0, x]];
+  If[!FreeQ[rs, Root], rs = N[rs]];
+  If[realQ[x], rs = Select[rs, TrueQ[Element[#, Reals]] &]];
+  If[rs === {}, Return[<|"kind" -> "solutions", "label" -> ", roots: ", "solutions" -> {tex[fset[]]}|>]];
+  rs = SortBy[rs, {N[Re[#]] &, N[Im[#]] &}];
+  <|"kind" -> "solutions", "label" -> ", roots: ", "solutions" -> {If[Length[rs] == 1, tex[First[rs]], tex[List /@ rs]]}|>];
+polySort[j_] := Module[{e, vs, p, xs, terms, out = ""},
+  {e, vs} = polyRequest[j];
+  p = Expand[e]; xs = If[vs =!= {}, vs, {polyVariable[p, vs]}];
+  terms = If[Head[p] === Plus, List @@ p, {p}];
+  terms = SortBy[terms, Function[t, -Exponent[t, #] & /@ xs]];
+  Do[With[{s = tex[t]}, out = If[out == "", s, out <> If[StringStartsQ[s, "-"], " ", " + "] <> s]], {t, terms}];
+  <|"kind" -> "value", "latex" -> out|>];
+polyCollect[j_] := Module[{e, vs, one},
+  {e, vs} = polyRequest[j];
+  one = Collect[Expand[#], If[vs =!= {}, vs, mainVariable[#]]] &;
+  value[If[MatrixQ[e], Map[one, e, {2}], one[e]]]];
+polyCompanion[j_] := Module[{e, vs, p, x, c, n},
+  {e, vs} = polyRequest[j];
+  p = Expand[e]; x = polyVariable[p, vs];
+  c = CoefficientList[p, x]; n = Length[c] - 1;
+  If[n < 1, unsupported["Needs a polynomial of degree 1 or more"]];
+  c = Simplify[c/Last[c]];
+  <|"kind" -> "solutions", "label" -> ", Companion matrix: ", "solutions" -> {tex[Table[Which[k == n, -c[[i]], i == k + 1, 1, True, 0], {i, n}, {k, n}]]}|>];
+$extraOps["divide"] = polyDivide;
+$extraOps["roots"] = polyRoots;
+$extraOps["sort"] = polySort;
+$extraOps["collect"] = polyCollect;
+$extraOps["companion"] = polyCompanion;
+
+(* (end of part: statpoly) *)
+
+
+(* -----------------------------------------------------------------------------
+   part: defsmisc
+   ----------------------------------------------------------------------------- *)
+
+(* Compute > Interpret, Solve ODE > Laplace and Series, Transforms > Inverse Fourier, Define MuPAD
+   Name and the Compute settings of 5.5 the answers follow (the same as the SymPy engine's part) *)
+$options55 = <|"digits" -> 5, "threshold" -> 5, "comp_digits" -> 10, "imaginary_j" -> False, "max_degree" -> 3, "ignore_special" -> False,
+  "bessel_subscripts" -> False, "ode_series_order" -> 6|>;
+setOptions55[j_Association] := (
+  KeyValueMap[If[KeyExistsQ[$options55, #1] && (BooleanQ[#2] && BooleanQ[$options55[#1]] || IntegerQ[#2] && IntegerQ[$options55[#1]]),
+    $options55[#1] = #2] &, j];
+  $options55["digits"] = Max[1, Min[$options55["digits"], $options55["comp_digits"]]];
+  $options55["threshold"] = Max[1, $options55["threshold"]];
+  bessel = If[$options55["bessel_subscripts"], <|BesselJ -> "J", BesselY -> "Y", BesselI -> "I", BesselK -> "K"|>,
+    <|BesselJ -> "\\operatorname{BesselJ}", BesselY -> "\\operatorname{BesselY}", BesselI -> "\\operatorname{BesselI}", BesselK -> "\\operatorname{BesselK}"|>];
+  <|"kind" -> "text", "text" -> ""|>);
+setOptions55[_] := <|"kind" -> "text", "text" -> ""|>;
+
+(* Digits Shown in Results n and Threshold for Scientific Notation t (5.5's defaults 5 and 5: the
+   engine's own shownFloat) *)
+DownValues[shownFloat55] = DownValues[shownFloat] /. HoldPattern[shownFloat] -> shownFloat55;
+shownFloat[x_Real] := If[$options55["digits"] == 5 && $options55["threshold"] == 5, shownFloat55[x], shownFloatN[x, $options55["digits"], $options55["threshold"]]];
+shownFloatN[x_Real, n_, t_] := Module[{v = Rationalize[Abs[x], 0], e, dd, exact, k, mn, s, z, w = Max[n, 10]},
+  If[v == 0, Return["0.0"]];
+  e = RealDigits[v, 10, 1][[2]] - 1;
+  dd = Round[v 10^(w - 1 - e)];
+  If[dd >= 10^w, e++; dd = Round[v 10^(w - 1 - e)]];
+  v = dd 10^(e - w + 1);
+  z = IntegerExponent[dd, 10];
+  exact = IntegerLength[dd] - z <= n;
+  k = e; mn = Round[v 10^(n - 1 - k)];
+  If[mn >= 10^n, k++; mn = Round[v 10^(n - 1 - k)]];
+  s = If[-1 <= k < t,
+    If[exact, exactDecimal[v], decimalString[mn, Max[n - 1 - k, 0]]],
+    If[exact, With[{m = IntegerString[dd / 10^z]}, StringTake[m, 1] <> "." <> If[StringLength[m] == 1, "0", StringDrop[m, 1]]],
+      If[n == 1, IntegerString[mn] <> ".0", StringInsert[IntegerString[mn], ".", 2]]] <> "\\times 10^{" <> ToString[k] <> "}"];
+  If[x < 0, "-" <> s, s]];
+numeric[e_] := Map[If[NumericQ[#], Chop[N[#, $options55["comp_digits"]], 10^-12], N[#, $options55["comp_digits"]]] &, lastSide[e] /. piS -> Pi, {If[MatrixQ[lastSide[e]], 2, 0]}];
+(* Imaginary Unit: i or j *)
+texE[c_Complex] := Module[{re = Re[c], im = Im[c], i, u = If[$options55["imaginary_j"], "j", "i"]},
+  i = Which[im == 1, u, im == -1, "-" <> u, True, texE[im] <> " " <> u];
+  Which[re == 0, i, StringStartsQ[i, "-"], texE[re] <> i, True, texE[re] <> "+" <> i]];
+
+(* Transforms > Inverse Fourier: F in w -> f(x) (5.5: 2 pi Dirac(w), Is Fourier transform of 1) *)
+inverseFourier55[j_] := Module[{f = lastSide[expr[j]], vs, w, x},
+  vs = userVariables[f];
+  w = If[MemberQ[vs, var["w"]] || vs === {}, var["w"], mainVariable[f]];
+  x = If[w === var["x"], var["t"], var["x"]];
+  <|"kind" -> "solutions", "label" -> ", Is Fourier transform of ", "solutions" -> {tex[transform[f, w, x, "InverseFourierTransform"]]}|>];
+
+(* {"OdeSystem", equations, initial values {name, x0, value, order}, order or "Nothing", variable or "Nothing"}
+   -> <|"eqs" (in f[t]), "funcs", "t", "inits" -> {{f, k, x0, value}}|> *)
+odeProblem55[j_] := Module[{eqsJ = Rest[j[[2]]], initsJ = Rest /@ Rest[j[[3]]], names, primed, found, given, eqs, ds, t},
+  names = DeleteDuplicates[First /@ initsJ];
+  primed = Cases[eqsJ, {"Prime", n_String, ___} :> n, {0, Infinity}];
+  found = Complement[jsonNames[Prepend[eqsJ, "List"]], names, primed, Keys[constants]];
+  given = If[Length[j] > 4 && StringQ[j[[5]]] && j[[5]] =!= "Nothing", j[[5]], None];
+  eqs = expr /@ Rest[odeForm[Prepend[eqsJ, "List"], names, Which[given =!= None, given, Length[found] == 1, First[found], True, None]]];
+  eqs = If[Head[#] === eq, #[[1]] == #[[2]], # == 0] & /@ eqs;
+  ds = Cases[eqs, Derivative[k_][f_][s_] :> {k, f, s}, {0, Infinity}];
+  If[ds === {}, unsupported["The equation needs a derivative, e.g. y'"]];
+  t = ds[[1, 3]];
+  <|"eqs" -> eqs, "funcs" -> SortBy[DeleteDuplicates[ds[[All, 2]]], nameOf], "t" -> t,
+    "inits" -> ({var[#[[1]]], If[Length[#] > 3, #[[4]], 0], expr[#[[2]]], expr[#[[3]]]} & /@ initsJ)|>];
+odeAnswer55[label_, sols_, funcs_, t_] := <|"kind" -> "solutions", "label" -> label, "solutions" -> If[sols === {}, {},
+  {If[Length[funcs] == 1, "\\left\\{" <> tex[First[sols]] <> "\\right\\}",
+    "\\left\\{\\left[" <> StringRiffle[MapThread[texEq[#1[t], #2] &, {funcs, sols}], ","] <> "\\right]\\right\\}"]}]|>;
+
+(* Solve ODE > Laplace (MuPAD's ode::laplace): linear equations with constant coefficients only;
+   initial values at 0 (one not given stays y(0)); other equations: no solution, as 5.5 *)
+odeLaplace55[j_] := Module[{p = odeProblem55[j], eqs, funcs, t, s, top, marks, ms, lm, given, ic, tr, sol, none},
+  {eqs, funcs, t} = p /@ {"eqs", "funcs", "t"};
+  none = odeAnswer55[", Laplace solution is: ", {}, funcs, t];
+  top[f_] := Max[Append[Cases[eqs, Derivative[m_][f][t] :> m, {0, Infinity}], 0]];
+  marks = Flatten[Table[If[k == 0, f[t], Derivative[k][f][t]], {f, funcs}, {k, 0, top[f]}]];
+  ms = Table[Unique["opensw55m"], {Length[marks]}];
+  lm = ((#[[1]] - #[[2]]) & /@ eqs) /. Thread[marks -> ms];
+  If[!AllTrue[lm, PolynomialQ[#, ms] && FreeQ[#, Alternatives @@ funcs] &&
+       AllTrue[CoefficientRules[#, ms], Total[First[#]] <= 1 && (Total[First[#]] == 0 || FreeQ[Last[#], t]) &] &], Return[none]];
+  given = Association[(If[#[[2]] == 0, #[[1]][#[[3]]], Derivative[#[[2]]][#[[1]]][#[[3]]]] -> #[[4]]) & /@ p["inits"]];
+  ic = Flatten[Table[With[{v = If[k == 0, f[0], Derivative[k][f][0]]}, v -> Lookup[given, v, v]], {f, funcs}, {k, 0, top[f]}]];
+  tr = (LaplaceTransform[(#[[1]] - #[[2]]) & /@ eqs, t, s] /. ic) /. (LaplaceTransform[#[t], t, s] -> lt55[#] & /@ funcs);
+  If[!FreeQ[tr, LaplaceTransform], Return[none]];
+  sol = Solve[Thread[tr == 0], lt55 /@ funcs];
+  If[sol === {}, Return[none]];
+  odeAnswer55[", Laplace solution is: ", Expand[FullSimplify[InverseLaplaceTransform[lt55[#] /. First[sol], s, t] /. HeavisideTheta[t] -> 1]] & /@ funcs, funcs, t]];
+
+(* Solve ODE > Series (MuPAD's ode::series): the Taylor series about the initial values' point, to
+   the Series Order for ODE Solutions (5.5: y' = y^2 + 4, y(0) = -2, order 5: -2 + 8t - .. + O(t^5)) *)
+odeSeries55[j_] := Module[{p = odeProblem55[j], eqs, funcs, t, n, x0, ics, sols},
+  {eqs, funcs, t} = p /@ {"eqs", "funcs", "t"};
+  n = If[Length[j] > 3 && j[[4]] =!= "Nothing", toNumber[j[[4]]], $options55["ode_series_order"]];
+  x0 = If[p["inits"] === {}, 0, p["inits"][[1, 3]]];
+  ics = (If[#[[2]] == 0, #[[1]][#[[3]]], Derivative[#[[2]]][#[[1]]][#[[3]]]] == #[[4]]) & /@ p["inits"];
+  sols = Quiet[AsymptoticDSolveValue[Join[eqs, ics], #[t] & /@ funcs, {t, x0, n - 1}]];
+  If[Length[funcs] == 1 && !ListQ[sols], sols = {sols}]; (* one function: Mathematica answers with the series alone *)
+  If[!FreeQ[sols, AsymptoticDSolveValue] || !ListQ[sols], fallback[]];
+  odeAnswer55[", Series solution is: ", (Series[#, {t, x0, n - 1}] + O[t, x0]^n) & /@ sols, funcs, t]];
+
+$extraOps["setoptions"] = Function[j, setOptions55[j]];
+$extraOps["interpret"] = Function[j, fallback[]]; (* how opensw reads the formula: the SymPy engine shows it *)
+$extraOps["inversefourier"] = Function[j, inverseFourier55[j]];
+$extraOps["odelaplace"] = Function[j, odeLaplace55[j]];
+$extraOps["odeseries"] = Function[j, odeSeries55[j]];
+(* Define MuPAD Name: a name of the document for one of MuPAD's, which Mathematica has too
+   (n(x) <-> nextprime(x): n(100) = 101; c <-> PI). A MuPAD name not in these tables: the SymPy
+   engine keeps the mapping (it knows more of them), and the formulas with that name go there. *)
+mupadValues55 = <|"PI" -> Pi, "E" -> E, "I" -> I, "EULER" -> EulerGamma, "CATALAN" -> Catalan, "infinity" -> Infinity|>;
+mupadFunctions55 = <|"nextprime" -> NextPrime, "isprime" -> PrimeQ, "ithprime" -> Prime, "divisors" -> Divisors,
+  "gcd" -> GCD, "igcd" -> GCD, "lcm" -> LCM, "ilcm" -> LCM, "binomial" -> Binomial, "fact" -> Factorial, "gamma" -> Gamma,
+  "beta" -> Beta, "zeta" -> Zeta, "phi" -> EulerPhi, "abs" -> Abs, "sign" -> Sign, "floor" -> Floor, "ceil" -> Ceiling,
+  "round" -> Round, "trunc" -> IntegerPart, "frac" -> FractionalPart, "exp" -> Exp, "ln" -> Log, "sqrt" -> Sqrt,
+  "max" -> Max, "min" -> Min, "float" -> (N[#, 10] &), "det" -> Det, "transpose" -> Transpose, "tr" -> Tr,
+  "rank" -> MatrixRank, "inverse" -> Inverse|>;
+(* the MuPAD function on numbers (or matrices) only, as the SymPy engine does it *)
+mupadCall55[f_, args_List] /; AllTrue[args, NumericQ[#] || MatrixQ[#] &] := f @@ args;
+$mapShown = <||>; (* name -> {its definition, how Show Definitions writes it} *)
+compute["define", {"Equal", lhs_, {"MapName", target_String, ___}}] := Module[{t = StringTrim[target, "'"], key, shown, d},
+  key = Last[StringSplit[t, "::"]];
+  Which[
+    StringQ[lhs],
+      If[!KeyExistsQ[mupadValues55, t], fallback[]];
+      d = {None, mupadValues55[t]}; $defs[lhs] = d; KeyDropFrom[$numeric, lhs];
+      shown = tex[var[lhs]] <> " \\leftrightarrow \\text{" <> t <> "}",
+    ListQ[lhs] && Length[lhs] > 1 && AllTrue[lhs, StringQ],
+      If[!KeyExistsQ[mupadFunctions55, key], fallback[]];
+      d = {var /@ Rest[lhs], mupadCall55[mupadFunctions55[key], var /@ Rest[lhs]]};
+      $defs[First[lhs]] = d; KeyDropFrom[$numeric, First[lhs]];
+      shown = texName[First[lhs]] <> "(" <> StringRiffle[Rest[lhs], ", "] <> ") \\leftrightarrow \\text{" <> t <> "}(" <> StringRiffle[Rest[lhs], ", "] <> ")",
+    True, unsupported["Write the name as n(x) or n(x, y)"]];
+  $mapShown[If[StringQ[lhs], lhs, First[lhs]]] = {d, shown};
+  <|"kind" -> "value", "latex" -> shown|>];
+
+(* (end of part: defsmisc) *)
+
+
+(* -----------------------------------------------------------------------------
+   part: anim
+   ----------------------------------------------------------------------------- *)
+
+(* (end of part: anim) *)
+
+(* -----------------------------------------------------------------------------
+   part: core55
+   ----------------------------------------------------------------------------- *)
+
+(* Compute > Transforms as 5.5 answers them (dm10-1.tex): "1, Fourier transform is: 2 pi Dirac(w)" *)
+transformAnswer55[op_, "label" -> label_] := Function[j, <|"kind" -> "solutions", "label" -> label, "solutions" -> {tex[finish[operations[op][expr[j]]]]}|>];
+$extraOps["laplace"] = transformAnswer55["laplace", "label" -> ", Laplace transform is: "];
+$extraOps["inverselaplace"] = transformAnswer55["inverselaplace", "label" -> ", Is Laplace transform of "];
+(* sign(w) as MuPAD writes it: 2 Heaviside(w) - 1 (1/x -> i\pi(2 Heaviside(w) - 1), as 5.5's dm10-1) *)
+$extraOps["fourier"] = Function[j, <|"kind" -> "solutions", "label" -> ", Fourier transform is: ",
+  "solutions" -> {tex[finish[operations["fourier"][expr[j]] /. Sign[u_] :> 2 HeavisideTheta[u] - 1]]}|>];
+
+(* (end of part: core55) *)
 
 End[];
 EndPackage[];

@@ -95,6 +95,17 @@ export function parsePlot(body) {
     if (k === 'linethickness') cur.width = num(v) || 1;
     if (k === 'lineAttributes') cur.dash = /dash/i.test(v) ? '6 4' : /dot/i.test(v) ? '1.5 3' : null;
     if (k === 'curveStyle') cur.style = v;
+    if (k === 'animationParamRange') cur.animRange = range(v);
+    // the 3D colouring, style and mesh, a point plot's marker (Compute > Settings > 2D / 3D Plots)
+    if (k === 'surfaceStyle') cur.surfaceStyle = v;
+    if (k === 'surfaceMesh') cur.mesh = v;
+    if (k === 'pointStyle') cur.marker = v;
+    if (k === 'discAdjust') cur.discAdjust = /true/i.test(v);
+    if (k === 'surfaceColor') {
+      const m = v.match(/^\[linear:(\w+):RGB:0x00([0-9a-f]{6}):0x00([0-9a-f]{6})\]$/i) || v.match(/^\[flat::RGB:0x00([0-9a-f]{6})\]$/i);
+      if (m && m.length === 4) Object.assign(cur, { shading: m[1], base: '#' + m[2].toLowerCase(), secondary: '#' + m[3].toLowerCase() });
+      else if (m) Object.assign(cur, { shading: 'None', base: '#' + m[1].toLowerCase() });
+    }
   }
   plot.type = g.type || null;
   plot.plottype = num(g.plottype);
@@ -116,6 +127,7 @@ export function parsePlot(body) {
   const yv = [num(g.yviewmin), num(g.yviewmax)];
   if (xv[0] != null && xv[1] != null && xv[0] < xv[1]) plot.view.x = xv;
   if (yv[0] != null && yv[1] != null && yv[0] < yv[1]) plot.view.y = yv;
+  plot.anim = /true/i.test(g.animated || '') ? animOf(g, plot.curves) : null;
   for (const c of plot.curves) {
     c.variable = c.variable || plot.variable;
     c.range = c.range || plot.range || plot.view.x || [-5, 5];
@@ -128,6 +140,30 @@ export function parsePlot(body) {
   return plot;
 }
 
+// 5.5's animated plots (Plot 2D/3D Animated): one more variable, the animation parameter
+// (t from 0 to 10 unless set), shown over animationStartTime..animationEndTime seconds at
+// animationFramesPerSecond; currentAnimationTime is the frame shown when it is not playing
+export const ANIM_DEFAULT = { param: 't', range: [0, 10], start: 0, end: 10, fps: 5, current: null };
+function animOf(g, curves) {
+  const r = [num(g.animationParamMin), num(g.animationParamMax)];
+  const own = curves.find((c) => c.animRange)?.animRange;
+  const start = num(g.animationStartTime) ?? 0;
+  const end = num(g.animationEndTime) ?? 10;
+  return { param: unU(g.animationParam || g.animationParamList || 't'), range: own || (r[0] != null && r[1] != null ? r : [0, 10]),
+    start, end: end > start ? end : start + 10, fps: Math.max(1, num(g.animationFramesPerSecond) || 5), current: num(g.currentAnimationTime) };
+}
+// the settings of an animated plot as 5.5 writes them: [before the ranges, after the variables'
+// names, after each function's ranges]
+function animParts(plot) {
+  const a = plot.anim;
+  if (!a) return ['', '', ''];
+  return [`animated TRUE;${a.current != null ? `currentAnimationTime "${a.current}";` : ''}animationStartTime "${a.start}";animationEndTime "${a.end}";animationFramesPerSecond "${a.fps}";`
+    + `animationParamMin "${a.range[0]}";animationParamMax "${a.range[1]}";`,
+  `animationParam \\TEXUX{${a.param}};animationParamList \\TEXUX{$${a.param}$};`,
+  `animationParamRange "${a.range.join(',')}";`];
+}
+export const isAnimated = (plot) => !!plot?.anim;
+
 // a 5.x plot \special for these settings (Compute > Plot 2D and the plot's Properties write it)
 export function plotSpecial(plot, { width = '3in', height = '2in', path }) {
   const kind = plotKind(plot);
@@ -136,15 +172,17 @@ export function plotSpecial(plot, { width = '3in', height = '2in', path }) {
   const rect = !['polar', 'param'].includes(kind);
   const [x0, x1] = rect ? plot.view.x || plot.range || [-5, 5] : plot.range || plot.curves[0]?.range || [-5, 5];
   const xview = rect ? `xviewmin "${x0}";xviewmax "${x1}";` : plot.view.x ? `xviewmin "${plot.view.x[0]}";xviewmax "${plot.view.x[1]}";` : '';
-  const parts = [`language "Scientific Word";type "MAPLEPLOT";width ${width};height ${height};depth 0pt;display "USEDEF";plot_snapshots TRUE;`,
+  const [anim0, anim1, anim2] = animParts(plot);
+  const parts = [`language "Scientific Word";type "MAPLEPLOT";width ${width};height ${height};depth 0pt;display "USEDEF";plot_snapshots TRUE;${anim0}`,
     `xmin "${x0}";xmax "${x1}";${xview}`,
     plot.view.y ? `yviewmin "${plot.view.y[0]}";yviewmax "${plot.view.y[1]}";viewset"XY";` : xview ? 'viewset"X";' : '',
-    `rangeset"X";plottype ${plot.plottype || 4};${plot.constrained ? 'constrained TRUE;' : ''}axesstyle "${plot.axes || 'normal'}";numpoints 100;var1name \\TEXUX{$${plot.variable || 'x'}$};`];
+    `rangeset"X${plot.anim ? 'A' : ''}";plottype ${plot.plottype || 4};${plot.constrained ? 'constrained TRUE;' : ''}axesstyle "${plot.axes || 'normal'}";numpoints 100;${anim1}var1name \\TEXUX{$${plot.variable || 'x'}$};`];
   for (const c of plot.curves) {
     const hex = (c.color || '#000000').replace('#', '');
-    parts.push(`function \\TEXUX{$${c.latex}$};linestyle 1;linethickness ${c.width || 1};lineAttributes "${c.dash ? 'Dash' : 'Solid'}";`
+    parts.push(`function \\TEXUX{$${c.latex}$};linestyle 1;linethickness ${c.width || 1};lineAttributes "${lineAttr(c.dash)}";`
       + (kind === 'polar' ? 'coordinateSystem "polar";' : '')
-      + `var1range "${(c.range || [x0, x1]).join(',')}";num-x-gridlines ${c.n || 100};curveColor "[flat::RGB:0x00${hex}]";curveStyle "Line";`);
+      + `var1range "${(c.range || [x0, x1]).join(',')}";${anim2}num-x-gridlines ${c.n || 100};curveColor "[flat::RGB:0x00${hex}]";curveStyle "${c.style || 'Line'}";`
+      + (c.style === 'Point' && c.marker ? `pointStyle "${c.marker}";` : '') + (c.discAdjust != null ? `discAdjust ${c.discAdjust ? 'TRUE' : 'FALSE'};` : ''));
   }
   parts.push(`valid_file "T";tempfilename '${path}';`);
   return `\\special{${parts.join('')}}`;
@@ -222,18 +260,23 @@ export function drawable(plot) {
   }
 }
 
+const grid = (c, i) => (c.grid && c.grid[i]) || 25;
 // a 3D rectangular plot's \special (Compute > Plot 3D > Rectangular)
 function surfaceSpecial(plot, { width, height, path }) {
   const c = plot.curves[0];
   const [x0, x1] = c.range;
   const [y0, y1] = c.range2;
-  return `\\special{language "Scientific Word";type "MAPLEPLOT";width ${width};height ${height};depth 0pt;display "USEDEF";plot_snapshots TRUE;`
-    + `xmin "${x0}";xmax "${x1}";ymin "${y0}";ymax "${y1}";plottype 5;num-x-gridlines 25;num-y-gridlines 25;plotstyle "patch";axesstyle "${plot.axes || 'normal'}";`
-    + `plotshading "XYZ";var1name \\TEXUX{$${plot.variable}$};var2name \\TEXUX{$${plot.variable2}$};`
-    + plot.curves.map((k) => `function \\TEXUX{$${k.latex}$};var1range "${k.range.join(',')}";var2range "${k.range2.join(',')}";`
-      + 'surfaceColor "[linear:XYZ:RGB:0x00ff0000:0x000000ff]";surfaceStyle "Color Patch";num-x-gridlines 25;num-y-gridlines 25;surfaceMesh "Mesh";').join('')
+  const [anim0, anim1, anim2] = animParts(plot);
+  return `\\special{language "Scientific Word";type "MAPLEPLOT";width ${width};height ${height};depth 0pt;display "USEDEF";plot_snapshots TRUE;${anim0}`
+    + `xmin "${x0}";xmax "${x1}";ymin "${y0}";ymax "${y1}";${turnTilt(plot)}plottype 5;num-x-gridlines ${grid(c, 0)};num-y-gridlines ${grid(c, 1)};plotstyle "patch";axesstyle "${plot.axes || 'normal'}";`
+    + `plotshading "${c.shading && c.shading !== 'None' ? c.shading : 'XYZ'}";${anim1}var1name \\TEXUX{$${plot.variable}$};var2name \\TEXUX{$${plot.variable2}$};`
+    + plot.curves.map((k) => `function \\TEXUX{$${k.latex}$};var1range "${k.range.join(',')}";var2range "${k.range2.join(',')}";${anim2}`
+      + surfaceAttrs(k).replace('surfaceMesh', `num-x-gridlines ${grid(k, 0)};num-y-gridlines ${grid(k, 1)};surfaceMesh`)).join('')
     + `valid_file "T";tempfilename '${path}';}`;
 }
+
+// a 3D plot's view as 5.5 writes it (phi: tilt, theta: turn), when it was read from the file
+const turnTilt = (plot) => (plot.tilt != null && plot.turn != null ? `phi ${plot.tilt};theta ${plot.turn};` : '');
 
 // the \special of the other kinds: the settings 5.5 writes for them (see its help files)
 function otherSpecial(plot, kind, { width, height, path }) {
@@ -243,11 +286,12 @@ function otherSpecial(plot, kind, { width, height, path }) {
   const vars = [plot.variable, plot.variable2, plot.variable3];
   const three = is3D(kind);
   const hex = (c) => (c || '#000000').replace('#', '');
-  const parts = [`language "Scientific Word";type "MAPLEPLOT";width ${width};height ${height};depth 0pt;display "USEDEF";plot_snapshots TRUE;`,
+  const [anim0, anim1, anim2] = animParts(plot);
+  const parts = [`language "Scientific Word";type "MAPLEPLOT";width ${width};height ${height};depth 0pt;display "USEDEF";plot_snapshots TRUE;${anim0}`,
     ['xmin', 'ymin', 'zmin'].slice(0, dims).map((k, i) => `${k} "${rs[i][0]}";${k.replace('min', 'max')} "${rs[i][1]}";`).join(''),
     plot.view.x ? `xviewmin "${plot.view.x[0]}";xviewmax "${plot.view.x[1]}";` : '',
     plot.view.y ? `yviewmin "${plot.view.y[0]}";yviewmax "${plot.view.y[1]}";viewset"XY";` : '',
-    `plottype ${PLOTTYPE[kind]};${plot.constrained ? 'constrained TRUE;' : ''}axesstyle "${plot.axes || (three ? 'boxed' : 'normal')}";`,
+    `${three ? turnTilt(plot) : ''}plottype ${PLOTTYPE[kind]};${plot.constrained ? 'constrained TRUE;' : ''}axesstyle "${plot.axes || (three ? 'boxed' : 'normal')}";${anim1}`,
     (dims > 1 || three ? vars : vars.slice(0, 1)).map((v, i) => `var${i + 1}name \\TEXUX{$${v}$};`).join('')];
   for (const c of plot.curves) {
     const g = c.grid || [];
@@ -256,14 +300,23 @@ function otherSpecial(plot, kind, { width, height, path }) {
       + (kind === 'tube' ? `radius \\TEXUX{$${c.radius || '0.2'}$};` : '')
       + (kind === 'approx' ? `numboxes ${c.boxes || 10};approxIntBoxType "${c.boxType || 'left'}";` : '')
       + coords
-      + [c.range, c.range2, c.range3].slice(0, dims).map((r, i) => `var${i + 1}range "${r.join(',')}";`).join('')
+      + [c.range, c.range2, c.range3].slice(0, dims).map((r, i) => `var${i + 1}range "${r.join(',')}";`).join('') + anim2
       + [0, 1, 2].slice(0, kind === 'tube' ? 2 : dims).map((i) => (g[i] ? `num-${'xyz'[i]}-gridlines ${g[i]};` : '')).join('')
-      + (three ? 'surfaceColor "[linear:XYZ:RGB:0x00ff0000:0x000000ff]";surfaceStyle "Color Patch";surfaceMesh "Mesh";'
+      + (three ? surfaceAttrs(c)
         : `curveColor "[flat::RGB:0x00${hex(c.color)}]";curveStyle "${kind === 'vector' || kind === 'gradient' ? 'Point' : 'Line'}";`)
       + (c.fill ? `fillColor "[flat::RGB:0x00${hex(c.fill)}]";` : '') + (c.fill2 ? `fillColor2 "[flat::RGB:0x00${hex(c.fill2)}]";` : ''));
   }
   parts.push(`valid_file "T";tempfilename '${path}';`);
   return `\\special{${parts.join('')}}`;
+}
+
+// 5.5's lineAttributes for a dash pattern; a 3D item's colouring, style and mesh (Compute > Settings > 3D Plots)
+const lineAttr = (dash) => (!dash ? 'Solid' : dash === '1.5 3' ? 'Dots' : dash === '6 3 1.5 3' ? 'DashDot' : 'Dash');
+const rgb = (c) => (c || '#000000').replace('#', '').toLowerCase();
+function surfaceAttrs(c) {
+  const shade = c.shading || 'XYZ';
+  const color = shade === 'None' ? `[flat::RGB:0x00${rgb(c.base || '#ff0000')}]` : `[linear:${shade}:RGB:0x00${rgb(c.base || '#ff0000')}:0x00${rgb(c.secondary || '#0000ff')}]`;
+  return `surfaceColor "${color}";surfaceStyle "${c.surfaceStyle || 'Color Patch'}";surfaceMesh "${c.mesh || 'Mesh'}";`;
 }
 
 // a "nice" step near span/target: 1, 2, 2.5 or 5 times a power of ten
@@ -425,11 +478,9 @@ export function plotSVG(plot, data, w, h) {
 //   { tris: [[p, p, p]] }                triangles (implicit)
 //   { arrows: [[p, v]], cell }           a field: arrows from p along v; the longest is 0.9 cell long
 //   { box: [[x0, x1], [y0, y1], [z0, z1]] } the window (fields, implicit), when the points do not set it
-export function plotSVG3D(plot, items, w, h) {
-  const deg = Math.PI / 180;
-  const turn = (plot.turn ?? 45) * deg;
-  const tilt = (plot.tilt ?? 45) * deg;
-  // every patch as its corner points
+
+// every patch of a 3D plot's items as its corner points
+function patches(items) {
   const polys = [];
   for (const g of items) {
     if (g.z) {
@@ -449,14 +500,28 @@ export function plotSVG3D(plot, items, w, h) {
     }
     for (const t of g.tris || []) polys.push(t);
   }
-  let lo = [Infinity, Infinity, Infinity];
-  let hi = [-Infinity, -Infinity, -Infinity];
+  return polys;
+}
+
+// the box round a 3D plot's items
+export function bounds3D(items, polys = patches(items)) {
+  const lo = [Infinity, Infinity, Infinity];
+  const hi = [-Infinity, -Infinity, -Infinity];
   const grow = (p) => { for (let k = 0; k < 3; k++) { lo[k] = Math.min(lo[k], p[k]); hi[k] = Math.max(hi[k], p[k]); } };
   for (const q of polys) q.forEach(grow);
   for (const g of items) {
     if (g.box) { grow(g.box.map((b) => b[0])); grow(g.box.map((b) => b[1])); }
     for (const [p] of g.arrows || []) grow(p);
   }
+  return [lo, hi];
+}
+
+export function plotSVG3D(plot, items, w, h) {
+  const deg = Math.PI / 180;
+  const turn = (plot.turn ?? 45) * deg;
+  const tilt = (plot.tilt ?? 45) * deg;
+  const polys = patches(items);
+  const [lo, hi] = bounds3D(items, polys);
   for (let k = 0; k < 3; k++) if (!(lo[k] < hi[k])) { lo[k] = (Number.isFinite(lo[k]) ? lo[k] : 0) - 1; hi[k] = lo[k] + 2; }
   // each axis scaled to [-1, 1] (the box 5.5 draws is a cube), or all by the same factor when constrained
   const span = hi.map((v, k) => v - lo[k]);
@@ -521,4 +586,52 @@ export function plotSVG3D(plot, items, w, h) {
   }
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" font-family="Times New Roman, Times, serif" font-size="11">`
     + drawn.map((q) => q[1]).join('') + parts.join('') + '</svg>';
+}
+
+// The frames of an animated plot drawn in one window (the one that holds every frame), so the
+// axes stay still while it plays, as in 5.5: frames [{ value, data }] -> [[plot, data]]
+export function steadyFrames(plot, frames) {
+  const kind = plotKind(plot);
+  if (is3D(kind)) {
+    const all = frames.flatMap((f) => f.data);
+    const [lo, hi] = bounds3D(all);
+    if (!lo.every(Number.isFinite) || !hi.every(Number.isFinite)) return frames.map((f) => [plot, f.data]);
+    const box = { box: [0, 1, 2].map((k) => [lo[k], hi[k]]) };
+    return frames.map((f) => [plot, [...f.data, box]]);
+  }
+  if (['implicit', 'inequality', 'vector', 'gradient', 'log', 'loglog'].includes(kind)) return frames.map((f) => [plot, f.data]); // the ranges are the window (log: as drawn)
+  const fromPoints = !['rect', 'log', 'loglog', 'approx'].includes(kind);
+  let [x0, x1, y0, y1] = [Infinity, -Infinity, Infinity, -Infinity];
+  const xr = plot.view.x || (fromPoints ? null : [Math.min(...plot.curves.map((c) => c.range[0])), Math.max(...plot.curves.map((c) => c.range[1]))]);
+  for (const f of frames) {
+    for (const d of f.data) {
+      for (const q of [d, ...(d.paths || [])]) {
+        if (!q.x) continue;
+        for (let i = 0; i < q.x.length; i++) {
+          const x = q.x[i];
+          const y = q.y[i];
+          if (x == null || y == null || !Number.isFinite(x) || !Number.isFinite(y)) continue;
+          if (xr && (x < xr[0] || x > xr[1])) continue;
+          x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y);
+        }
+      }
+      for (const b of d.boxes || []) { y0 = Math.min(y0, 0, b[2]); y1 = Math.max(y1, 0, b[2]); }
+      for (const p of d.polys || []) for (const [, y] of p) { y0 = Math.min(y0, y); y1 = Math.max(y1, y); }
+    }
+  }
+  if (!(y0 < y1)) return frames.map((f) => [plot, f.data]);
+  const view = { x: plot.view.x || (fromPoints && x0 < x1 ? [x0, x1] : null), y: plot.view.y || [y0, y1] };
+  const fixed = { ...plot, view };
+  return frames.map((f) => [fixed, f.data]);
+}
+
+// how many frames an animated plot is drawn with: 5.5 shows (end - start) x frames per second;
+// opensw draws at most this many and shows each a little longer (a frame of a surface takes the
+// computation engine much longer than a frame of a curve)
+export function animFrames(plot) {
+  const kind = plotKind(plot);
+  const a = plot.anim;
+  const want = Math.round((a.end - a.start) * a.fps) + 1;
+  const most = is3D(kind) ? 21 : ['implicit', 'inequality', 'vector', 'gradient', 'conformal'].includes(kind) ? 26 : 51;
+  return Math.max(2, Math.min(want, most));
 }

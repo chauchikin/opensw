@@ -116,7 +116,7 @@ opensw 是照 Scientific Word 5.5 重做的數學編輯器。選單、快捷鍵�
 
 \begin{itemize}
 \item 檢視：放大縮小；顯示或隱藏標記、索引項目、輔助線、TeX 欄位；工具列（每一列都可以開關，有「重設」）。
-\item 檢視 \TEXTsymbol{>} 改動與 LaTeX 源碼（Ctrl+Shift+D；5.5 沒有，不打開就不會出現）：左邊是打開時的原檔，只能看；右邊三個分頁。工作版本：之後改過的區塊上色，AI 改的是紫色、自己改的是黃色。LaTeX 源碼：存檔會寫出的內容，只能看、隨時更新；重新寫過的部分有標記，其他是原檔的文字。改動與錯誤：每一條改動可以接受（保留、不再標出）或退回（換回原檔）；上次排版的錯誤翻成白話，並指出在哪一塊；推導檢查：獨立公式裡每一步 $a=b$（下一行開頭的 $=b$ 也算）會判定為確定相等、確定不相等（附上兩邊不同的點），或無法判斷（這時不說錯）。
+\item 檢視 \TEXTsymbol{>} 改動與 LaTeX 源碼（Ctrl+Shift+D；5.5 沒有，不打開就不會出現）：左邊是打開時的原檔，只能看；右邊三個分頁。工作版本：之後改過的區塊上色，AI 改的是紫色、自己改的是黃色。LaTeX 源碼：存檔會寫出的內容，只能看、隨時更新；重新寫過的部分有標記，其他是原檔的文字。改動與錯誤：每一條改動可以接受（保留、不再標出）或退回（換回原檔）；上次排版的錯誤翻成白話，並指出在哪一塊；推導檢查：獨立公式裡每一步 $a=b$（下一行開頭的 $=b$ 也算）會判定為確定相等、確定不相等（附上兩邊不同的點），或無法判斷（這時不說錯）。下面是逐行檢查：每一個有名字的步驟（有 \TEXTsymbol{\backslash}label 的獨立公式，或 AI 命名過的）和它的結果（通過、不通過、無法判斷、還沒檢查、信任）與原因；點一列會跳到那個公式，按「檢查全部有名字的步驟」重新檢查。
 \item 前往：上一節、下一節、標記、連結（游標在連結上）、上一個位置、下一個位置。
 \item 標籤：F2 到 F12 套用標籤（標籤 \TEXTsymbol{>} 功能鍵 可以自己改）；項目標籤（清單、定理類）、段落標籤（節、小節）、文字標籤（粗體、強調、字級）。
 \item 標籤 \TEXTsymbol{>} 外觀：改每個標籤在畫面上的字型、大小、顏色，不影響排版。
@@ -222,19 +222,22 @@ opensw 是照 Scientific Word 5.5 重做的數學編輯器。選單、快捷鍵�
 \begin{itemize}
 \item Exam（或 Quiz、Test）：表示這是考卷範本。Comment：只是註記，不會出現在考卷。
 \item Text：原樣放進考卷的文字。Part：分成幾個部分，各有自己的設定。
-\item Setup：設定。例如 $a:=\func{rand}(1,9)$（只算一次）、$b=1/a$（每次用到重算）、「Condition: $(a\neq b)$」（不成立就重抽）、「Questions: number, permute」（題目編號、打亂）、「Choices: permute」（選項打亂）、「Seed: 123」（固定亂數）。
+\item Setup：設定。例如 $a:=\func{rand}(1,9)$（只算一次）、$b=1/a$（每次用到重算）、「Condition: $(a\neq b)$」（不成立就重抽）、「Questions: number, permute」（題目編號、打亂）、「Choices: permute」（選項打亂）、「Seed: 123」（固定亂數）。關鍵字照 5.5：「Questions: Number, Permute」（題目編號，沒寫就不編號；打亂題目）、「Choices: Permute, No Break, Check」（打亂選項；選項排成一行，間隔用「Choice Space: 2」個 em；改成核取方塊，每個選項的分數寫在項目標籤，例如 \TEXTsymbol{\backslash}item[-1]）、「Question Space: 1」（每題後面空幾行）、「Print Choices: a, b, c」（印出的考卷用這些代替按鈕）、「Select: 2」（寫在 Question 的 Setup：從它的 Variant 裡出幾題）、「Points: 6」（這題在線上測驗值幾分）、「Text Area: 5, 60」（Response 作答區的大小）。Compute、CSTFile、Errors、OutputTap 是 5.5 自己的測驗程式用的，這裡讀了但不用。
 \item 亂數：$\func{rand}()$、$\func{rand}(n)$ 是 0 到 $n-1$、$\func{rand}(n,m)$ 是 $n$ 到 $m$、$\func{rand}(\{2,3,5\})$ 從集合挑一個、$\func{randmat}(3,3,1,(1,9))$ 隨機矩陣（第三個數：1 任意、2 對稱、3 反對稱、4 行列式為 1）。
 \item Question：一題。Statement：題目。Substatement：小題。Response：選項清單或填空（寫 InputField）。正確的選項後面放 \TEXTsymbol{\backslash}correctchoice（TeX 欄位）。標籤是 fixed 的選項固定放最後。
 \item Answer、Solution：只放在答案裡。Variant：同一題的另一種問法，產生時隨機挑一種。
 \item 題目裡要代數字的地方用 插入 \TEXTsymbol{>} 考卷公式，例如 $a+b$，產生考卷時才算。
 \end{itemize}
 
-產生的考卷開成新的文件，範本還在 視窗 選單。沒做：線上作答和評分、成績資料庫。
+產生的考卷開成新的文件（範本裡的圖也帶過去），範本還在 視窗 選單。
+
+線上測驗（對話框裡勾選）：另外把一份考卷存成網頁，在瀏覽器作答：選項是按鈕（「Choices: Check」是核取方塊，「Images: first.bmp, next.bmp」是圖片）、InputField 是輸入框、Response 是作答區。「Title」是網頁標題，「Submit」是按鈕的字。沒有 Action 時網頁自己批改（答案藏在網頁裡、只是編碼過，所以是給練習用）：輸入框的答案和 GradeProc「givecredit(response = ...)」的值相同就算對（沒有 GradeProc 時比對 Answer 的文字）。寫了「Action: 網址」（和「Method: post」或 get、「Database」、「ItemId」、「Record: Never、Always 或 Student Choice」）時，網頁把答案送到那個網址，給自己的批改伺服器用；5.5 是送到 MacKichan 的伺服器程式，現在已經不在了。
 
 \subsection{其他工具}
 
 \begin{itemize}
-\item 拼字檢查：英文，用瀏覽器內建的。
+\item 拼字：一個一個看英文字典（5.5 的 en-US 字典）裡沒有的字：改、全部改、略過、全部略過、加到字典。選單最後的拼字檢查：瀏覽器自己的底線。
+\item 儲存使用者偏好、還原偏好設定：opensw 的所有設定（功能鍵、標籤外觀、片段、加到字典的字……）存成一個 .json 檔，帶到別台電腦用。
 \item 文件管理：列出文件用到的圖片和子文件、有沒有找到；打包成 .zip（.sci、5.x .tex、圖片一起）給別人；開啟 .zip 或 5.5 的 .rap 包裝檔。桌面版跟 5.5 一樣可以複製（存檔的文件連同它的檔案複製到別的資料夾）、改名、刪除、清除輔助檔（.aux、.log、.bak……）；刪除的檔案放進資源回收筒，旁邊的每個檔案都可以選擇不要。
 \item 自動替換：在公式裡打一串字母（例如 sum10）就換成一個公式。可以整個關掉。
 \item 使用者設定：矩陣和表格預設大小、開程式時開哪份文件、存檔留 .bak、公式顏色、介面語言。
@@ -253,7 +256,7 @@ opensw 是照 Scientific Word 5.5 重做的數學編輯器。選單、快捷鍵�
 
 \section{視窗}
 
-可以同時開好幾份文件。視窗選單切換，Ctrl+F6 或 Ctrl+Tab 換下一份。
+可以同時開好幾份文件。視窗選單切換，Ctrl+F6 或 Ctrl+Tab 換下一份。檔案 > 關閉（Ctrl+F4）或選單列最右邊的 × 關掉畫面上這一份，改過還沒存的會先問要不要存；視窗 > 全部關閉 一次全關。
 
 \section{說明}
 

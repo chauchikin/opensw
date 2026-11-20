@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import { execSync } from 'node:child_process';
 const b = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium-1243/chrome-linux64/chrome' });
 const page = await b.newPage();
-await page.goto('http://localhost:4173/?lang=zh-TW'); await page.waitForTimeout(600);
+await page.goto(`http://localhost:${process.env.OPENSW_PORT || 4173}/?lang=zh-TW`); await page.waitForTimeout(600);
 let fails = 0;
 const check = (ok, what) => { console.log(ok ? 'ok  ' : 'FAIL', what); if (!ok) fails++; };
 await page.setInputFiles('#file', 'test/fixtures/big5.tex'); await page.waitForTimeout(1200);

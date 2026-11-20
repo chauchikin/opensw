@@ -21,7 +21,7 @@ await new Promise((r) => server.listen(4180, r));
 const b = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium-1243/chrome-linux64/chrome' });
 const page = await b.newPage({ viewport: { width: 1200, height: 900 } });
 const errs = []; page.on('pageerror', (e) => errs.push(e.message));
-await page.goto('http://localhost:4173/?lang=zh-TW'); await page.waitForTimeout(600);
+await page.goto(`http://localhost:${process.env.OPENSW_PORT || 4173}/?lang=zh-TW`); await page.waitForTimeout(600);
 const call = (cmd, args) => page.evaluate(([c, a]) => window.sw.call(c, a), [cmd, args]);
 const menu = async (top, ...items) => {
   await page.click(`.menu-top:has-text("${top}")`);
@@ -123,7 +123,7 @@ const size = execSync('pdfinfo /tmp/preview.pdf').toString().match(/Page size:\s
 check(size && Math.round(+size[1]) === 612 && Math.round(+size[2]) === 792, 'letter paper');
 // Preview: the page goes to the print dialog through a frame
 await page.evaluate(() => { window.__printed = 0; const f = HTMLIFrameElement.prototype; const d = Object.getOwnPropertyDescriptor(f, 'contentWindow'); Object.defineProperty(f, 'contentWindow', { get() { const w = d.get.call(this); if (w) w.print = () => { window.__printed++; }; return w; } }); });
-await menu('檔案', '預覽（不排版，可列印）');
+await menu('檔案', '列印…');
 await page.waitForTimeout(800);
 check(await page.evaluate(() => window.__printed === 1), 'Preview opens the print preview');
 

@@ -4,12 +4,12 @@ import { chromium } from 'playwright';
 const b = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium-1243/chrome-linux64/chrome' });
 const page = await b.newPage({ viewport: { width: 1024, height: 900 } });
 const errs = []; page.on('pageerror', (e) => errs.push(e.message));
-await page.goto('http://localhost:4173/?lang=zh-TW'); await page.waitForTimeout(600);
+await page.goto(`http://localhost:${process.env.OPENSW_PORT || 4173}/?lang=zh-TW`); await page.waitForTimeout(600);
 let fails = 0;
 const check = (ok, what) => { console.log(ok ? 'ok  ' : 'FAIL', what); if (!ok) fails++; };
 const menu = async (top, ...items) => {
   await page.click(`.menu-top:has-text("${top}")`);
-  for (const it of items) await page.click(`.menu-list button:has(> span:text-is("${it}"))`);
+  for (const it of items) await page.locator(`.menu-list button:has(> span:text-is("${it}"))`).filter({ visible: true }).first().click();
 };
 const exportTex = async () => { await page.click('#btn-latex'); await page.waitForTimeout(300); const t = await page.inputValue('#export-text'); await page.click('#export-close'); return t; };
 await page.evaluate(() => window.sw.call('set', { latex: 'Intro text.\n\n\\section{A}\\label{sa}\n\nThe square $x^2-1$ here.\n\n' + 'More text.\n\n'.repeat(40) }));
@@ -17,14 +17,14 @@ await page.waitForTimeout(500);
 
 // Insert > TeX Field
 await page.click('#editor .ProseMirror > p'); await page.keyboard.press('End');
-await menu('插入', 'TeX 欄位…');
+await menu('插入', '排版物件', 'TeX 欄位…');
 await page.fill('#d-tex', '\\vspace{1cm}');
 await page.click('#dialog-ok');
 check(await page.evaluate(() => { let t; window.swEditor.state.doc.descendants((n) => { if (n.type.name === 'tex_field') t = n.attrs.tex; }); return t; }) === '\\vspace{1cm}', 'TeX field inserted');
 
 // Go > Marker
 await page.evaluate(() => { document.querySelector('#scroller').scrollTop = 99999; });
-await menu('前往', '標記…');
+await menu('前往', '到標記…');
 await page.click('#dialog-ok');
 await page.waitForTimeout(300);
 const near = await page.evaluate(() => { const s = window.swEditor.state.selection; return s.$from.parent.textContent; });
@@ -84,7 +84,7 @@ check(await page.evaluate(() => getComputedStyle(document.querySelector('.marker
 await menu('檢視', '　標記');
 check(await page.evaluate(() => getComputedStyle(document.querySelector('.marker')).display) !== 'none', 'View: markers shown again');
 // File > Document Info, Typeset > Options
-await menu('檔案', '文件資訊');
+await menu('檔案', '文件資訊…');
 check(/段落/.test(await page.textContent('#dialog-body')), 'document info shown');
 await page.click('#dialog-ok');
 await menu('排版', '選項…');

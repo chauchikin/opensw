@@ -59,6 +59,9 @@ export async function writeBytes(bytes, path, defaultName, filters = SCI) {
   return target;
 }
 
+// asks where to save (nothing is written) -> the path, or null when cancelled
+export const pickSavePath = (defaultName, filters = SCI) => save({ defaultPath: defaultName, filters });
+
 // Tools > Document Manager: whether a file is there; renaming (never over another file); deleting
 // (into the Recycle Bin); a folder to copy into (null when cancelled)
 export const fileExists = (path) => invoke('file_exists', { path });
@@ -105,10 +108,12 @@ export async function serveApi(handler) {
 }
 
 // LaTeX -> PDF, opened in the system PDF viewer. files: [{ name, data }] pictures the
-// .tex names, written next to it. -> { pdf: its path, errors: what TeX reported (the PDF comes
-// out anyway, as in 5.5, but those parts may be wrong) }
-export async function typeset(tex, name, files = []) {
-  const r = await invoke('typeset', { tex, name, files: files.map((f) => ({ name: f.name, data: Array.from(f.data) })) });
+// .tex names, written next to it; folder: the document's own folder (null: not saved), where
+// the other files it names are (a program listing, a part read in with \input, a .bib).
+// -> { pdf: its path, errors: what TeX reported (the PDF comes out anyway, as in 5.5, but
+// those parts may be wrong) }. mode: 'open' (the default), 'print' (sent to the printer) or 'none'
+export async function typeset(tex, name, files = [], folder = null, mode = 'open') {
+  const r = await invoke('typeset', { tex, name, files: files.map((f) => ({ name: f.name, data: Array.from(f.data) })), folder, mode });
   return typeof r === 'string' ? { pdf: r, errors: [] } : r;
 }
 

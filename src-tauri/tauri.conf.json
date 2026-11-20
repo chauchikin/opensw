@@ -1,7 +1,7 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "opensw",
-  "version": "0.8.1",
+  "version": "0.11.0",
   "identifier": "org.opensw.editor",
   "build": {
     "frontendDist": "../dist",
@@ -46,6 +46,7 @@
       "tex55/": "tex55/",
       "../engine/engines.json": "engine/engines.json",
       "../engine/opensw_compute.wl": "engine/opensw_compute.wl",
+      "../engine/*.py": "engine/",
       "../LICENSE": "LICENSE.txt",
       "../THIRD-PARTY-NOTICES.txt": "THIRD-PARTY-NOTICES.txt"
     },

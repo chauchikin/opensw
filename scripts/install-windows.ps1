@@ -2,6 +2,7 @@
 # gets the build branch, checks the installer against SHA256SUMS.txt, closes the open editor windows,
 # moves the running opensw.exe aside (an AI app's MCP connection may still be using it) and runs
 # the installer silently as a scheduled task of its own, then checks the new opensw.exe is there.
+# (A file over 90 MB is on the build branch in pieces, name.part00, name.part01, ...: it is joined first.)
 #
 #   powershell -ExecutionPolicy Bypass -File scripts\install-windows.ps1 -Clone <folder>
 #
@@ -23,6 +24,18 @@ git -C $Clone fetch --quiet origin sw-next-build
 if ($LASTEXITCODE -ne 0) { throw "Could not update $Clone (git fetch)" }
 git -C $Clone reset --quiet --hard FETCH_HEAD
 if ($LASTEXITCODE -ne 0) { throw "Could not update $Clone (git reset)" }
+# (GitHub takes no file over 100 MB on a branch: a larger one comes as name.part00, name.part01, ...
+# and is joined here, anew each time)
+Get-ChildItem $Clone -Filter '*.part00' | ForEach-Object {
+  $name = $_.Name -replace '\.part00$', ''
+  $whole = [System.IO.File]::Create(($_.FullName -replace '\.part00$', ''))
+  try {
+    Get-ChildItem $Clone -Filter "$name.part??" | Sort-Object Name | ForEach-Object {
+      $part = [System.IO.File]::OpenRead($_.FullName)
+      try { $part.CopyTo($whole) } finally { $part.Dispose() }
+    }
+  } finally { $whole.Dispose() }
+}
 $setup = Get-ChildItem $Clone -Filter 'opensw_*_x64-setup.exe' | Sort-Object LastWriteTime | Select-Object -Last 1
 if (-not $setup) { throw "No opensw_*_x64-setup.exe in $Clone" }
 $version = [regex]::Match($setup.Name, 'opensw_(.+)_x64-setup\.exe').Groups[1].Value

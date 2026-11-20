@@ -3,6 +3,8 @@
 // MathJSON in, base64 JSON out), plots too, an operation the engine leaves to SymPy
 // ({fallback: true}) goes to SymPy, definitions reach both, an engine started again gets
 // them again, and Clear Definitions clears both. (Engines themselves: scripts/engine-check.mjs.)
+// The Python that comes with the desktop app is not there here, so SymPy is the one in Pyodide
+// (with it: test/engine_python.mjs).
 // Run: node test/engine_route.mjs
 import { chromium } from 'playwright';
 const b = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium-1243/chrome-linux64/chrome' });
@@ -30,6 +32,7 @@ await page.addInitScript(() => {
     invoke: async (cmd, args) => {
       if (cmd === 'engine_list') return [{ id: 'mathematica', name: 'Mathematica', example: 'C:\\W\\14.3\\wolfram.exe' }];
       if (cmd !== 'engine_compute') return null;
+      if (args.engine === 'python') throw 'Cannot find SymPy (C:\\opensw\\engine\\python\\python.exe): program not found. Its location can be set in Tools > Computation Engine';
       const json = dec(args.data);
       window.engineCalls.push({ engine: args.engine, program: args.program, op: args.op, json });
       window.lastJson = json;
@@ -46,7 +49,7 @@ await page.addInitScript(() => {
     sessionStorage.setItem('set', '1');
   }
 });
-await page.goto('http://localhost:4173/?lang=zh-TW'); await page.waitForTimeout(800);
+await page.goto(`http://localhost:${process.env.OPENSW_PORT || 4173}/?lang=zh-TW`); await page.waitForTimeout(800);
 let fails = 0;
 const check = (name, ok, detail) => { if (!ok) fails++; console.log(ok ? 'ok  ' : 'FAIL', name, JSON.stringify(detail ?? '').slice(0, 200)); };
 const call = (cmd, args) => page.evaluate(([c, a]) => window.sw.call(c, a), [cmd, args]);

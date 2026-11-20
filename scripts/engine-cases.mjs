@@ -149,7 +149,10 @@ const CASES = [
   ['evaluate', '\\begin{pmatrix}7&5\\\\4&9\\end{pmatrix}\\func{mod}4', null, '\\begin{pmatrix}3&1\\\\0&1\\end{pmatrix}'],
   ['evaluate', '\\left[ x^{2}+y\\right] _{x=2}^{x=3}', null, '5'],
   ['evaluate', '\\left. xy\\right\\vert _{x=2,y=5}', null, '10'],
+  // (J_0 as the Bessel function: Compute > Settings > Use I, J, K, and Y with Subscripts, off in 5.5 unless checked)
+  ['setoptions', { bessel_subscripts: true }, null, null],
   ['evaluate', '\\frac{d}{dx}J_{0}\\left( x\\right)', null, '-J_1'],
+  ['setoptions', { bessel_subscripts: false }, null, null],
   ['numeric', 'J_{1}\\left( 2\\right)', null, '0.57672'],
   ['evaluate', 'I_{1/2}\\left( x\\right)', null, '\\sinh'],
   ['evaluate', '\\func{Heaviside}\\left( 3\\right)+\\func{Dirac}\\left( 1\\right)', null, '1'],
@@ -223,7 +226,7 @@ const CASES = [
   ['simplify', '\\frac{2}{\\sqrt{5}-\\sqrt{3}}', null, ['\\sqrt{3}+\\sqrt{5}', '\\sqrt{5}+\\sqrt{3}']],
   // a fraction times the rest is written first, as 5.5: \\frac{1}{2}\\sqrt{3}; sin x, \\ln x without brackets
   ['evaluate', '\\frac{\\ln(xy)}{\\sin\\frac{\\pi}{7}}+\\cos(x+1)\\sin(2x)\\int_0^1 t\\,dt', null, '\\frac{\\ln x y}{\\sin \\frac{1}{7} \\pi}'],
-  ['evaluate', '\\cos(x+1)\\sin(2x)y', null, ['y\\sin 2 x\\cos(x+1)', 'y\\sin2x\\cos(x+1)', 'y\\cos(x+1)\\sin 2x']],
+  ['evaluate', 'y\\cos(x+1)\\sin(2x)', null, ['y\\sin 2 x\\cos(x+1)', 'y\\sin2x\\cos(x+1)', 'y\\cos(x+1)\\sin 2x']],
   ['evaluate', '\\cos\\frac{\\pi}{6}+\\frac{x}{4}', null, ['\\frac{1}{2}\\sqrt{3}', '\\frac{\\sqrt{3}}{2}']],
   ['evaluate', '\\frac{x}{4}', null, ['\\frac{1}{4}x', '\\frac{x}{4}']],
   ['evaluate', '\\arcsin 2i', null, '\\operatorname{arcsinh}2'],
@@ -246,7 +249,8 @@ const CASES = [
   ['solve', 'x^2=9', ["'principal'"], '3'],
   ['solve', 'x+2y=4', null, '4-2y'],
   ['numericsolve', 'e^{x}=x+2', null, 'x=1.1462'],
-  ['solve', 'a+xu^{\\prime }=2u^{\\prime }', ['u^{\\prime }'], '\\frac{a}{x-2}'],
+  // the coefficient x - 2 can be 0: with Ignore Special Cases off, cases as 5.5 (SymPy; Mathematica hands it over)
+  ['solve', 'a+xu^{\\prime }=2u^{\\prime }', ['u^{\\prime }'], '\\frac{a}{x-2}', { mathematica: 'fallback' }],
   ['solve', '\\left[ \\begin{array}{ccc} 1 & 2 & 0 \\\\ 0 & 1 & 1\\end{array}\\right] \\left[ \\begin{array}{c} p \\\\ q \\\\ r\\end{array}\\right] =\\left[ \\begin{array}{c} 3 \\\\ 1\\end{array}\\right]', null, '\\hat{t}_3'],
   ['evaluate', '2\\hat{t}_{3}+\\hat{t}_{3}', null, '3\\hat{t}_{3}'],
   ['define', 'h(x)=\\frac{x^{3}}{x-2}', null, 'h(x)'],
@@ -383,6 +387,301 @@ const CASES = [
   ['define', 'd_{n}=7', ["'argument'"], 'd_{n}'],
   ['evaluate', 'a_{2}+c_{3}+d_{4}', null, ['c_{3}+14', '14+c_{3}']],
   ['cleardefs', '0', null, null],
+  // a defined name under a derivative: its definition is put in before differentiating
+  // (with u = y^3 and w = y^2, d/dy (u + t w) is 3y^2 + 2ty; d/dy at t = 0 of its t-derivative is 2y)
+  ['define', 'u=y^{3}', null, 'u=y^{3}'],
+  ['define', 'w=y^{2}', null, 'w=y^{2}'],
+  ['expand', '\\frac{\\partial}{\\partial y}(u+tw)', null, ['2ty+3y^{2}', '3y^{2}+2ty', '2yt+3y^{2}', '3y^{2}+2yt']],
+  ['evaluate', '\\left.\\frac{\\partial}{\\partial t}\\frac{\\partial}{\\partial y}(u+tw)\\right|_{t=0}', null, '2y'],
+  ['cleardefs', '0', null, null],
+  // a limit of a quotient of polynomials with letters in it
+  ['evaluate', '\\lim_{t\\to0}\\frac{(a+bt)^{2}-a^{2}}{t}', null, ['2ab', '2ba']],
+  // ... the answer simplified ((a^2-b^2)/(a-b) is a+b), and a defined name with the variable in it put in first
+  ['evaluate', '\\lim_{t\\to0}\\frac{a^{2}-b^{2}+t}{a-b}', null, ['a+b', 'b+a']],
+  ['define', 'u=t^{2}+3t', null, 'u='],
+  ['evaluate', '\\lim_{t\\to0}\\frac{u}{t}', null, '3'],
+  ['cleardefs', '0', null, null],
+  // a power series of a quotient of polynomials with several letters in it (SymPy's own series took minutes)
+  ['define', 'w_0=-\\frac{\\beta+y}{ay+\\alpha}', null, 'w_0='],
+  ['define', 'w_1=-\\frac{x\\left(x(ay+\\alpha)+b(\\beta+y)\\right)}{(ay+\\alpha)^2}', null, 'w_1='],
+  ['series', '\\frac{\\left(b(w_0+tw_1)-2x\\right)\\frac{\\partial}{\\partial y}(w_0+tw_1)}{1+a(w_0+tw_1)}', ['t', '2'], 'O(t^{2})'],
+  ['cleardefs', '0', null, null],
+  // ---- the rest of 5.5's Compute menu, one part per group ----
+  // part: matdecomp
+  // Matrices: decompositions and normal forms (answers from 5.5's help, dm8-3, dm8-6, dm8-7, dm8-8)
+  ['gauss', '\\begin{pmatrix}8&2&3\\\\2&-5&8\\end{pmatrix}', null, '\\begin{pmatrix}8&2&3\\\\0&-\\frac{11}{2}&\\frac{29}{4}\\end{pmatrix}'],
+  ['ffgauss', '\\begin{pmatrix}8&2&3\\\\2&-5&8\\end{pmatrix}', null, '\\begin{pmatrix}8&2&3\\\\0&-44&58\\end{pmatrix}'],
+  ['ffgauss', '\\begin{pmatrix}1&2&3\\\\2&4&6\\\\3&2&1\\end{pmatrix}', null, '\\begin{pmatrix}1&2&3\\\\0&-4&-8\\\\0&0&0\\end{pmatrix}'],
+  ['plu', '\\begin{pmatrix}1&2&3\\\\2&4&6\\\\3&2&1\\end{pmatrix}', null, '\\begin{pmatrix}1&0&0\\\\0&0&1\\\\0&1&0\\end{pmatrix}\\begin{pmatrix}1&0&0\\\\3&1&0\\\\2&0&1\\end{pmatrix}\\begin{pmatrix}1&2&3\\\\0&-4&-8\\\\0&0&0\\end{pmatrix}'],
+  ['plu', '\\begin{pmatrix}45&-8\\\\-93&92\\\\43&-62\\end{pmatrix}', null, '\\begin{pmatrix}1&0&0\\\\-\\frac{31}{15}&1&0\\\\\\frac{43}{45}&-\\frac{1223}{1698}&1\\end{pmatrix}'],
+  ['plu', '\\begin{pmatrix}0.532&1.95\\\\1.5&0.0013\\end{pmatrix}', null, '\\begin{pmatrix}0&1\\\\1&0\\end{pmatrix}\\begin{pmatrix}1.0&0\\\\0.35467&1.0\\end{pmatrix}'],
+  ['qr', '\\begin{pmatrix}3&0\\\\4&5\\end{pmatrix}', null, '\\begin{pmatrix}\\frac{3}{5}&-\\frac{4}{5}\\\\\\frac{4}{5}&\\frac{3}{5}\\end{pmatrix}\\begin{pmatrix}5&4\\\\0&3\\end{pmatrix}'],
+  ['cholesky', '\\begin{pmatrix}4&2\\\\2&2\\end{pmatrix}', null, '\\begin{pmatrix}2&0\\\\1&1\\end{pmatrix}\\begin{pmatrix}2&1\\\\0&1\\end{pmatrix}'],
+  ['cholesky', '\\begin{pmatrix}2.0&-1.0\\\\-1.0&2.0\\end{pmatrix}', null, '\\begin{pmatrix}1.4142&0\\\\-0.70711&1.2247\\end{pmatrix}'],
+  ['singularvalues', '\\begin{pmatrix}5&-5&-3\\\\-3&0&5\\\\1&5&4\\end{pmatrix}', null, '[10.053,4.6119,3.5588]'],
+  ['svd', '\\begin{pmatrix}1&2\\\\3&4\\end{pmatrix}', null, '\\begin{pmatrix}0.40455&-0.91451\\\\0.91451&0.40455\\end{pmatrix}\\begin{pmatrix}5.4650&0\\\\0&0.36597\\end{pmatrix}\\begin{pmatrix}0.57605&0.81742\\\\0.81742&-0.57605\\end{pmatrix}'],
+  ['jordan', '\\begin{pmatrix}2&0&0&0\\\\1&2&0&0\\\\0&0&2&0\\\\0&0&-3&2\\end{pmatrix}', null, '\\begin{pmatrix}1&0&0&0\\\\0&1&0&0\\\\0&0&-\\frac{1}{3}&0\\\\0&0&0&1\\end{pmatrix}\\begin{pmatrix}2&0&0&0\\\\1&2&0&0\\\\0&0&2&0\\\\0&0&1&2\\end{pmatrix}\\begin{pmatrix}1&0&0&0\\\\0&1&0&0\\\\0&0&-3&0\\\\0&0&0&1\\end{pmatrix}'],
+  ['jordan', '\\begin{pmatrix}1&2\\\\-1&-1\\end{pmatrix}', null, '\\begin{pmatrix}-i&0\\\\0&i\\end{pmatrix}'],
+  ['smith', '\\begin{pmatrix}4&18&-10\\\\18&24&-18\\\\96&24&-48\\end{pmatrix}', null, '\\begin{pmatrix}2&0&0\\\\0&6&0\\\\0&0&24\\end{pmatrix}'],
+  ['smith', '\\begin{pmatrix}x-5&6&6\\\\1&x-4&-2\\\\-3&6&x+4\\end{pmatrix}', null, '\\begin{pmatrix}1&0&0\\\\0&x-2&0\\\\0&0&x^2-3x+2\\end{pmatrix}'],
+  ['hermite', '\\begin{pmatrix}7&34&46\\\\4&20&27\\end{pmatrix}', null, '\\begin{pmatrix}1&2&3\\\\0&4&5\\end{pmatrix}'],
+  ['hermite', '\\begin{pmatrix}2&5\\\\-4&5\\end{pmatrix}', null, '\\begin{pmatrix}2&5\\\\0&15\\end{pmatrix}'],
+  ['rationalcanonical', '\\begin{pmatrix}1&2&3\\\\4&5&6\\\\7&8&9\\end{pmatrix}', null, '\\begin{pmatrix}1&1&30\\\\0&4&66\\\\0&7&102\\end{pmatrix}\\begin{pmatrix}0&0&0\\\\1&0&18\\\\0&1&15\\end{pmatrix}\\begin{pmatrix}1&-2&1\\\\0&-\\frac{17}{9}&\\frac{11}{9}\\\\0&\\frac{7}{54}&-\\frac{2}{27}\\end{pmatrix}'],
+  ['rationalcanonical', '\\begin{pmatrix}5&-6&-6\\\\-1&4&2\\\\3&-6&-4\\end{pmatrix}', null, '\\begin{pmatrix}1&5&2\\\\0&-1&0\\\\0&3&1\\end{pmatrix}\\begin{pmatrix}0&-2&0\\\\1&3&0\\\\0&0&2\\end{pmatrix}\\begin{pmatrix}1&-1&-2\\\\0&-1&0\\\\0&3&1\\end{pmatrix}'],
+  ['minpoly', '\\begin{pmatrix}4&1&0\\\\0&4&0\\\\0&0&4\\end{pmatrix}', null, 'X^2-8X+16'],
+  ['minpoly', '\\begin{pmatrix}1&2&3\\\\4&5&6\\\\7&8&9\\end{pmatrix}', null, 'X^3-15X^2-18X'],
+  ['minpoly', '\\begin{pmatrix}3X&x\\\\5&y\\end{pmatrix}', ['\\lambda'], ['\\lambda^2+(-3X-y)\\lambda+(3Xy-5x)', '\\lambda^2+(-3X-y)\\lambda+(-5x+3Xy)']],
+  ['minpoly', '\\begin{pmatrix}3X&x\\\\5&y\\end{pmatrix}', null, 'error:polynomial variable'],
+  ['eigenvectors', '\\begin{pmatrix}5&-6&-6\\\\-1&4&2\\\\3&-6&-4\\end{pmatrix}', null, '\\{\\begin{pmatrix}1\\\\-\\frac{1}{3}\\\\1\\end{pmatrix}\\}\\leftrightarrow1,\\{\\begin{pmatrix}2\\\\0\\\\1\\end{pmatrix},\\begin{pmatrix}2\\\\1\\\\0\\end{pmatrix}\\}\\leftrightarrow2'],
+  // (end of part: matdecomp)
+
+  // part: matmisc
+  // Compute > Matrices, the examples of 5.5's help (Doing Mathematics ch. 8: dm8-1, dm8-5, dm8-6, dm8-7)
+  ['colbasis', '\\left[\\begin{array}{rrrr}-85&-55&-37&-35\\\\97&50&79&56\\\\49&63&57&-59\\\\-36&8&20&-94\\end{array}\\right]', null, '\\left[\\begin{matrix}-37\\\\79\\\\57\\\\20\\end{matrix}\\right]'],
+  ['rowbasis', '\\left[\\begin{array}{rrrr}-85&-55&-37&-35\\\\97&50&79&56\\\\49&63&57&-59\\\\-36&8&20&-94\\end{array}\\right]', null, '\\left[\\begin{matrix}49&63&57&-59\\end{matrix}\\right]\\right]'],
+  ['concat', '\\begin{pmatrix}1&2\\\\3&4\\end{pmatrix}\\begin{pmatrix}5&6\\\\7&8\\end{pmatrix}', null, '\\begin{pmatrix}1&2&5&6\\\\3&4&7&8\\end{pmatrix}'],
+  ['stack', '\\left[\\begin{array}{cc}1&2\\\\3&4\\\\-5&7\\end{array}\\right]\\left[\\begin{array}{cc}5&6\\end{array}\\right]', null, '\\left[\\begin{matrix}1&2\\\\3&4\\\\-5&7\\\\5&6\\end{matrix}\\right]'],
+  ['reshape', '45,21,8,19,0,5,15,6', ['3'], '\\begin{matrix}45&21&8\\\\19&0&5\\\\15&6&\\end{matrix}'],
+  ['reshape', '\\left[\\begin{array}{rrrr}-85&-55&-37&-35\\\\97&50&79&56\\end{array}\\right]', ['3'], '\\begin{matrix}-85&-55&-37\\\\-35&97&50\\\\79&56&\\end{matrix}'],
+  ['norm', '\\begin{pmatrix}2&3\\\\5&7\\end{pmatrix}', null, '9.3268'],
+  ['norm', '\\begin{pmatrix}2+3i&5\\\\6&-7+2i\\end{pmatrix}', null, '9.9378'],
+  ['norm', '\\begin{pmatrix}3\\\\4\\end{pmatrix}', null, '5'],
+  ['condition', '\\left[\\begin{array}{ccc}0&1&0\\\\0&0&1\\\\1&0&0\\end{array}\\right]', null, '1.0'],
+  ['condition', '\\left[\\begin{array}{rrr}5&-5&-3\\\\-3&0&5\\\\1&5&4\\end{array}\\right]', null, '2.8249'],
+  ['condition', '\\left[\\begin{array}{cccc}2&-1&0&0\\\\-1&2&-1&0\\\\0&-1&2&-1\\\\0&0&-1&2\\end{array}\\right]', null, '9.4721'],
+  ['spectralradius', '\\left[\\begin{array}{rrr}5&-3&1\\\\-3&0&5\\\\1.0&5&4\\end{array}\\right]', null, '7.7627'],
+  ['spectralradius', '\\left[\\begin{array}{cc}5&-4\\\\-4&3.0\\end{array}\\right]', null, '8.1231'],
+  ['definiteness', '\\left[\\begin{array}{cc}2&-1\\\\-1&2\\end{array}\\right]', null, null],
+  ['definiteness', '\\left[\\begin{array}{cc}1&-1\\\\-1&1\\end{array}\\right]', null, null],
+  ['orthogonal', '\\begin{pmatrix}0&0&1\\\\1&0&0\\\\0&1&0\\end{pmatrix}', null, 'true'],
+  ['orthogonal', '\\begin{pmatrix}0&1\\\\1&1\\end{pmatrix}', null, 'false'],
+  ['permanent', '\\left[\\begin{array}{cc}a&b\\\\c&d\\end{array}\\right]', null, ['ad+bc', 'bc+ad']],
+  ['htranspose', '\\begin{pmatrix}2+i&-i\\\\4-i&2+i\\end{pmatrix}', null, '\\begin{pmatrix}2-i&4+i\\\\i&2-i\\end{pmatrix}'],
+  ['fillmatrix', '0', ["'identity'", '3', '4'], '\\begin{matrix}1&0&0&0\\\\0&1&0&0\\\\0&0&1&0\\end{matrix}'],
+  ['fillmatrix', '0', ["'zero'", '2', '2'], '\\begin{matrix}0&0\\\\0&0\\end{matrix}'],
+  ['fillmatrix', '0', ["'jordan'", '2', '2', '\\lambda'], '\\begin{matrix}\\lambda&1\\\\0&\\lambda\\end{matrix}'],
+  ['fillmatrix', '0', ["'band'", '2', '5', 'a,b,c'], '\\begin{matrix}b&c&0&0&0\\\\a&b&c&0&0\\end{matrix}'],
+  ['fillmatrix', '0', ["'function'", '2', '2', '5'], '\\begin{matrix}5&5\\\\5&5\\end{matrix}'],
+  ['define', 'f(i,j)=\\frac{1}{i+j-1}', null, 'f(i,j)'],
+  ['fillmatrix', '0', ["'function'", '2', '2', 'f'], '\\begin{matrix}1&\\frac{1}{2}\\\\\\frac{1}{2}&\\frac{1}{3}\\end{matrix}'],
+  ['cleardefs', '0', null, null],
+  ['randommatrix', '0', ["'antisymmetric'", '2', '2', '1', '1'], '\\begin{matrix}0&1\\\\-1&0\\end{matrix}'],
+  ['randommatrix', '0', ["'triangular'", '2', '2', '3', '3'], '\\begin{matrix}3&3\\\\0&3\\end{matrix}'],
+  // (end of part: matmisc)
+
+  // part: rewrite
+  ['rewrite_rational', '0.125', null, '\\frac{1}{8}'],
+  ['rewrite_rational', '4.72', null, '\\frac{118}{25}'],
+  ['rewrite_rational', '6.9\\pi', null, '\\frac{69}{10}'],
+  ['rewrite_rational', '3.1416', null, '\\frac{3927}{1250}'],
+  ['rewrite_float', '\\frac{1}{8}', null, '0.125'],
+  ['rewrite_float', '\\frac{69}{10}\\pi', null, '21.677'],
+  ['rewrite_float', '\\frac{3927}{1250}', null, '3.1416'],
+  ['rewrite_factorial', '\\binom{m}{n}', null, '\\frac{m!}{n! (m-n)!}'],
+  ['rewrite_factorial', '\\Gamma(x)', null, '(x-1)!'],
+  ['rewrite_factorial', '\\binom{m}{5}', null, '\\frac{m!}{120 (m-5)!}'],
+  ['rewrite_gamma', '(x-1)!', null, '\\Gamma(x)'],
+  ['rewrite_gamma', '\\binom{m}{n}', null, '\\frac{\\Gamma(m+1)}{\\Gamma(n+1)\\Gamma(m-n+1)}'],
+  ['rewrite_gamma', 'x!y!z!', null, '\\Gamma(x+1)\\Gamma(y+1)\\Gamma(z+1)'],
+  ['rewrite_log', '\\operatorname{arcsinh}x', null, '\\ln(x+\\sqrt{x^2+1})'],
+  ['rewrite_log', '\\operatorname{arccosh}x', null, '\\ln(x+\\sqrt{x^2-1})'],
+  ['rewrite_log', '\\operatorname{arcsech}x', null, '\\frac{1}{x}'],
+  ['rewrite_sinhcosh', '\\operatorname{sech}x\\tanh x-\\operatorname{csch}^2x', null, '\\frac{\\sinh x}{\\cosh^2x}-\\frac{1}{\\sinh^2x}'],
+  ['rewrite_sin', '\\cos x', null, '1-2\\sin^2\\frac{1}{2}x'],
+  ['rewrite_sin', '\\tan x', null, '\\frac{\\sin x}{1-2\\sin^2\\frac{1}{2}x}'],
+  ['rewrite_cos', '\\sin x', null, '2\\cos^2(\\frac{1}{2}x-\\frac{1}{4}\\pi)-1'],
+  ['rewrite_tan', '\\sin x', null, '\\frac{2\\tan\\frac{1}{2}x}{\\tan^2\\frac{1}{2}x+1}'],
+  ['rewrite_tan', '\\cos x\\sin x-2\\sec x\\csc x', null, '\\tan\\frac{1}{2}x'],
+  ['rewrite_arcsin', '\\arctan x', null, '\\arcsin(\\frac{x}{\\sqrt{x^2+1}})'],
+  ['rewrite_arcsin', '\\arccos x', null, '-\\arcsin x+\\frac{1}{2}\\pi'],
+  ['rewrite_arccos', '\\arcsin x', null, '-\\arccos x+\\frac{1}{2}\\pi'],
+  ['rewrite_arccos', '\\operatorname{arccot}x', null, '\\arccos(\\frac{x}{\\sqrt{x^2+1}})'],
+  ['rewrite_arctan', '\\arcsin x', null, '\\arctan(\\frac{x}{\\sqrt{1-x^2}})'],
+  ['rewrite_arctan', '\\arccos x', null, '-\\arctan(\\frac{x}{\\sqrt{1-x^2}})+\\frac{1}{2}\\pi'],
+  ['rewrite_arctan', '\\arctan x+\\operatorname{arccot}x', null, '\\frac{1}{2}\\pi'],
+  ['rewrite_arccot', '\\arctan x', null, '-\\operatorname{arccot}x+\\frac{1}{2}\\pi'],
+  ['rewrite_arccot', '\\arccos x', null, '\\operatorname{arccot}(\\frac{x}{\\sqrt{1-x^2}})'],
+  ['rewrite_polar', '3+5i', null, '\\sqrt{34}e^{i\\arctan\\frac{5}{3}}'],
+  // Mathematica writes \frac{\sqrt{2}}{16\pi} as \frac{1}{8\sqrt{2}\pi} as soon as it reads it (the same number)
+  ['rewrite_polar', '16\\pi-\\sqrt{2}i', null, 'e^{-i\\arctan\\frac{\\sqrt{2}}{16\\pi}}', { mathematica: 'e^{-i\\arctan\\frac{1}{8\\sqrt{2}\\pi}}' }],
+  ['rewrite_rectangular', '\\sqrt[3]{i}', null, '\\frac{1}{2}\\sqrt{3}+\\frac{1}{2}i'],
+  ['rewrite_rectangular', '\\sqrt{2+3i}', null, '\\sqrt{1+\\frac{1}{2}\\sqrt{13}}+i\\sqrt{-1+\\frac{1}{2}\\sqrt{13}}'],
+  ['rewrite_rectangular', '(a+bi)^{-1}', null, '\\frac{a}{a^2+b^2}-\\frac{ib}{a^2+b^2}'],
+  ['rewrite_rectangular', 'i^i', null, 'e^{-\\frac{1}{2}\\pi}'],
+  ['rewrite_rectangular', '5^{2i}', null, '\\cos(2\\ln5)+i\\sin(2\\ln5)'],
+  ['rewrite_rectangular', '\\sqrt{34}e^{i\\arctan\\frac{5}{3}}', null, '3+5i'],
+  ['rewrite_rectangular', '\\frac{6+7i}{4-3i}', null, '\\frac{3}{25}+\\frac{46}{25}i'],
+  ['rewrite_normal', '\\frac{3x^2+3x}{8x^2+7}+\\frac{5x^2+3}{2x^2+x+7}', null, '\\frac{46x^4+9x^3+83x^2+21x+21}{16x^4+8x^3+70x^2+7x+49}'],
+  ['rewrite_sincos', '\\tan x', null, '\\frac{\\sin x}{\\cos x}'],
+  ['rewrite_sincos', 'e^{-15i}', null, '\\cos15-i\\sin15'],
+  ['rewrite_sincos', 're^{it}', null, '\\sin t'],
+  ['rewrite_sincos', '\\frac{6+7i}{4-3i}', null, '\\frac{3}{25}+\\frac{46}{25}i'],
+  ['rewrite_sincos', '\\cos x\\sin x-2\\sec x\\csc x', null, '\\frac{2}{\\sin x\\cos x}'],
+  ['rewrite_exp', '\\sinh x', null, '\\frac{1}{2}e^x-\\frac{1}{2}e^{-x}'],
+  ['rewrite_exp', '\\coth x', null, '\\frac{e^{2x}+1}{e^{2x}-1}'],
+  ['combine_exp', '\\left(e^x\\right)^y', null, 'e^{xy}'],
+  ['combine_exp', 'e^xe^y', null, 'e^{x+y}'],
+  ['combine_exp', '2^x2^y', null, '2^x2^y'],
+  ['combine_exp', '\\left(e^{a+b}\\right)^3', null, 'e^{3a+3b}'],
+  ['combine_exp', 'e^{x^2-3xy}e^{2x+5}', null, 'e^{x^2-3xy+2x+5}'],
+  ['combine_powers', 'a^xa^y', null, 'a^{x+y}'],
+  ['combine_powers', '3^{x^2-3xy}3^{2x+5}', null, '3^{x^2-3xy+2x+5}'],
+  ['combine_powers', '\\frac{a^x}{a^y}', null, 'a^{x-y}'],
+  ['combine_powers', '10^{x+i}10^{x-i}', null, '10^{2x}'],
+  ['combine_log', '\\ln x+\\ln y', null, '\\ln x+\\ln y'],
+  // 5.5: Combine > Logs after assume(positive) (dm3-5.tex)
+  ['define', '\\operatorname{assume}(\\operatorname{positive})', null, null],
+  ['combine_log', '\\ln x+\\ln y', null, '\\ln xy'],
+  ['combine_log', '\\ln a-\\ln b', null, '\\ln\\frac{a}{b}'],
+  ['define', '\\operatorname{unassume}(\\operatorname{positive})', null, null],
+  ['combine_trig', '\\sin x\\sin y', null, '\\frac{1}{2}\\cos(x-y)-\\frac{1}{2}\\cos(x+y)'],
+  ['combine_trig', '\\sin^2x', null, '\\frac{1}{2}-\\frac{1}{2}\\cos2x'],
+  ['combine_trig', '\\sin x\\cos y', null, '\\frac{1}{2}\\sin(x+y)'],
+  ['combine_trig', '\\begin{bmatrix}\\sin^2x+\\cos^2x&6x^2\\\\4\\sin 4x\\cos 4x&\\sin x\\cos y+\\sin y\\cos x\\end{bmatrix}', null, '2\\sin8x&\\sin(x+y)'],
+  ['combine_arctan', '\\arctan x+\\arctan y', null, '-\\arctan(\\frac{x+y}{xy-1})'],
+  ['combine_arctan', '\\arctan x-\\arctan y', null, '\\arctan(\\frac{x-y}{xy+1})'],
+  ['combine_hyp', '\\sinh x\\sinh y', null, '-\\frac{1}{2}\\cosh(x-y)+\\frac{1}{2}\\cosh(x+y)'],
+  ['combine_hyp', '\\sinh x\\cosh y', null, '\\frac{1}{2}\\sinh(x-y)+\\frac{1}{2}\\sinh(x+y)'],
+  ['combine_hyp', '\\cosh x\\cosh y', null, '\\frac{1}{2}\\cosh(x-y)+\\frac{1}{2}\\cosh(x+y)'],
+  ['eqs_to_matrix', '\\left\\{x+2y=3,3x-5y=0\\right\\}', ['x', 'y'], '1&2&3\\\\3&-5&0'],
+  ['eqs_to_matrix', '\\begin{bmatrix}x+y-2z=1\\\\2x-4y+z=0\\\\2y-3z=-1\\end{bmatrix}', ['x', 'y', 'z'], '1&1&-2&1\\\\2&-4&1&0\\\\0&2&-3&-1'],
+  ['eqs_to_matrix', '\\left\\{x+2y-3,3x-5y\\right\\}', ['x', 'y'], '1&2&3\\\\3&-5&0'],
+  ['matrix_to_eqs', '\\begin{pmatrix}1&1&-1\\\\2&-3&1\\end{pmatrix}', ['x', 'y'], '\\{x+y=-1,2x-3y=1\\}'],
+  ['matrix_to_eqs', '\\begin{bmatrix}1&1&-2&1\\\\2&-4&1&0\\\\0&2&-3&-1\\end{bmatrix}', ['x', 'y', 'z'], 'x+y-2z=1,2x-4y+z=0,2y-3z=-1'],
+  // (end of part: rewrite)
+
+  // part: statpoly
+  // Statistics (5.5's help, dm11-2, dm11-3, dm11-8): a list, or a matrix column by column
+  ['mean', '23,5,-6,18,23,-22,5', null, '\\frac{46}{7}'],
+  ['mean', 'a,b,c', null, '\\frac{1}{3}a+\\frac{1}{3}b+\\frac{1}{3}c'],
+  ['mean', '16.5,22.1,6.9,14.2,9.0', null, '13.74'],
+  ['mean', '\\begin{bmatrix}23&5&-6\\\\18&23&-22\\\\5&0&0\\end{bmatrix}', null, '[\\frac{46}{3},\\frac{28}{3},-\\frac{28}{3}]'],
+  ['mean', '\\begin{bmatrix}x&y&z\\\\1&1&4\\\\3&2&5\\\\5&3&6\\\\7&4&7\\end{bmatrix}', null, '[4,\\frac{5}{2},\\frac{11}{2}]'],
+  ['median', '1,2,3,4', null, '2'],
+  ['median', '23,5,-6,18,23,-22,5,7', null, '5'],
+  ['median', '\\begin{bmatrix}23&5&-6\\\\18&23&-22\\\\5&0&0\\end{bmatrix}', null, '[18,5,-6]'],
+  ['mode', '23,5,-6,18,23,-22,5', null, '[23,5],2'],
+  ['mode', '\\begin{bmatrix}23&5&-6\\\\18&23&-22\\\\5&23&0\\end{bmatrix}', null, '[[23,18,5],1,[23],2,[-6,-22,0],1]'],
+  ['geomean', '3,56,14,2', null, '\\sqrt[4]{4704}'],
+  ['geomean', '5.19,7.3,2.77,3.67,8', null, '4.9859'],
+  ['harmonicmean', '2,4,6,8', null, '\\frac{96}{25}'],
+  ['harmonicmean', '\\begin{bmatrix}47&82&8&89\\\\53&62&11&47\\end{bmatrix}', null, '[\\frac{2491}{50},\\frac{1271}{18},\\frac{176}{19},\\frac{4183}{68}]'],
+  ['meandev', '1,2,3,4,5', null, '\\frac{6}{5}'],
+  ['meandev', '\\begin{bmatrix}-85&-55&-37\\\\-35&97&50\\end{bmatrix}', null, '[25,76,\\frac{87}{2}]'],
+  ['variance', '5,1,89,4,29,47,18', null, '\\frac{21055}{21}'],
+  ['variance', '\\begin{bmatrix}18.1\\\\5.3\\\\7.6\\end{bmatrix}', null, '46.563'],
+  ['variance', '\\begin{bmatrix}23&5&-6\\\\18&23&-22\\\\5&0&0\\end{bmatrix}', null, '[\\frac{259}{3},\\frac{439}{3},\\frac{388}{3}]'],
+  ['stddev', '\\left[5,1,89,4,29,47,18\\right]', null, '\\frac{1}{21}\\sqrt{21}\\sqrt{21055}'],
+  ['stddev', '\\begin{bmatrix}18.1\\\\5.3\\\\7.6\\end{bmatrix}', null, '6.8237'],
+  ['stddev', '\\begin{bmatrix}23&5&-6\\\\18&23&-22\\\\5&0&0\\end{bmatrix}', null, '\\frac{2}{3}\\sqrt{3}\\sqrt{97}'],
+  ['covariance', '\\begin{bmatrix}1&2\\\\3&5\\\\4&3\\end{bmatrix}', null, '2.3333&1.1667'],
+  ['correlation', '\\begin{bmatrix}-50&-12&-18\\\\31&-26&-62\\\\1&-47&-91\\end{bmatrix}', null, '1.0&-0.52883&-0.71054'],
+  ['moment', '0.1,0.5,0.8,0.4', ['2', '0'], '0.265'],
+  ['moment', '\\begin{bmatrix}8.5&-3.5&7.9\\\\-5.5&9.7&5.6\\\\-3.7&5.0&4.9\\\\3.5&2.7&9.4\\end{bmatrix}', ['1', '0.5'], '[0.2,2.975,6.45]'],
+  ['moment', '2,4,6,8,10,12,14,16,18', ['4', "'mean'"], '1258.7'],
+  ['quantile', '1,2,3,4,5,6,7,8,9,10', ['0.87'], '9'],
+  ['quantile', '\\begin{bmatrix}23&5&-6\\\\18&23&-22\\\\5&0&0\\end{bmatrix}', ['0.33'], '[5,0,-22]'],
+  ['fitcurve', '\\begin{bmatrix}y&x\\\\0&1.1\\\\0.5&1.5\\\\1&1.9\\\\1.5&2.4\\\\2&2.9\\end{bmatrix}', ["'regression'", "'first'"], 'y=1.1073x-1.1703'],
+  ['fitcurve', '\\begin{bmatrix}z&x&y\\\\1&0&1.1\\\\2&0.5&1.1\\\\4&1&1.9\\\\5&1.5&1.9\\\\7&2&2.9\\end{bmatrix}', ["'noconstant'", "'first'"], 'z=2.1829x+0.91245y'],
+  ['fitcurve', '\\begin{bmatrix}1&12\\\\3&4\\\\5&6\\\\7&8\\\\9&18\\end{bmatrix}', ["'polynomial'", "'last'", '4'], '27.797'],
+  ['randomnumbers', '0', ["'poisson'", '5', '4'], null],
+  // Polynomials (5.5's help, dm3-1, dm8-8)
+  ['divide', '\\frac{3x^2+3x}{8x^2+7}', null, '\\frac{3x-\\frac{21}{8}}{8x^2+7}'],
+  ['divide', '\\frac{5x^2y^3+3x-2y}{4x+y}', null, 'error:Choose the polynomial variable'],
+  ['divide', '\\frac{5x^2y^3+3x-2y}{4x+y}', ['y'], '\\frac{-320x^5+11x}{4x+y}'],
+  ['roots', '5x^2+2x-3', null, '\\begin{pmatrix}-1\\\\\\frac{3}{5}\\end{pmatrix}'],
+  ['roots', 'x^3+5x^2+9x+45', null, '\\begin{pmatrix}-5\\\\-3i\\\\3i\\end{pmatrix}'],
+  ['sort', 'x^2+3x+5-3x^3+5x^2+4x^3+13+2x^4', null, '2x^4+x^3+6x^2+3x+18'],
+  ['sort', '5t^2+2t-16t^5+t^3-2t^2+9+at^2', ['t'], '-16t^5+t^3+3t^2+at^2+2t+9'],
+  ['collect', '5t^2+2t-16t^5+t^3-2t^2+9+at^2', ['t'], ['t^2(a+3)', '(a+3)t^2']],
+  ['companion', 'x^4+3x^2-2x+1', null, '\\begin{pmatrix}0&0&0&-1\\\\1&0&0&2\\\\0&1&0&-3\\\\0&0&1&0\\end{pmatrix}'],
+  ['companion', 'x^3+ax^2+bx+c', ['x'], '\\begin{pmatrix}0&0&-c\\\\1&0&-b\\\\0&1&-a\\end{pmatrix}'],
+  // (end of part: statpoly)
+
+  // part: defsmisc
+  // Compute > Interpret (Ctrl+?): the formula as read, with the brackets that say what goes with what (5.5's help, trigarg.tex)
+  // Interpret shows how opensw reads the formula: the SymPy engine answers it (Mathematica: fallback)
+  ['interpret', '\\sin x+5', null, '\\sin x+5', { mathematica: 'fallback' }],
+  ['interpret', '\\left( 1/3\\right) x+4', null, '\\frac{1}{3}x+4', { mathematica: 'fallback' }],
+  ['interpret', '\\sin\\left(x\\right) e^{x}', null, ['\\sin\\left(x\\right)e^{x}', 'e^{x}\\sin x'], { mathematica: 'fallback' }],
+  // Transforms > Inverse Fourier (5.5's help dm10-1.tex: 2 pi Dirac(w), Is Fourier transform of 1)
+  ['inversefourier', '2\\pi \\operatorname{Dirac}\\left( w\\right)', null, '1'],
+  ['inversefourier', '1', null, '\\operatorname{Dirac}\\left(x\\right)'],
+  ['inversefourier', '2\\pi \\operatorname{Dirac}\\left( w+1\\right)', null, 'e^{ix}'],
+  // Solve ODE > Laplace (dm10-2.tex): {3 cos x + sin x + x^2 - 2}; nonlinear: no solution
+  ['odelaplace', "\\begin{array}{r}y''+y=x^{2}\\\\y(0)=1\\\\y'(0)=1\\end{array}", null, ['x^2+\\sin x+3\\cos x-2', '3\\cos x+\\sin x+x^2-2', 'x^2+\\sin(x)+3\\cos(x)-2', '-2+x^2+3\\cos(x)+\\sin(x)']],
+  ['odelaplace', "\\begin{array}{c}y''+y=0\\\\y\\left( 0\\right) =0\\\\y'\\left( 0\\right) =1\\end{array}", null, ['\\{\\sin x\\}', '\\{\\sin(x)\\}']],
+  ['odelaplace', "\\begin{array}{r}y'=x\\\\x'=-y\\\\x(0)=0\\\\y(0)=1\\end{array}", null, ['x(t)=-\\sin t,y(t)=\\cos t', 'x(t)=-\\sin(t),y(t)=\\cos(t)']],
+  ['odelaplace', "\\begin{array}{r}y'=y^{2}+4\\\\y(0)=-2\\end{array}", null, null],
+  // Solve ODE > Series (dm10-2.tex, series order 5, Independent Variable t)
+  ['odeseries', "\\begin{array}{r}y'=y^{2}+4\\\\y(0)=-2\\end{array}", ['5', 't'], '-2+8t-16t^2+\\frac{128}{3}t^3-\\frac{320}{3}t^4+O(t^5)'],
+  ['odeseries', "\\begin{array}{r}y''-y=0\\\\y(0)=1\\\\y'\\left( 0\\right) =0\\end{array}", ['5'], '1+\\frac{1}{2}x^2+\\frac{1}{24}x^4+O(x^5)'],
+  // Define MuPAD Name (5.5's help dm5-6.tex: n(x) <-> nextprime(x)); then n(100)
+  ['mapname', 'n(x)', ['nextprime'], null],
+  ['evaluate', 'n\\left( 100\\right) ', null, '101'],
+  ['mapname', 'c', ['PI'], null],
+  ['numeric', 'c', null, '3.1416'],
+  ['cleardefs', '0', null, null],
+  // Compute > Settings: Digits Shown 8, Threshold 3, i to j, Bessel names without subscripts; then 5.5's own again (Bessel names without subscripts is 5.5's own)
+  ['setoptions', { digits: 8, threshold: 3, imaginary_j: true, bessel_subscripts: false }, null, null],
+  ['numeric', '\\sqrt{2}', null, '1.4142136'],
+  ['numeric', '12345\\sqrt{2}', null, '1.7458466\\times10^{4}'],
+  ['evaluate', '3i\\cdot 2', null, '6j'],
+  ['setoptions', { digits: 5, threshold: 5, imaginary_j: false, bessel_subscripts: false }, null, null],
+  ['numeric', '\\sqrt{2}', null, '1.4142'],
+  // (end of part: defsmisc)
+
+  // part: anim
+  // (end of part: anim)
+
+  // part: core55
+  // how 5.5 reads a formula (its help: trigarg.tex, dm1-3.tex): each is checked against the form with brackets
+  ['check', '\\sin x+5=\\left(\\sin x\\right)+5', null, true],
+  ['check', '\\sin (a+b)x=\\sin\\left(\\left(a+b\\right)x\\right)', null, true],
+  ['check', '\\sin (a+b)x=\\left(\\sin\\left(a+b\\right)\\right)x', null, false],
+  ['check', '\\sin x(a+b)=\\sin\\left(x\\left(a+b\\right)\\right)', null, true],
+  ['check', '\\sin x\\cos x=\\left(\\sin x\\right)\\left(\\cos x\\right)', null, true],
+  ['check', '\\sin x(\\cos x+\\tan x)=\\sin\\left(x\\left(\\cos x+\\tan x\\right)\\right)', null, true],
+  ['check', '\\sin \\left( x\\right) (a+\\cos b)=\\left(\\sin x\\right)\\left(a+\\cos b\\right)', null, true],
+  ['check', '\\sin x\\cos \\left( ax+b\\right)=\\left(\\sin x\\right)\\cos\\left(ax+b\\right)', null, true],
+  ['check', '\\sin x\\left( \\cos \\left( ax+b\\right) \\right)=\\sin\\left(x\\cos\\left(ax+b\\right)\\right)', null, true],
+  ['check', '\\sin xe^{x}=\\left(\\sin x\\right)e^{x}', null, true],
+  ['check', '\\sin x\\left( a+e^{b}\\right)=\\sin\\left(x\\left(a+e^{b}\\right)\\right)', null, true],
+  ['check', '\\sin \\left( x\\right) \\left( a+e^{b}\\right)=\\left(\\sin x\\right)\\left(a+e^{b}\\right)', null, true],
+  ['check', '\\sin x/2=\\sin\\frac{x}{2}', null, true],
+  ['check', '\\sin (x)/2=\\frac{\\sin x}{2}', null, true],
+  ['check', '\\sin x/\\cos x=\\frac{\\sin x}{\\cos x}', null, true],
+  ['check', '\\sin xy/2=\\sin\\left(x\\frac{y}{2}\\right)', null, true],
+  ['check', '\\sin (xy)/2=\\frac{\\sin\\left(xy\\right)}{2}', null, true],
+  ['check', '\\ln x^{2}y=\\ln\\left(x^{2}y\\right)', null, true],
+  ['check', '1/3x+4=\\frac{1}{3}x+4', null, true],
+  ['check', '1/3x+4=\\frac{1}{3x}+4', null, false],
+  ['check', '1/\\left( 3x+4\\right)=\\frac{1}{3x+4}', null, true],
+  ['check', '1/3\\left( x+4\\right)=\\frac{1}{3}\\left(x+4\\right)', null, true],
+  ['check', 'a/bc/d=\\frac{ac}{bd}', null, true],
+  ['interpret', '1/3x+4', null, '\\frac{1}{3}x+4', { mathematica: 'fallback' }],
+  ['interpret', '\\sin x/2', null, ['\\sin\\frac{x}{2}', '\\sin\\left(\\frac{x}{2}\\right)', '\\sin\\frac{1}{2}x'], { mathematica: 'fallback' }],
+  // Transforms as 5.5 (MuPAD, dm10-1.tex): F f(w) = int f(x) e^(iwx) dx, with 5.5's words before the answer
+  ['fourier', '1', null, '2\\pi\\operatorname{Dirac}\\left(w\\right)'],
+  ['fourier', '\\operatorname{Dirac}\\left( x\\right)', null, '1'],
+  ['fourier', '\\operatorname{Heaviside}\\left( x\\right)', null, ['\\pi\\operatorname{Dirac}\\left(w\\right)+\\frac{i}{w}', '\\frac{i}{w}+\\pi\\operatorname{Dirac}\\left(w\\right)']],
+  ['fourier', 'e^{-ix}', null, '2\\pi\\operatorname{Dirac}\\left(w-1\\right)'],
+  ['fourier', 'e^{2\\pi ix}', null, ['2\\pi\\operatorname{Dirac}\\left(w+2\\pi\\right)', '2\\pi\\operatorname{Dirac}\\left(2\\pi+w\\right)']],
+  ['fourier', '\\frac{1}{x}', null, ['i\\pi\\left(2\\operatorname{Heaviside}\\left(w\\right)-1\\right)', 'i\\pi(2\\operatorname{Heaviside}(w)-1)']],
+  ['laplace', 't', null, '\\frac{1}{s^2}'],
+  ['inverselaplace', '\\frac{2}{s^{3}}', null, 't^2'],
+  // Solve Options (Compute > Settings > Engine Setup; 5.5's help dm3-3.tex, dm7-3.tex): Maximum Degree 3, Ignore Special Cases off
+  // a root above the Maximum Degree, or cases: Mathematica hands them to SymPy, which writes them as 5.5
+  ['solve', 'x^{4}+x-1=0', null, ['\\rho_{1}\\text{where}\\rho_{1}\\text{isarootof}X_{1}^{4}+X_{1}-1,X_{1}'], { mathematica: 'fallback' }],
+  ['solve', 'x^{4}+x=0', null, '\\frac{1}{2}\\sqrt{3}i'],
+  ['solve', '\\cos x+y+xz=z', ['z'], ['x\\neq1\\\\\\mathbb{C}&\\text{if}&x=1\\wedgey=-\\cos1'], { mathematica: 'fallback' }],
+  ['setoptions', { max_degree: 1, ignore_special: true }, null, null],
+  ['solve', '5x^{2}+3x=1', null, ['\\rho_{1}\\text{where}\\rho_{1}\\text{isarootof}5X_{1}^{2}+3X_{1}-1,X_{1}'], { mathematica: 'fallback' }],
+  ['solve', 'x^{4}+x=0', null, ['\\left\\{-1,0\\right\\}\\cup\\rho_{1}\\text{where}\\rho_{1}\\text{isarootof}X_{1}^{2}-X_{1}+1,X_{1}'], { mathematica: 'fallback' }],
+  ['solve', '\\cos x+y+xz=z', ['z'], ['-\\frac{y+\\cos x}{x-1}', '\\frac{-y-\\cos x}{x-1}']],
+  ['setoptions', { max_degree: 3, ignore_special: false }, null, null],
+  // (end of part: core55)
+
 ];
 // the problems of the demo documents (src/demos.js, File > Samples), each demo from a clean start
 for (const [demo, p] of demoProblems()) {
@@ -402,6 +701,19 @@ const out = CASES.flatMap(([op, latex, params, expect, by]) => {
     const { equations, inits } = odeRows(latex);
     inits.forEach(([name]) => defined.add(name));
     const json = ['OdeNumeric', ['List', ...equations.map((l) => mj(l, 'ode'))], ['List', ...inits.map(([n, a, v, k]) => ['List', n, mj(a), mj(v), k])]];
+    return { op: 'define', latex, json: JSON.stringify(json), expect, ...(by && { by }) };
+  }
+  if (op === 'odelaplace' || op === 'odeseries') { // as compute.js: ["OdeSystem", equations, initial values, order, variable]
+    const { equations, inits } = odeRows(latex);
+    const [order, v] = params || [];
+    const json = ['OdeSystem', ['List', ...equations.map((l) => mj(l, 'ode'))], ['List', ...inits.map(([n, a, w, k]) => ['List', n, mj(a), mj(w), k])], order ? mj(order) : 'Nothing', v ? mj(v) : 'Nothing'];
+    return { op, latex, json: JSON.stringify(json), expect, ...(by && { by }) };
+  }
+  if (op === 'setoptions') return { op, latex: JSON.stringify(latex), json: JSON.stringify(latex), expect, ...(by && { by }) }; // Compute > Settings
+  if (op === 'mapname') { // Define MuPAD Name, as compute.js mapName: [name(args), MuPAD name]
+    const [name, args] = [latex.split('(')[0], (latex.match(/\((.*)\)/) || [])[1]];
+    const json = ['Equal', args ? [name, ...args.split(',')] : name, ['MapName', `'${params[0]}'`, args ? "'procedure'" : "'value'"]];
+    defined.add(name);
     return { op: 'define', latex, json: JSON.stringify(json), expect, ...(by && { by }) };
   }
   const expr = mj(latex, op);
