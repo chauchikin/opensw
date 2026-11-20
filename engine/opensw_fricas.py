@@ -22,7 +22,7 @@ import threading
 
 import sympy as sp
 
-from opensw_giac import Names, Refused, from_giac, same_function
+from opensw_giac import Names, Refused, from_giac, same_derivative
 
 # Seconds FriCAS has for one answer; it is asked before SymPy, so this is the most SymPy's turn
 # is put off. Of the 43 hard integrals it was tried with, the 41 it found came within 0.6 s
@@ -214,7 +214,9 @@ def from_fricas(text, names):
 def integral(f, x):
     """An antiderivative of f in x by FriCAS; None: not by FriCAS. Checked by differentiating:
     FriCAS takes roots and logarithms as algebra does, and an answer is taken only when its
-    derivative is f for the roots and logarithms SymPy computes with."""
+    derivative is f for the roots and logarithms SymPy computes with. The shared
+    opensw_giac.same_derivative uses numerical checking and additionally requires a symbolic
+    proof for roots of repeated factors, Abs and sign; it does not detect hidden squares."""
     if WORKER.off:
         return None
     try:
@@ -223,11 +225,33 @@ def integral(f, x):
         if text is None:
             return None
         r = from_fricas(text, names)
-        return r if same_function(sp.diff(r, x), f) else None
+        return r if same_derivative(r, f, x) else None
     except Refused:
         return None
     except Exception:  # an answer SymPy cannot work with: as no answer
         return None
+
+
+def no_antiderivative(f, x):
+    """True when FriCAS answers f's integral in x with that integral left undone, as a whole: its
+    integrator (the Risch algorithm) has then found that f has no antiderivative it can write
+    (elementary functions, and erf, Ei, li ..). False otherwise: an answer, part of one, no
+    answer in time, a formula not sent, or no FriCAS."""
+    if WORKER.off:
+        return False
+    try:
+        names = Names()
+        text = WORKER.ask("integrate(%s::Expression(Integer),%s)" % (to_fricas(f, names), names.name(x)))
+    except Refused:
+        return False
+    if not text or not text.startswith("integral("):
+        return False
+    depth = 0
+    for i in range(len("integral"), len(text)):  # the "(" of integral( must close at the very end
+        depth += (text[i] == "(") - (text[i] == ")")
+        if depth == 0:
+            return i == len(text) - 1
+    return False
 
 
 def integrals(e):

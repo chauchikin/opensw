@@ -13,7 +13,7 @@ const defined = new Set();
 const vectors = new Set();
 // 5.x groups digits with thin spaces (77\,531, 0.170\,06): one number, as in compute.js
 const digits = (tex) => tex.replace(/(\d\.?)\s*\\,\s*(?=\d)/g, '$1');
-// the Compute settings in force (Tools > Computation Engine), changed by the ['settings', {..}] lines below
+// the Compute settings in force (Tools > Engine Setup), changed by the ['settings', {..}] lines below
 let current = {};
 const mj = (latex, op, subscript) => withSettings(normalize(parseWithVectors(ce, explicitProducts(scopeDerivatives(vectorTeX((current.logBase10 ? (t) => t : naturalLog)(digits(notation55(standardTeX(op === 'define' ? definitionOfI(latex, subscript === "'argument'") : latex)))), vectors.size > 0)), defined), vectors), defined, { derivatives: op !== 'ode', vectors }), current);
 // [op, LaTeX, params or null, the answer's LaTeX must contain this (a list: one of them; the
@@ -681,7 +681,9 @@ const CASES = [
   ['solve', '\\cos x+y+xz=z', ['z'], ['-\\frac{y+\\cos x}{x-1}', '\\frac{-y-\\cos x}{x-1}']],
   ['setoptions', { max_degree: 3, ignore_special: false }, null, null],
   // (end of part: core55)
-
+  // integers of more than 4300 digits (Python refuses to print them unless told otherwise)
+  ['evaluate', '2^{20000}', null, '39802768403379665923543072061912024537047727804924'],
+  ['evaluate', '2000!', null, '33162750924506332411753933805763240382811172081057'],
 ];
 // the problems of the demo documents (src/demos.js, File > Samples), each demo from a clean start
 for (const [demo, p] of demoProblems()) {

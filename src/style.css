@@ -80,6 +80,9 @@ body { display: flex; flex-direction: column; overflow: hidden; }
 #btn-untag { font: 700 16px/1 system-ui; color: #1a8f1a; height: 22px; width: 26px; padding: 0; border: 1px solid #a0a0a0; background: #fafafa; cursor: default; }
 #statusbar { display: flex; gap: 6px; padding: 2px 4px; background: #f0f0f0; border-top: 1px solid #d0d0d0; flex: none; font-size: 12px; }
 #status-text { flex: 1; color: #333; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* the document's full path: of one too long for the bar the end (folder and file name) is shown */
+#status-path { flex: 0 1 auto; max-width: 70%; color: #333; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; direction: rtl; cursor: pointer; }
+#status-path[hidden] { display: none; }
 /* what an AI changed (aiedits.js): a tint on the changed blocks, a note and a button in the status bar */
 #status-ai { padding: 0 6px; background: #fff3c4; border: 1px solid #e0c060; white-space: nowrap; }
 #status-ai[hidden] { display: none; }

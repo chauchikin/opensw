@@ -20,7 +20,9 @@ More pictures are in the manual (Help > Full manual).
 ## What it does
 
 - Opens Scientific Word 5.x `.tex` files and 6.x `.sci` files
-- 5.x `.tex` is the main format: saves back to the file it opened (keeping a `.bak`; Chinese in Big5) writing only the edited paragraphs again and leaving the rest exactly as it was, typesets from that same text, and can also save `.sci`
+- The desktop app works on a copy: opening a file imports it (the file and the files it uses are copied into `Desktop\opensw projects\<name>_<date>\`), and saving writes the copy, not the file you opened (an AI saves only in the projects folder, so it can never write that file; you can, by choosing it yourself in Save As); the status bar shows where the copy is
+- Each such folder keeps three plain-English records: a change log (the import, every AI change with the text before and after, every save), a file map, and the handoff notes an AI leaves for whoever goes on with the work
+- 5.x `.tex` is the main format: saves back to the same file (keeping a `.bak`; Chinese in Big5) writing only the edited paragraphs again and leaving the rest exactly as it was, typesets from that same text, and can also save `.sci`
 - Text and formulas on the same line; menus and keyboard shortcuts as in 5.5: of the 313 menu items of 5.5, opensw has 298, and the other 15 do not apply (window arrangement, registration, licence information, DVI and the like)
 - A Compute menu: simplify, solve, calculus, matrices, ODEs, statistics (what does the computing: see "Computing" below). Computing is opensw's own (5.5 used MuPAD), so answers may be written differently from 5.5's
 - Tables, pictures, footnotes, citations, index entries, cross-references, numbered equations
@@ -33,7 +35,7 @@ More pictures are in the manual (Help > Full manual).
 - Interface in English and Traditional Chinese (Tools > User Setup). The program is written in English; Chinese is the translation file `src/locales/zh-TW.json`; to add a language, see the top of `src/i18n.js`
 - In the desktop app, Claude or ChatGPT can work on the document: Tools > Connect AI sets it up in one step; what the AI changed is tinted, and Edit > Undo AI Changes takes it back in one step
 - The desktop app has an MCP server, so AI tools can read, edit, compute and typeset; the same commands work from a terminal with `opensw-cli` (see docs/AI.md)
-- An AI can check a derivation step by step: each displayed formula is a step with a fixed name, the steps it uses are recorded, and the computation engine checks each one; names and results are kept in a file beside the document, which is not changed (see docs/AI.md)
+- An AI can check a derivation step by step: each displayed formula is a step with a fixed name, the steps it uses are recorded, and the computation engine checks each one (a step with an indefinite integral that is right up to a constant is left undecided, not passed); names and results are kept in a file beside the document, which is not changed (see docs/AI.md)
 
 A 5.x command it does not know is kept as a TeX field, so nothing is lost on saving or export.
 
@@ -45,7 +47,7 @@ In the Windows desktop app, three open-source programs do the computing, and all
 - Giac: another open-source symbolic computation program. Integrals (indefinite, definite, multiple), power series, and determinants of 4 or more rows with letters in them go to Giac first.
 - FriCAS: also an open-source symbolic computation program. An indefinite integral that Giac does not find goes to FriCAS, and to SymPy only when FriCAS has no answer either.
 
-The order for an indefinite integral is Giac, FriCAS, SymPy. An answer from Giac or FriCAS is checked with numbers before it is used; opensw still writes the answer out, following 5.5's habits.
+The order for an indefinite integral is Giac, FriCAS, SymPy. An answer from Giac or FriCAS is checked before it is used: with numbers, and for an integrand with a root of a square or an absolute value in it (where such a program may give an answer that holds on part of the line only) by proving that its derivative is the integrand; opensw still writes the answer out, following 5.5's habits.
 
 Examples measured on the laptop used for testing:
 
@@ -67,7 +69,7 @@ Windows 10 and 11: download from the [Releases page](https://github.com/chauchik
 - `opensw_<version>_x64-setup.exe`: the installer. It installs into your own user folder and needs no administrator rights.
 - `opensw_<version>_x64-portable.zip`: the portable version. Unzip it first (right-click it, then Extract All; opensw.exe does not run from inside the zip), then run `opensw.exe` in the folder; it can live on a USB stick.
 
-For 0.11.0 the installer is about 115 MB and the portable zip about 168 MB (about 420 MB unzipped); most of that is the Python, Giac and FriCAS that come with it (the 0.8.x installer was about 41 MB).
+For 0.12.0 the installer is about 115 MB and the portable zip about 168 MB (about 420 MB unzipped); most of that is the Python, Giac and FriCAS that come with it (the 0.8.x installer was about 41 MB).
 
 The installer is not signed, so the first time Windows may say "Windows protected your PC". Click "More info", then "Run anyway".
 

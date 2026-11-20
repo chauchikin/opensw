@@ -13,7 +13,7 @@
 //                        "trust": "the problem's equation",                 (not checked: taken as true)
 //                        "extra": [{ "latex": "...", "equals": "...", "why": "...", "op": "series", "params": [] }],
 //                        "result": { ... } } } }                            the last check
-import { compute as engineCompute, definitionsAside } from './compute.js';
+import { compute as engineCompute, definitionsAside, formulaJson } from './compute.js';
 
 // ---------- reading one displayed formula
 
@@ -119,12 +119,20 @@ export function zeroTests(a, b) {
 
 // ---------- asking the engine
 
-// Is this expression 0? The chosen engine simplifies it first, so that derivatives, integrals
-// and substitutions are carried out; what is left is compared with 0 (stepcheck: proved equal,
-// or a point where it is not 0, or unknown).
+// Preserve indefinite integrals for stepcheck (derivative proof plus exact SymPy equality).
+// A constant offset is unknown. A definite integral
+// has a Tuple of variable and bounds; recurse too, for indefinite integrals inside its body.
+const indefiniteIntegral = (j) => Array.isArray(j) && ((j[0] === 'Integrate' &&
+  !(Array.isArray(j[2]) && j[2][0] === 'Tuple' && j[2].length === 4)) || j.slice(1).some(indefiniteIntegral));
+
+// Is this expression 0? Carry out simplification except when it would choose an arbitrary
+// antiderivative before stepcheck sees the original integral. Big-O's zeroTests stay as before.
 async function isZero(compute, latex) {
   let s;
-  try { s = await compute('simplify', latex); } catch (e) { return { asked: latex, result: 'error', error: String(e.message || e) }; }
+  try {
+    const preserve = /\\(?:int|iint|iiint)\b/.test(latex) && indefiniteIntegral(await formulaJson(latex));
+    s = preserve ? { kind: 'value', latex } : await compute('simplify', latex);
+  } catch (e) { return { asked: latex, result: 'error', error: String(e.message || e) }; }
   if (s.kind !== 'value') return { asked: latex, result: 'error', error: `the answer is not one formula (${s.kind})` };
   if (s.latex.trim() === '0') return { asked: latex, simplified: '0', result: 'equal' };
   let r;
@@ -430,7 +438,7 @@ export function stepCommands(app) {
   return {
     steps: async ({ name } = {}) => {
       const d = await load();
-      await store(d, false);
+      await store(d, false).catch(() => {}); // (only looking: where the file cannot be written the answer is given all the same)
       if (name == null) return answer(d);
       const f = stepOf(d, name);
       const row = answer(d).steps.find((r) => r.name === name);

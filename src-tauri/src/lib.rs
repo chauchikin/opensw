@@ -31,6 +31,33 @@ fn write_file(path: &str, data: Vec<u8>) -> Result<(), String> {
     std::fs::write(path, data).map_err(|e| format!("Cannot write {path}: {e}"))
 }
 
+/// Where a file or folder really is on the disk: links and junctions followed, a mapped drive as
+/// its server's name, short names spelled out. Of a path that is not there yet, the nearest
+/// folder above it that is there is looked up and the rest of the path added as it was given.
+/// (main.js: is the file an AI saves really in a projects folder, or only by its name?)
+#[tauri::command]
+fn real_path(path: &str) -> Result<String, String> {
+    let given = Path::new(path);
+    let mut rest = Vec::new();
+    let mut there = given;
+    loop {
+        if let Ok(real) = std::fs::canonicalize(there) {
+            let whole = rest.iter().rev().fold(real, |p, name| p.join(name));
+            return Ok(whole.to_string_lossy().into_owned());
+        }
+        // (it is there and the disk cannot follow it: a link or junction that leads to nothing
+        // yet, where writing would make a file wherever it points)
+        if there.symlink_metadata().is_ok() {
+            return Err(format!("Cannot find where {path} is on the disk"));
+        }
+        let (Some(parent), Some(name)) = (there.parent(), there.file_name()) else {
+            return Err(format!("Cannot find where {path} is on the disk"));
+        };
+        rest.push(name);
+        there = parent;
+    }
+}
+
 /// Tools > Document Manager: whether a file is there.
 #[tauri::command]
 fn file_exists(path: &str) -> bool {
@@ -44,6 +71,80 @@ fn rename_file(from: &str, to: &str) -> Result<(), String> {
         return Err(format!("{to} already exists"));
     }
     std::fs::rename(from, to).map_err(|e| format!("Cannot rename {from}: {e}"))
+}
+
+/// One entry of a folder: its name, and whether it is a folder itself.
+#[derive(serde::Serialize)]
+struct Entry {
+    name: String,
+    dir: bool,
+}
+
+/// What is in a folder (projects.js: the project folders, a project's backups). A folder that is
+/// not there has nothing in it.
+#[tauri::command]
+fn list_folder(path: &str) -> Result<Vec<Entry>, String> {
+    if !Path::new(path).is_dir() {
+        return Ok(Vec::new());
+    }
+    let entries = std::fs::read_dir(path).map_err(|e| format!("Cannot read {path}: {e}"))?;
+    Ok(entries.flatten().map(|e| Entry { name: e.file_name().to_string_lossy().into_owned(), dir: e.path().is_dir() }).collect())
+}
+
+/// Makes a folder (and the folders above it). One that is there already is left as it is; with
+/// `fresh` it is an error: a folder for one document must be made by this call and no other,
+/// so that two documents never share one.
+#[tauri::command]
+fn make_folder(path: &str, fresh: Option<bool>) -> Result<(), String> {
+    let failed = |e: std::io::Error| format!("Cannot create the folder {path}: {e}");
+    if !fresh.unwrap_or(false) {
+        return std::fs::create_dir_all(path).map_err(failed);
+    }
+    if let Some(parent) = Path::new(path).parent() {
+        std::fs::create_dir_all(parent).map_err(failed)?;
+    }
+    match std::fs::create_dir(path) {
+        Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => Err(format!("{path} already exists")),
+        made => made.map_err(failed),
+    }
+}
+
+/// Whether a folder is there (the projects folder: on the Desktop, or in Documents).
+#[tauri::command]
+fn folder_exists(path: &str) -> bool {
+    Path::new(path).is_dir()
+}
+
+/// Adds bytes to the end of a file (a project's change log); a file that is not there is made.
+#[tauri::command]
+fn append_file(path: &str, data: Vec<u8>) -> Result<(), String> {
+    use std::io::Write;
+    if let Some(parent) = Path::new(path).parent()
+        && !parent.as_os_str().is_empty()
+    {
+        std::fs::create_dir_all(parent).map_err(|e| format!("Cannot create the folder {}: {e}", parent.display()))?;
+    }
+    let mut file = std::fs::OpenOptions::new().create(true).append(true).open(path).map_err(|e| format!("Cannot write {path}: {e}"))?;
+    file.write_all(&data).map_err(|e| format!("Cannot write {path}: {e}"))
+}
+
+/// Copies a file into a project folder: never over a file that is there.
+#[tauri::command]
+fn copy_file(from: &str, to: &str) -> Result<(), String> {
+    if Path::new(to).exists() {
+        return Err(format!("{to} already exists"));
+    }
+    if let Some(parent) = Path::new(to).parent() {
+        std::fs::create_dir_all(parent).map_err(|e| format!("Cannot create the folder {}: {e}", parent.display()))?;
+    }
+    std::fs::copy(from, to).map(|_| ()).map_err(|e| format!("Cannot copy {from}: {e}"))
+}
+
+/// Importing a document (projects.js): the files its text names in its own folder go with it into
+/// the project folder; a file that is there already is left. -> the names copied
+#[tauri::command]
+fn copy_named(tex: &str, from: &str, to: &str) -> Vec<String> {
+    copy_named_files(tex, Path::new(from), Path::new(to), false)
 }
 
 /// Tools > Document Manager > Delete and Clean Up: the files go to the Recycle Bin (they can be restored).
@@ -109,23 +210,30 @@ fn brace_names(tex: &str) -> Vec<&str> {
 /// files are copied next to it: every {...} that names a file in the document's folder, also
 /// with .tex or .bib added (\input and \bibliography leave them out). The .tex files found are
 /// looked through in the same way. At most 200 files, none over 64 MB; one that cannot be copied is left out.
-fn copy_named_files(tex: &str, from: &Path, to: &Path) -> usize {
+/// replace: a file that is there already is written over (typesetting: the newest); without it
+/// such a file is left as it is (importing). -> the names copied
+fn copy_named_files(tex: &str, from: &Path, to: &Path, replace: bool) -> Vec<String> {
     let mut tried = std::collections::HashSet::new();
     let mut texts = vec![tex.to_string()];
-    let mut copied = 0;
+    let mut copied = Vec::new();
     while let Some(text) = texts.pop() {
         for name in brace_names(&text) {
             for ext in ["", ".tex", ".bib"] {
                 let rel = format!("{name}{ext}");
-                if copied >= 200 || !tried.insert(rel.clone()) {
+                if copied.len() >= 200 || !tried.insert(rel.clone()) {
                     continue;
                 }
                 let (Some(source), Some(target)) = (inside(from, &rel), inside(to, &rel)) else { continue };
                 // (a file over 64 MB is not something TeX reads in: left where it is)
-                if !source.metadata().is_ok_and(|m| m.is_file() && m.len() <= 64 << 20) || target.parent().is_some_and(|p| std::fs::create_dir_all(p).is_err()) || std::fs::copy(&source, &target).is_err() {
+                if !source.metadata().is_ok_and(|m| m.is_file() && m.len() <= 64 << 20) {
                     continue;
                 }
-                copied += 1;
+                if replace || !target.exists() {
+                    if target.parent().is_some_and(|p| std::fs::create_dir_all(p).is_err()) || std::fs::copy(&source, &target).is_err() {
+                        continue;
+                    }
+                    copied.push(rel.clone());
+                }
                 if rel.ends_with(".tex")
                     && let Ok(inner) = std::fs::read_to_string(&source)
                 {
@@ -164,7 +272,7 @@ async fn typeset(app: tauri::AppHandle, tex: String, name: String, files: Option
     }
     // (before the TeX itself and the pictures are written: those win over a file of the same name)
     if let Some(folder) = folder.as_deref().map(Path::new).filter(|f| f.is_dir() && *f != dir) {
-        copy_named_files(&tex, folder, &dir);
+        copy_named_files(&tex, folder, &dir, true);
     }
     std::fs::write(&tex_path, tex).map_err(|e| e.to_string())?;
     for f in files.unwrap_or_default() {
@@ -314,7 +422,7 @@ async fn lean_check(app: tauri::AppHandle, project: String, code: String) -> Res
     Ok((out.status.success(), text))
 }
 
-/// Tools > Computation Engine: the engines on this computer the editor can use (engine/engines.json).
+/// Tools > Engine Setup: the engines on this computer the editor can use (engine/engines.json).
 #[tauri::command]
 fn engine_list(app: tauri::AppHandle) -> Result<Vec<engine::Spec>, String> {
     engine::list(&engine_dir(&app)?)
@@ -534,7 +642,7 @@ pub fn run() {
             }
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![read_file, write_file, file_exists, rename_file, trash_files, typeset, startup_path, lean_check, fetch_url, engine_list, engine_compute, remote::api_reply, remote::api_ready, aiconnect::ai_apps, aiconnect::ai_connect])
+        .invoke_handler(tauri::generate_handler![read_file, write_file, real_path, file_exists, rename_file, list_folder, make_folder, folder_exists, append_file, copy_file, copy_named, trash_files, typeset, startup_path, lean_check, fetch_url, engine_list, engine_compute, remote::api_reply, remote::api_ready, aiconnect::ai_apps, aiconnect::ai_connect])
         .build(tauri::generate_context!())
         .unwrap_or_else(|e| panic!("opensw could not start: {e}"))
         .run(|_, event| {
@@ -547,7 +655,7 @@ pub fn run() {
 
 #[cfg(test)]
 mod tests {
-    use super::{Path, brace_names, copy_macro_files, copy_named_files, inside, pdf_stem, rename_file, run_engine, safe_stem, tex_errors};
+    use super::{Path, append_file, brace_names, copy_file, copy_macro_files, copy_named_files, folder_exists, inside, list_folder, make_folder, pdf_stem, real_path, rename_file, run_engine, safe_stem, tex_errors};
 
     #[test]
     fn pdf_stem_should_keep_chinese_names() {
@@ -624,11 +732,127 @@ mod tests {
         std::fs::write(from.join("out.txt"), "1").unwrap();
         std::fs::write(from.join("other.txt"), "not named").unwrap();
         let tex = "\\lstinputlisting{prog1.wls} \\bibliography{refs} \\input{parts/ch1} \\input{../secret} \\section{other}";
-        assert_eq!(copy_named_files(tex, &from, &to), 4);
+        assert_eq!(copy_named_files(tex, &from, &to, true).len(), 4);
         for f in ["prog1.wls", "refs.bib", "parts/ch1.tex", "out.txt"] {
             assert!(inside(&to, f).unwrap().is_file(), "{f}");
         }
         assert!(!to.join("other.txt").exists());
+        std::fs::remove_dir_all(&base).unwrap();
+    }
+
+    #[test]
+    fn copy_named_files_should_leave_a_file_that_is_there_when_importing() {
+        let base = std::env::temp_dir().join(format!("opensw-import-{}", std::process::id()));
+        let (from, to) = (base.join("doc"), base.join("project"));
+        std::fs::create_dir_all(&from).unwrap();
+        std::fs::create_dir_all(&to).unwrap();
+        std::fs::write(from.join("ch1.tex"), "\\lstinputlisting{prog.py}").unwrap();
+        std::fs::write(from.join("prog.py"), "print(1)").unwrap();
+        std::fs::write(to.join("ch1.tex"), "copied before").unwrap();
+        // ch1.tex is there already: not copied again, but still looked through for the files it names
+        assert_eq!(copy_named_files("\\input{ch1}", &from, &to, false), vec!["prog.py"]);
+        assert_eq!(std::fs::read_to_string(to.join("ch1.tex")).unwrap(), "copied before");
+        std::fs::remove_dir_all(&base).unwrap();
+    }
+
+    #[test]
+    fn copy_file_should_never_replace_a_file() {
+        let base = std::env::temp_dir().join(format!("opensw-copy-{}", std::process::id()));
+        std::fs::create_dir_all(&base).unwrap();
+        let path = |name: &str| base.join(name).to_string_lossy().into_owned();
+        std::fs::write(path("a.tex"), "a").unwrap();
+        copy_file(&path("a.tex"), &path("sub/b.tex")).unwrap();
+        assert_eq!(std::fs::read_to_string(path("sub/b.tex")).unwrap(), "a");
+        std::fs::write(path("a.tex"), "changed").unwrap();
+        assert!(copy_file(&path("a.tex"), &path("sub/b.tex")).is_err());
+        assert_eq!(std::fs::read_to_string(path("sub/b.tex")).unwrap(), "a");
+        std::fs::remove_dir_all(&base).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn real_path_should_follow_a_link_also_for_a_file_that_is_not_there_yet() {
+        let base = std::fs::canonicalize(std::env::temp_dir()).unwrap().join(format!("opensw-real-{}", std::process::id()));
+        std::fs::create_dir_all(base.join("papers")).unwrap();
+        std::os::unix::fs::symlink(base.join("papers"), base.join("link")).unwrap();
+        let through = |rest: &str| real_path(&base.join("link").join(rest).to_string_lossy()).unwrap();
+        let direct = |rest: &str| base.join("papers").join(rest).to_string_lossy().into_owned();
+        assert_eq!(through("new/copy.tex"), direct("new/copy.tex"));
+        std::fs::write(base.join("papers").join("paper.tex"), "x").unwrap();
+        assert_eq!(through("paper.tex"), direct("paper.tex"));
+        std::fs::remove_dir_all(&base).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn real_path_should_fail_for_a_link_that_leads_to_no_file() {
+        let base = std::env::temp_dir().join(format!("opensw-dangling-{}", std::process::id()));
+        std::fs::create_dir_all(base.join("project")).unwrap();
+        std::os::unix::fs::symlink(base.join("elsewhere").join("new.tex"), base.join("project").join("escape.tex")).unwrap();
+        assert!(real_path(&base.join("project").join("escape.tex").to_string_lossy()).is_err());
+        std::fs::remove_dir_all(&base).unwrap();
+    }
+
+    #[test]
+    fn real_path_should_fail_for_a_path_with_nothing_on_the_disk_above_it() {
+        assert!(real_path("").is_err());
+    }
+
+    #[test]
+    fn list_folder_should_tell_folders_from_files() {
+        let base = std::env::temp_dir().join(format!("opensw-list-{}", std::process::id()));
+        let at = base.to_string_lossy().into_owned();
+        assert!(list_folder(&at).unwrap().is_empty()); // not there: nothing in it
+        make_folder(&base.join("paper_2026-01-02").to_string_lossy(), None).unwrap();
+        std::fs::write(base.join("loose.tex"), "x").unwrap();
+        let mut found: Vec<(String, bool)> = list_folder(&at).unwrap().into_iter().map(|e| (e.name, e.dir)).collect();
+        found.sort();
+        assert_eq!(found, vec![("loose.tex".to_string(), false), ("paper_2026-01-02".to_string(), true)]);
+        std::fs::remove_dir_all(&base).unwrap();
+    }
+
+    #[test]
+    fn make_folder_should_fail_for_a_fresh_folder_that_is_there() {
+        let base = std::env::temp_dir().join(format!("opensw-fresh-{}", std::process::id()));
+        let folder = base.join("projects").join("paper_2026-01-02").to_string_lossy().into_owned();
+        assert!(!folder_exists(&folder));
+        make_folder(&folder, Some(true)).unwrap(); // (the folders above it are made too)
+        assert!(folder_exists(&folder));
+        assert_eq!(make_folder(&folder, Some(true)), Err(format!("{folder} already exists")));
+        make_folder(&folder, None).unwrap(); // not asked to be fresh: there already is fine
+        make_folder(&folder, Some(false)).unwrap();
+        std::fs::remove_dir_all(&base).unwrap();
+    }
+
+    #[test]
+    fn append_file_should_add_to_the_end_and_make_a_missing_file() {
+        let base = std::env::temp_dir().join(format!("opensw-append-{}", std::process::id()));
+        let log = base.join("opensw records").join("Change log.txt").to_string_lossy().into_owned();
+        append_file(&log, b"first\r\n".to_vec()).unwrap();
+        append_file(&log, b"second\r\n".to_vec()).unwrap();
+        assert_eq!(std::fs::read_to_string(&log).unwrap(), "first\r\nsecond\r\n");
+        std::fs::remove_dir_all(&base).unwrap();
+    }
+
+    #[test]
+    fn copy_named_files_should_not_take_pictures_named_in_a_frame_or_without_their_ending() {
+        // Pictures are found by the editor, which knows where 5.x keeps them and which endings a
+        // picture can have (projects.js locate). Here only whole {names} that are files are
+        // copied: the file name inside a \FRAME's \special is not one (it stands among other
+        // words), and figs/plot is no file without its .pdf.
+        let base = std::env::temp_dir().join(format!("opensw-pictures-{}", std::process::id()));
+        let (from, to) = (base.join("doc"), base.join("project"));
+        std::fs::create_dir_all(from.join("graphics")).unwrap();
+        std::fs::create_dir_all(from.join("figs")).unwrap();
+        std::fs::create_dir_all(&to).unwrap();
+        std::fs::write(from.join("graphics").join("subpic.png"), "png").unwrap();
+        std::fs::write(from.join("figs").join("plot.pdf"), "pdf").unwrap();
+        std::fs::write(from.join("figs").join("whole.png"), "png").unwrap();
+        std::fs::write(from.join("ch1.tex"), "\\FRAME{dtbpF}{1in}{1in}{0pt}{}{}{subpic.png}{\\special{language \"Scientific Word\";type \"GRAPHIC\";filename 'graphics/subpic.png';}} \\includegraphics{figs/plot} \\includegraphics[width=2in]{figs/whole.png}").unwrap();
+        let mut copied = copy_named_files("\\input{ch1}", &from, &to, false);
+        copied.sort();
+        assert_eq!(copied, vec!["ch1.tex", "figs/whole.png"]);
+        assert!(!to.join("graphics").exists() && !to.join("figs").join("plot.pdf").exists());
         std::fs::remove_dir_all(&base).unwrap();
     }
 

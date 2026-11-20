@@ -16,7 +16,7 @@ print("@@OPENSW@@ready", flush=True)
 for line in sys.stdin:
     op, _, data = line.strip().partition(" ")
     answer = compute(op, base64.b64decode(data).decode("utf-8"))
-    if op == "version":  # Tools > Computation Engine: which Python it is, too (not the one in Pyodide)
+    if op == "version":  # Tools > Engine Setup: which Python it is, too (not the one in Pyodide)
         answer = json.loads(answer)
         answer["solutions"].append("Python " + platform.python_version())
         answer = json.dumps(answer)

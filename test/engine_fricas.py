@@ -23,8 +23,8 @@ def check(name, ok, got=""):
         fails.append(name)
 
 
-def integral(body, var):
-    return ["Integrate", ["Function", ["Block", body], var], ["Limits", var, "Nothing", "Nothing"]]
+def integral(body, var, a="Nothing", b="Nothing"):
+    return ["Integrate", ["Function", ["Block", body], var], ["Limits", var, a, b]]
 
 
 def latex(op, j):
@@ -77,7 +77,7 @@ for bad in ("integral(zv1^zv1,zv1::Symbol)", "[atan(zv1),log(zv1)]", "rootOf((%%
 
 # 3. the answers, checked by differentiating
 r = fr.integral(sp.sqrt(1 + sp.sin(x)), x)
-check("integral", r is not None and not r.has(sp.Integral) and g.same_function(sp.diff(r, x), sp.sqrt(1 + sp.sin(x))), r)
+check("integral", r is not None and not r.has(sp.Integral) and g.same_derivative(r, sp.sqrt(1 + sp.sin(x)), x), r)
 check("integral with pi and a letter", fr.integral(sp.pi * a * sp.exp(-x), x) == -sp.pi * a * sp.exp(-x))
 check("an integral FriCAS does not find", fr.integral(x ** x, x) is None)
 check("an answer for each sign of a letter is not taken", fr.integral(1 / (x ** 2 + a), x) is None)
@@ -111,6 +111,65 @@ check("compute(): Integrate has it too", r"\int" in off[3] and on[3] == on[2], (
 by_fricas = fr.integral(sp.sqrt(x + sp.sqrt(1 + x ** 2)), x)
 check("compute(): FriCAS is asked before SymPy (its answer has no gamma function, SymPy's has)",
       by_fricas is not None and r"\Gamma" not in on[4] and r"\int" not in on[4] and r"\Gamma" in off[4], (on[4], off[4]))
+# an antiderivative right on part of the line only is not taken: FriCAS's x^2/2 + x for
+# sqrt(x^2 + 2x + 1) = |x + 1| is right only for x > -1 (both old check points were there)
+from opensw_compute import evaluate  # noqa: E402
+ROOT_SQUARE = sp.sqrt(x ** 2 + 2 * x + 1)
+part = evaluate(sp.Integral(ROOT_SQUARE, x))
+right_below = [sp.N((sp.diff(part, x) - ROOT_SQUARE).subs(x, v)) for v in (sp.Rational(-7, 4), -3)]
+check("an antiderivative right only for x > -1 is not FriCAS's answer", fr.integral(ROOT_SQUARE, x) is None, fr.integral(ROOT_SQUARE, x))
+check("Evaluate's antiderivative of sqrt(x^2 + 2x + 1) is right for x < -1 too", all(abs(d) < 1e-12 for d in right_below), (part, right_below))
+
+
+# A step requires derivative equality and exact equality using SymPy's primitive alone.
+# FriCAS's primitive cannot turn an unresolved SymPy integral or a constant offset into equal.
+def step(right):
+    j = ["Subtract", integral(ROOT_OF_SINE, "x"), right]
+    return json.loads(compute("stepcheck", json.dumps({"expr": j, "params": [0]}))).get("result")
+
+
+ANTIDERIVATIVE = ["Divide", ["Multiply", -2, ["Cos", "x"]], ["Sqrt", ["Add", 1, ["Sin", "x"]]]]
+steps_on = [step(ANTIDERIVATIVE), step(["Multiply", 2, ANTIDERIVATIVE]), step(["Add", ANTIDERIVATIVE, 1])]
+fr.WORKER.off = True
+steps_off = step(ANTIDERIVATIVE)
+fr.WORKER.off = False
+check("stepcheck: a primitive only FriCAS finds stays unknown with or without FriCAS", steps_on[0] == "unknown" and steps_off == "unknown", (steps_on, steps_off))
+check("stepcheck: a wrong antiderivative is notequal", steps_on[1] == "notequal", steps_on)
+check("stepcheck: one off by a constant is unknown", steps_on[2] == "unknown", steps_on)
+
+
+# with an indefinite integral, notequal is decided by the derivatives of the two sides at a point
+# (an antiderivative may be off by a constant on each interval): formulas as SymPy expressions here
+def step_of(integrand, right):
+    return compute_step(sp.Integral(integrand, x) - right)
+
+
+def compute_step(e):
+    from opensw_compute import step_check
+    return step_check(e, sp.S(0))
+
+
+R3 = sp.sqrt(3)
+COS = 1 / (2 + sp.cos(x))  # continuous antiderivative x/sqrt 3 - 2/sqrt 3 atan(sin x/(2 + sqrt 3 + cos x)) + any constant
+ok_step = step_of(COS, x / R3 - 2 / R3 * sp.atan(sp.sin(x) / (2 + R3 + sp.cos(x))) + 7)
+bad_step = step_of(COS, x / R3 + 2 / R3 * sp.atan(sp.sin(x) / (2 + R3 + sp.cos(x))))
+check("stepcheck: a right antiderivative of another form, off by a constant, is unknown", ok_step["result"] == "unknown", ok_step)
+check("stepcheck: a wrong one is notequal, with the derivatives at the point", bad_step["result"] == "notequal" and bad_step.get("point") == r"x=\frac{1}{3}"
+      and r"\int" not in "".join(bad_step["values"]) and bad_step["values"][1] == "0", bad_step)
+# FriCAS's antiderivative of sqrt(x^2 + 2x + 1) is x^2/2 + x, right only for x > -1 (no longer
+# taken, see above; it was at the time of this test): the step is judged by the derivative of the
+# sides as written, so an antiderivative found by an engine does not decide it
+by_sides = [step_of(ROOT_SQUARE, (x + 1) * sp.sqrt((x + 1) ** 2) / 2 + 3), step_of(ROOT_SQUARE, (x + 1) * sp.sqrt((x + 1) ** 2))]
+check("stepcheck: an antiderivative right everywhere with a constant offset is unknown; twice it is notequal",
+      [r["result"] for r in by_sides] == ["unknown", "notequal"], by_sides)
+nobody = compute_step(sp.Integral(x ** x, x) - x ** x)
+check("stepcheck: an integral nobody finds, with a wrong right side: notequal by the derivative", nobody["result"] == "notequal", nobody)
+
+# a definite integral with a pole inside and no antiderivative: kept at once (SymPy took 15 s to give up)
+t = time.perf_counter()
+pole = latex("evaluate", integral(["Divide", ["Add", ["Cos", "x"], 2], ["Power", ["Subtract", "x", ["Cos", "x"]], 2]], "x", 0, 2))
+took = time.perf_counter() - t
+check("a divergent integral nobody can do is kept, quickly", r"\int" in pole and took < 5, (pole, took))
 
 # 5. no answer in time: the integral stays, and the next question has a new process
 limit, fr.TIME_LIMIT = fr.TIME_LIMIT, 0.5

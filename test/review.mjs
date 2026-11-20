@@ -4,6 +4,7 @@
 // errors in plain words with their block, and the derivation check.  node test/review.mjs
 // (needs `npx vite preview --port 4173`)
 import { chromium } from 'playwright';
+import { standIn, ROOT, inProject } from './lib/desktop.mjs';
 const file = ['%2multibyte Version: 5.50.0.2960 CodePage: 950', '\\documentclass{article}', '%TCIDATA{OutputFilter=LATEX.DLL}',
   '\\input{tcilatex}', '\\begin{document}', '', 'First   paragraph,  odd spacing. % a comment', '', 'Second paragraph with $x^{2}$.', '',
   '\\begin{eqnarray*}', 'f(x) &=&(x+1)^{2} \\\\', '&=&x^{2}+2x+1 \\\\', '&=&x^{2}+1', '\\end{eqnarray*}', '',
@@ -11,20 +12,10 @@ const file = ['%2multibyte Version: 5.50.0.2960 CodePage: 950', '\\documentclass
 const b = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium-1243/chrome-linux64/chrome' });
 const page = await b.newPage();
 const errs = []; page.on('pageerror', (e) => errs.push(e.message));
-await page.addInitScript((text) => {
-  const files = new Map([['C:\\Teacher\\R.tex', Array.from(new TextEncoder().encode(text))]]);
-  window.shell = { writes: [] };
-  localStorage.setItem('opensw-settings', JSON.stringify({ aiFolders: ['C:\\Teacher'] }));
-  window.__TAURI_INTERNALS__ = {
-    transformCallback: () => 0,
-    invoke: async (cmd, args) => {
-      if (cmd === 'read_file') { if (files.has(args.path)) return files.get(args.path); throw new Error('no such file'); }
-      if (cmd === 'write_file') { window.shell.writes.push({ path: args.path, data: args.data }); files.set(args.path, args.data); return null; }
-      if (cmd === 'typeset') return { pdf: 'C:\\cache\\R.pdf', errors: ['Undefined control sequence. (l.30 Fourth paragraph \\badmacro)', 'Missing $ inserted. [3 times] (l.9 a_b)', 'The font "Noto Serif CJK TC" is not installed on this computer; the default font is used instead.'] };
-      return null;
-    },
-  };
-}, file);
+// (the document is in a project folder: it is opened and saved as it is)
+const FILE = ROOT + '\\Teacher\\R.tex';
+await standIn(page, { files: { [FILE]: file, ...inProject(ROOT + '\\Teacher', 'R.tex') } });
+await page.addInitScript(() => { window.shell.on.typeset = () => ({ pdf: 'C:\\cache\\R.pdf', errors: ['Undefined control sequence. (l.30 Fourth paragraph \\badmacro)', 'Missing $ inserted. [3 times] (l.9 a_b)', 'The font "Noto Serif CJK TC" is not installed on this computer; the default font is used instead.'] }); });
 await page.goto(`http://localhost:${process.env.OPENSW_PORT || 4173}/?lang=en`); await page.waitForTimeout(800);
 let fails = 0;
 const check = (name, ok, detail) => { if (!ok) fails++; console.log(ok ? 'ok  ' : 'FAIL', name, ok ? '' : JSON.stringify(detail ?? '').slice(0, 300)); };
@@ -32,7 +23,7 @@ const call = (cmd, args) => page.evaluate(([c, a]) => window.sw.call(c, a), [cmd
 const visible = (sel) => page.evaluate((s) => { const e = document.querySelector(s); return !!e && !e.hidden && e.offsetParent !== null; }, sel);
 const count = (sel) => page.locator(sel).count();
 
-await call('open', { path: 'C:\\Teacher\\R.tex' });
+await call('open', { path: FILE });
 await page.waitForTimeout(300);
 check('closed at first: the screen is as before', !(await visible('#rv-left')) && !(await visible('#rv-tabs')) && (await count('.rv-changed')) === 0);
 
@@ -87,7 +78,7 @@ check('... sqrt(x^2) = x is not equal (x < 0)', steps.some((s) => /Not equal/.te
 
 // saving is not changed by the panel: only edited parts written again
 await call('save');
-const saved = await page.evaluate(() => new TextDecoder().decode(new Uint8Array(window.shell.writes.at(-1).data)));
+const saved = await page.evaluate((path) => new TextDecoder().decode(new Uint8Array(window.shell.files.get(path))), FILE);
 check('saving: the untouched paragraph and comment as in the file', /First   paragraph,  odd spacing\. % a comment\r\n/.test(saved) && /Mine\./.test(saved), saved.slice(0, 400));
 
 await page.keyboard.press('Control+Shift+D'); await page.waitForTimeout(300);

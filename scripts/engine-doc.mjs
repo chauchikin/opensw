@@ -71,7 +71,7 @@ const OPS = {
   define: ['F', 'value', '定義 > 新定義（x = 3、f(x) = x^2）', 'Definitions > New Definition (x = 3, f(x) = x^2)'],
   showdefs: ['F', 'solutions', '定義 > 顯示定義', 'Definitions > Show Definitions'],
   cleardefs: ['F', 'solutions', '定義 > 清除定義', 'Definitions > Clear Definitions'],
-  version: ['F', 'solutions', '工具 > 計算引擎：顯示版本', 'Tools > Computation Engine: the version'],
+  version: ['F', 'solutions', '工具 > 計算引擎：顯示版本', 'Tools > Engine Setup: the version'],
   plot: ['{expr, var, a, b, n}', 'points', '畫圖 2D：y = f(x) 的點', 'Plot 2D: points of y = f(x)'],
   plot3d: ['{expr, vars, a, b, c, d, n, m}', 'grid', '畫圖 3D：z = f(x, y) 的格點', 'Plot 3D: z = f(x, y) on a grid'],
   plotn: ['{exprs, vars, ranges, ns, grad, complex}', 'values', '畫圖：多個公式在格點上的值（等高線、向量場、複數）', 'Plots: several formulas on a grid (contours, fields, complex)'],

@@ -1,4 +1,4 @@
-// Tools > Computation Engine in the desktop app, with a stand-in for the desktop shell and an
+// Tools > Engine Setup in the desktop app, with a stand-in for the desktop shell and an
 // engine on the computer (Mathematica): the Compute menu goes to engine_compute (base64
 // MathJSON in, base64 JSON out), plots too, an operation the engine leaves to SymPy
 // ({fallback: true}) goes to SymPy, definitions reach both, an engine started again gets
@@ -32,7 +32,7 @@ await page.addInitScript(() => {
     invoke: async (cmd, args) => {
       if (cmd === 'engine_list') return [{ id: 'mathematica', name: 'Mathematica', example: 'C:\\W\\14.3\\wolfram.exe' }];
       if (cmd !== 'engine_compute') return null;
-      if (args.engine === 'python') throw 'Cannot find SymPy (C:\\opensw\\engine\\python\\python.exe): program not found. Its location can be set in Tools > Computation Engine';
+      if (args.engine === 'python') throw 'Cannot find SymPy (C:\\opensw\\engine\\python\\python.exe): program not found. Its location can be set in Tools > Engine Setup';
       const json = dec(args.data);
       window.engineCalls.push({ engine: args.engine, program: args.program, op: args.op, json });
       window.lastJson = json;
@@ -109,7 +109,7 @@ await page.evaluate(() => { localStorage.setItem('opensw-settings', JSON.stringi
 const before = (await calls()).length;
 r = await call('compute', { latex: 'x^2-1', op: 'factor' });
 check('SymPy chosen: Mathematica not asked', r.ok && (await calls()).length === before && r.result.latex.includes('x - 1'), r);
-// Tools > Computation Engine: the engines on the computer are listed; choose Mathematica and
+// Tools > Engine Setup: the engines on the computer are listed; choose Mathematica and
 // its program; it then shows the version
 await page.click('.menu-top:has-text("工具")');
 await page.locator('.menu-list button:has(> span:text-is("計算引擎…"))').filter({ visible: true }).first().click();
@@ -120,6 +120,24 @@ await page.waitForTimeout(500);
 const saved = await page.evaluate(() => JSON.parse(localStorage.getItem('opensw-settings')));
 c = (await calls()).at(-1);
 check('the dialog saves the choice and asks Mathematica for its version', saved.engine === 'mathematica' && saved.enginePrograms.mathematica === 'D:\\M\\wolfram.exe' && c.op === 'version' && c.program === 'D:\\M\\wolfram.exe', { saved, c });
+// the engine command (AI, opensw-cli): reads the choice, and sets it as the dialog does
+r = await call('engine', {});
+check('engine: the choice, the engines that can be chosen and the version', r.ok && r.result.engine === 'mathematica'
+  && JSON.stringify(r.result.available.map((e) => e.id)) === '["sympy","mathematica"]' && r.result.versions[0] === 'Mathematica 14.3', r);
+r = await call('engine', { engine: 'sympy' });
+let kept = await page.evaluate(() => JSON.parse(localStorage.getItem('opensw-settings')));
+check('engine: sympy chosen, the program location kept', r.ok && r.result.engine === 'sympy' && kept.engine === 'sympy'
+  && kept.enginePrograms.mathematica === 'D:\\M\\wolfram.exe' && r.result.versions.some((v) => /^SymPy /.test(v)), { r, kept });
+n = (await calls()).length;
+await call('compute', { latex: 'x^2-1', op: 'factor' });
+check('engine: after choosing sympy Mathematica is not asked', (await calls()).length === n);
+r = await call('engine', { engine: 'python' });
+const r5 = await call('engine', { engine: 'maxima' });
+kept = await page.evaluate(() => JSON.parse(localStorage.getItem('opensw-settings')));
+check('engine: an id that is not offered is refused, and nothing changes', !r.ok && /No engine python/.test(r.error) && !r5.ok && kept.engine === 'sympy', { r, r5 });
+r = await call('engine', { engine: 'mathematica' });
+c = (await calls()).at(-1);
+check('engine: mathematica chosen, loaded with the program from the dialog', r.ok && r.result.engine === 'mathematica' && c.op === 'version' && c.program === 'D:\\M\\wolfram.exe', { r, c });
 console.log('page errors', errs);
 await b.close();
 console.log(fails ? fails + ' failed' : 'all passed');

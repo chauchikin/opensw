@@ -3,22 +3,56 @@
 import { invoke as tauriInvoke } from '@tauri-apps/api/core';
 import { open, save } from '@tauri-apps/plugin-dialog';
 import { _t, _tm } from './i18n.js';
+import { settings } from './settings.js';
+import { PROJECTS_FOLDER, joinPath } from './projects.js';
 
 // The Rust part's error messages are English; show them in the interface language.
 const invoke = (cmd, args) => tauriInvoke(cmd, args).catch((e) => { throw typeof e === 'string' ? _tm(e) : e; });
 
 export const isDesktop = '__TAURI_INTERNALS__' in window;
 
-// Tools > Computation Engine: the engines on this computer (engine/engines.json), and one
+// Tools > Engine Setup: the engines on this computer (engine/engines.json), and one
 // Compute-menu operation by one of them (src-tauri/src/engine.rs). json: the MathJSON text
 // -> { answer: the answer object (see ENGINE.md), started: the engine's program was (re)started }
 const toBase64 = (text) => { let s = ''; for (const b of new TextEncoder().encode(text)) s += String.fromCharCode(b); return btoa(s); };
 const fromBase64 = (b64) => new TextDecoder().decode(Uint8Array.from(atob(b64), (c) => c.charCodeAt(0)));
 export const engineList = () => invoke('engine_list');
 
-// The folder AI may always open and save in without asking (besides the open document's and the
-// ones allowed in Tools > User Setup): Documents\\opensw. So a new document an AI writes can be
-// saved when nobody is at the computer. null when it cannot be found.
+// The projects folder (projects.js): where the documents the editor works on are kept, each in a
+// folder of its own. The folder set in Tools > User Setup, else "opensw projects" on the Desktop,
+// else (no Desktop on this computer, or one that cannot be written) in Documents; never in the
+// program's own folder. It is made the first time it is needed (make = true: an import, a
+// save). Asked without making it, the answer is the one that was made, in this session or an
+// earlier one (the first of the places that is there), so that the documents kept in Documents
+// are found there the next day too. AI may open and save there without asking. null when no
+// place for it can be found.
+let rootFolders; // where it can be by default, the best first
+let rootMade = null; // the one of them that was made, or found there
+export async function projectsRoot(make = false) {
+  const own = settings().projectsFolder;
+  if (own) { if (make) await invoke('make_folder', { path: own }); return own; }
+  if (!rootFolders) {
+    const { desktopDir, documentDir } = await import('@tauri-apps/api/path');
+    rootFolders = [];
+    for (const dir of [desktopDir, documentDir]) {
+      try { const d = await dir(); if (d) rootFolders.push(joinPath(d, PROJECTS_FOLDER)); } catch (e) { /* this computer has no such folder */ }
+    }
+  }
+  if (!rootMade) {
+    for (const folder of rootFolders) {
+      if (await invoke('folder_exists', { path: folder }).catch(() => false)) { rootMade = folder; break; }
+    }
+  }
+  if (!make) return rootMade || rootFolders[0] || null;
+  let failed = null;
+  for (const folder of [...new Set([rootMade, ...rootFolders])].filter(Boolean)) {
+    try { await invoke('make_folder', { path: folder }); rootMade = folder; return folder; } catch (e) { failed = e; }
+  }
+  if (failed) throw failed;
+  return null;
+}
+// Documents\\opensw: where opensw 0.11.0 and before let AI save without asking. AI may still open
+// the documents written there. null when it cannot be found.
 let aiHomeFolder;
 export async function aiHome() {
   if (aiHomeFolder === undefined) {
@@ -28,6 +62,19 @@ export async function aiHome() {
     } catch (e) { aiHomeFolder = null; }
   }
   return aiHomeFolder;
+}
+// The files of the projects (projects.js is given these): a folder's entries [{ name, dir }],
+// making a folder (fresh: an error when it is there already), bytes added to the end of a file,
+// copying one file (never over another), the files a TeX text names copied from its folder into
+// another (-> their names), and a file shown in its folder (Explorer)
+export const listFolder = (path) => invoke('list_folder', { path });
+export const makeFolder = (path, fresh = false) => invoke('make_folder', { path, fresh });
+export const appendBytes = (bytes, path) => invoke('append_file', { path, data: Array.from(bytes) });
+export const copyFile = (from, to) => invoke('copy_file', { from, to });
+export const copyNamed = (tex, from, to) => invoke('copy_named', { tex, from, to });
+export async function showInFolder(path) {
+  const { revealItemInDir } = await import('@tauri-apps/plugin-opener');
+  await revealItemInDir(path);
 }
 
 // Tools > Connect AI (src-tauri/src/aiconnect.rs): the AI apps on this computer, and adding opensw to one
@@ -58,6 +105,10 @@ export async function writeBytes(bytes, path, defaultName, filters = SCI) {
   await invoke('write_file', { path: target, data: Array.from(bytes) });
   return target;
 }
+
+// where a file or folder really is on the disk (links and junctions followed, a mapped drive as
+// its server's name); of a file that is not there yet, by the folder above it that is
+export const realPath = (path) => invoke('real_path', { path });
 
 // asks where to save (nothing is written) -> the path, or null when cancelled
 export const pickSavePath = (defaultName, filters = SCI) => save({ defaultPath: defaultName, filters });
@@ -90,18 +141,19 @@ export async function onCloseWindow(handler) {
 }
 
 // Before a file is overwritten its old version is kept as name.bak (as 5.5 does)
+export const bakOf = (path) => path.replace(/\.[^.\\/]*$/, '') + '.bak';
 export async function backupFile(path) {
   let old;
   try { old = await invoke('read_file', { path }); } catch (e) { return; } // a new file
-  await invoke('write_file', { path: path.replace(/\.[^.\\/]*$/, '') + '.bak', data: old });
+  await invoke('write_file', { path: bakOf(path), data: old });
 }
 
-// AI agents' commands arrive from the desktop shell (remote.rs) and go to handler(cmd, args)
+// AI agents' commands arrive from the desktop shell (remote.rs) and go to handler(cmd, args, client)
 export async function serveApi(handler) {
   const { listen } = await import('@tauri-apps/api/event');
   await listen('sw-api', async (e) => {
-    const { id, cmd, args } = e.payload;
-    const reply = await handler(cmd, args);
+    const { id, cmd, args, client } = e.payload; // client: the AI app's name, when it gave one
+    const reply = await handler(cmd, args, client);
     await invoke('api_reply', { id, reply: JSON.stringify(reply) });
   });
   await invoke('api_ready');

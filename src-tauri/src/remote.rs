@@ -103,7 +103,7 @@ fn handle(app: &AppHandle, stream: TcpStream, token: &str) -> Result<(), String>
         return respond(&mut out, 403, r#"{"ok":false,"error":"wrong token"}"#);
     }
     let req: serde_json::Value = serde_json::from_str(&body).map_err(|e| e.to_string())?;
-    let reply = run_in_page(app, &req["cmd"], &req["args"]);
+    let reply = run_in_page(app, &req["cmd"], &req["args"], &req["client"]);
     respond(&mut out, 200, &reply)?;
     // end the connection now: the caller reads to the end, and a program the command started
     // (the Mathematica kernel keeps running) may hold a copy of this socket, which would
@@ -111,12 +111,13 @@ fn handle(app: &AppHandle, stream: TcpStream, token: &str) -> Result<(), String>
     out.shutdown(std::net::Shutdown::Both).map_err(|e| e.to_string())
 }
 
-fn run_in_page(app: &AppHandle, cmd: &serde_json::Value, args: &serde_json::Value) -> String {
+/// client: the AI app's name (mcp.rs), or null
+fn run_in_page(app: &AppHandle, cmd: &serde_json::Value, args: &serde_json::Value, client: &serde_json::Value) -> String {
     let state = app.state::<Pending>();
     let id = state.next.fetch_add(1, Ordering::Relaxed);
     let (tx, rx) = mpsc::channel();
     state.waiting.lock().unwrap_or_else(|e| e.into_inner()).insert(id, tx);
-    if let Err(e) = app.emit("sw-api", serde_json::json!({ "id": id, "cmd": cmd, "args": args })) {
+    if let Err(e) = app.emit("sw-api", serde_json::json!({ "id": id, "cmd": cmd, "args": args, "client": client })) {
         state.waiting.lock().unwrap_or_else(|e| e.into_inner()).remove(&id);
         return serde_json::json!({ "ok": false, "error": e.to_string() }).to_string();
     }

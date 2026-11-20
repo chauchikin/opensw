@@ -9,9 +9,17 @@ Compute menu.  The answer is LaTeX, shown after the formula.
 
 import json
 import re
+import sys
 
 import sympy as sp
 from sympy.printing.latex import LatexPrinter
+
+# Python refuses to turn an integer of more than 4300 digits into text, or text into one
+# (a guard for web servers), so 2000! or 2^20000 was an error. Here that limit only gets in the
+# way: lifted for this process, which is the one running SymPy (and reading the answers of Giac
+# and FriCAS) in the desktop app and in Pyodide alike.
+if hasattr(sys, "set_int_max_str_digits"):
+    sys.set_int_max_str_digits(0)
 
 try:  # Giac as a faster first try for integrals, series and determinants (see opensw_giac.py)
     import opensw_giac
@@ -29,6 +37,13 @@ def integrate(f, x):
     if r is None and opensw_fricas:
         r = opensw_fricas.integral(f, x)
     return sp.integrate(f, x) if r is None else r
+
+
+def integrals_done(e):
+    """e.doit(), its integrals asked of Giac first, then FriCAS, as Compute > Evaluate does."""
+    r = opensw_giac.integrals(e) if opensw_giac else e
+    r = opensw_fricas.integrals(r) if opensw_fricas else r
+    return r.doit()
 
 
 def det(m):
@@ -745,9 +760,14 @@ def diverges_inside(n):
 
 def kept_divergent(e):
     """The definite integrals that diverge inside: kept (5.5), unless SymPy finds them infinite or
-    undefined too (a finite value would be wrong; a number by quadrature too)."""
-    return e.replace(lambda n: isinstance(n, sp.Integral) and not isinstance(n, KeptIntegral) and diverges_inside(n)
-                     and n.doit() not in (sp.oo, -sp.oo, sp.zoo, sp.nan), lambda n: KeptIntegral(*n.args))
+    undefined too (a finite value would be wrong; a number by quadrature too). SymPy is not asked
+    when FriCAS finds no antiderivative: SymPy would not find one either, after seconds of trying
+    (15 s for the integral of (2 + cos x)/(x - cos x)^2 from 0 to 2), and keep the integral."""
+    def kept(n):
+        return (isinstance(n, sp.Integral) and not isinstance(n, KeptIntegral) and diverges_inside(n)
+                and ((opensw_fricas and opensw_fricas.no_antiderivative(n.function, n.limits[0][0]))
+                     or n.doit() not in (sp.oo, -sp.oo, sp.zoo, sp.nan)))
+    return e.replace(kept, lambda n: KeptIntegral(*n.args))
 
 
 def piecewise_rows(args):
@@ -1264,9 +1284,14 @@ def antiderivative(e, r):
     c ln(2x - 2) as c ln(x - 1) (an antiderivative too: they differ by a constant)."""
     if not (isinstance(e, sp.Integral) and all(len(l) == 1 for l in e.limits)) or e.has(sp.Piecewise):
         return r
-    if isinstance(r, sp.Piecewise) and r.args[-1].cond == sp.true:
-        r = r.args[-1].expr
     xs = {l[0] for l in e.limits}
+    # Only discard parameter equalities describing exceptional cases. A Ne(a, 0) branch
+    # can be the general case and its final True branch the special a=0 case (P19).
+    if (isinstance(r, sp.Piecewise) and r.args[-1].cond == sp.true
+            and all(not branch.cond.has(*xs)
+                    and all(isinstance(c, sp.Equality) for c in sp.And.make_args(branch.cond))
+                    for branch in r.args[:-1])):
+        r = r.args[-1].expr
 
     def term(t):
         k, rest = t.as_independent(*xs, as_Add=False)
@@ -1657,32 +1682,133 @@ def check_equality(e):
     return sp.simplify(e.lhs - e.rhs) == 0
 
 
+def exact_indefinite_step_result(a, b):
+    """After derivative equality, require zero difference using only SymPy's primitives.
+    A constant offset or an unresolved integral is unknown, never a counterexample.
+    Do not use evaluated(), integrals_done() or antiderivative() normalization here.
+    """
+    try:
+        sa, sb = (side.doit() for side in (a, b))
+        if not (sa.has(sp.Integral) or sb.has(sp.Integral)) and sp.simplify(sa-sb) == 0:
+            return {"result": "equal"}
+    except Exception:
+        pass  # SymPy could not establish a primitive or the zero difference.
+    return {"result": "unknown"}
+
+
+def legal_step_value(s, value):
+    """A numerical counterexample must respect both symbol assumptions and RANGES."""
+    for prop in ("positive", "negative", "nonnegative", "nonpositive", "nonzero", "real", "integer", "imaginary", "even", "odd"):
+        if getattr(s, "is_" + prop) is True and getattr(value, "is_" + prop) is not True:
+            return False
+    if s.name in RANGES:
+        re_, im_ = RANGES[s.name]
+        if re_.contains(sp.re(value)) is not sp.S.true:
+            return False
+        if im_ is None:
+            return value.is_real is True
+        if im_.contains(sp.im(value)) is not sp.S.true:
+            return False
+    return True
+
+
+def step_values(s):
+    values = [sp.Rational(1, 3), sp.Rational(-3, 5), sp.Rational(2, 7), sp.Rational(5, 2),
+              sp.Rational(-7, 4), sp.Rational(11, 13), sp.S(2), sp.S(-2), sp.S(3), sp.S(-3)]
+    if s.name in RANGES:
+        def in_set(domain):
+            out = []
+            for part in sp.Union.make_args(domain):
+                if isinstance(part, sp.FiniteSet):
+                    out.extend(sorted(part, key=sp.default_sort_key))
+                elif isinstance(part, sp.Interval):
+                    lo, hi = part.start, part.end
+                    if lo.is_finite and hi.is_finite:
+                        out.extend(lo + (hi-lo)*t for t in (sp.Rational(1,3), sp.Rational(2,3)))
+                        out.extend([sp.ceiling(lo), sp.floor(hi)])
+                    elif lo.is_finite:
+                        out.extend([lo+1, lo+2])
+                    elif hi.is_finite:
+                        out.extend([hi-1, hi-2])
+            return out
+        re_, im_ = RANGES[s.name]
+        real_values = values + in_set(re_)
+        values = real_values if im_ is None else [r+sp.I*i for r in real_values for i in [sp.S.Zero]+in_set(im_)]
+    return list(dict.fromkeys(v for v in values if legal_step_value(s, v)))
+
+
+def indefinite_step_check(a, b, variables):
+    """Prove derivative equality first, then exact equality with SymPy alone."""
+    if len(variables) != 1 or is_matrix(a) or is_matrix(b):
+        return {"result": "unknown"}
+    # Differentiation must not erase an undefined "constant" definite integral (P33b).
+    # Reuse the existing pole screen, without asking any antiderivative backend.
+    if any(isinstance(n, sp.Integral) and any(len(l) > 1 for l in n.limits) and diverges_inside(n)
+           for side in (a, b) for n in sp.preorder_traversal(side)):
+        return {"result": "unknown"}
+    v = next(iter(variables))
+    pa, pb = (sp.diff(side, v) for side in (a, b))
+    # Products with integrals and repeated integrals retain an arbitrary function/constant.
+    # Do not simplify or doit() them: that would silently choose an antiderivative again.
+    if pa.has(sp.Integral) or pb.has(sp.Integral):
+        return {"result": "unknown"}
+    if sp.simplify(pa-pb) == 0:
+        return exact_indefinite_step_result(a, b)
+    xs = sorted(pa.free_symbols | pb.free_symbols, key=str)
+    choices = [step_values(s) for s in xs]
+    if any(not row for row in choices):
+        return {"result": "unknown"}
+    for k in range(max([len(row) for row in choices], default=1)):
+        point = {s: row[(k+i) % len(row)] for i, (s, row) in enumerate(zip(xs, choices))}
+        try:
+            va, vb = (side.subs(point).doit() for side in (pa, pb))
+        except Exception:  # no value at this point (a division by 0 ..): no evidence
+            continue
+        if not (va.is_number and vb.is_number and va.is_finite is True and vb.is_finite is True):
+            continue
+        d = sp.simplify(va-vb)
+        far = (abs(complex(sp.N(d))) > 1e-9 * max(1.0, abs(complex(sp.N(va))), abs(complex(sp.N(vb))))) if d.has(sp.Float) else d.is_zero is False
+        if far:
+            return {"result": "notequal", "point": ", ".join(f"{tex(s)}={tex(t)}" for s, t in point.items()),
+                    "values": [tex(va), tex(vb)]}
+    return {"result": "unknown"}
+
+
 def step_check(a, b):
     """One step a = b of a derivation (Changes and errors panel): "equal" when a - b simplifies to 0
     (proved for every value of the letters, complex ones included: sqrt(x^2) = x is not), "notequal"
     with a point where the two have different values (exact numbers put in for the letters),
-    "unknown" when neither is found (then nothing is said to be wrong)."""
-    a, b = (x.doit() if hasattr(x, "doit") else x for x in (a, b))
+    "unknown" when neither is found. With indefinite integrals, equal requires both symbolic
+    derivative equality and zero difference using SymPy's own primitives. Constant offsets,
+    unproved derivative equality and residual integrals mean unknown; a legal finite derivative
+    counterexample means notequal. Definite integrals keep the usual path."""
+    indefinite = {l[0] for x in (a, b) if isinstance(x, sp.Basic) for n in sp.preorder_traversal(x)
+                  if isinstance(n, sp.Integral) for l in n.limits if len(l) == 1}
+    if indefinite:
+        return indefinite_step_check(a, b, indefinite)
+    a, b = (integrals_done(x) if hasattr(x, "doit") else x for x in (a, b))
     if is_matrix(a) or is_matrix(b):
         same = is_matrix(a) and is_matrix(b) and a.shape == b.shape and all(sp.simplify(x) == 0 for x in (a - b))
         return {"result": "equal" if same else "unknown"}
     if sp.simplify(a - b) == 0:
         return {"result": "equal"}
+    pairs = [(a, b)]
     xs = sorted((a - b).free_symbols, key=str)
     values = [sp.Rational(1, 3), sp.Rational(-3, 5), sp.Rational(2, 7), sp.Rational(5, 2), sp.Rational(-7, 4), sp.Rational(11, 13)]
     for k in range(len(values)):
         point = {x: values[(k + i) % len(values)] for i, x in enumerate(xs)}
-        va, vb = a.subs(point).doit(), b.subs(point).doit()
-        if not (va.is_number and vb.is_number) or any(v.has(sp.zoo, sp.nan, sp.oo, -sp.oo) for v in (va, vb)):
-            continue
-        d = sp.simplify(va - vb)
-        if d.has(sp.Float):  # decimals in the formula: different beyond rounding
-            far = abs(complex(sp.N(d))) > 1e-9 * max(1.0, abs(complex(sp.N(va))))
-        else:
-            far = d.is_zero is False
-        if far:
-            return {"result": "notequal", "point": ", ".join(f"{tex(x)}={tex(v)}" for x, v in point.items()),
-                    "values": [tex(va), tex(vb)]}
+        for pa, pb in pairs:
+            va, vb = pa.subs(point).doit(), pb.subs(point).doit()
+            if not (va.is_number and vb.is_number) or any(v.has(sp.zoo, sp.nan, sp.oo, -sp.oo) for v in (va, vb)):
+                continue
+            d = sp.simplify(va - vb)
+            if d.has(sp.Float):  # decimals in the formula: different beyond rounding
+                far = abs(complex(sp.N(d))) > 1e-9 * max(1.0, abs(complex(sp.N(va))))
+            else:
+                far = d.is_zero is False
+            if far:
+                return {"result": "notequal", "point": ", ".join(f"{tex(x)}={tex(v)}" for x, v in point.items()),
+                        "values": [tex(va), tex(vb)]}
     return {"result": "unknown"}
 
 

@@ -23,6 +23,7 @@ import { ICONS } from './icons.js';
 import { setupTables } from './tables55.js';
 import { GREEK, SYMBOL_PREFIX, TEMPLATES, actionFor, HELP_ROWS, FKEYS, COMBINING, NEGATE, NEGATE_TEXT } from './keys55.js';
 import { _t, LANGUAGES } from './i18n.js';
+import { PROJECTS_FOLDER, RECORDS, samePath, inRecords } from './projects.js';
 import { ACTIONS55 } from './c55.js';
 import { plot55For, applyPlot55, frameOf } from './plot55.js';
 import { setupMenus55 } from './menus55.js';
@@ -187,6 +188,7 @@ export function setupUI(app) {
   function dialog(title, fields, onOk) {
     $('#dialog-title').textContent = title;
     $('#dialog-body').innerHTML = fields;
+    $('#dialog .panel > .panel-actions').hidden = false; // (a question with buttons of its own hides them: main.js ask)
     $('#dialog').hidden = false;
     $('#dialog-body').querySelector('input, select')?.focus();
     $('#dialog-cancel').onclick = () => { $('#dialog').hidden = true; view.focus(); };
@@ -1110,7 +1112,8 @@ export function setupUI(app) {
   function besideFiles() { // -> [[path as the document names it, full path]]
     const s = sepOf(app.path());
     return app.docFiles().filter((f) => f.found && !/^([a-zA-Z]:|[\\/])|(^|[\\/])\.\.([\\/]|$)/.test(f.path))
-      .map((f) => [f.path, folderOf(app.path()) + s + f.path.replace(/[\\/]/g, s)]);
+      .map((f) => [f.path, folderOf(app.path()) + s + f.path.replace(/[\\/]/g, s)])
+      .filter(([, path]) => !inRecords(path));
   }
   const fileChecks = (list) => list.map(([name], i) => `<label><input type="checkbox" class="d-dm" data-i="${i}" checked> ${escHtml(name)}</label><br>`).join('');
   const safely = (f) => (d) => f(d).catch((e) => app.toast(String(e.message || e)));
@@ -1119,18 +1122,33 @@ export function setupUI(app) {
     const dk = await import('./desktop.js');
     const to = await dk.pickFolder();
     if (!to) return;
+    if (inRecords(to)) {
+      app.toast(_t('{0} is in the records of a project (the folder "{1}"), which opensw keeps itself: a document cannot be saved there', to, RECORDS));
+      return;
+    }
     const list = besideFiles();
     dialog(_t('Copy to {0}', to), `<p>${_t('Copies the document as last saved: {0}', escHtml(fileName(app.path())))}</p>${list.length ? `<p>${_t('With these files:')}</p>${fileChecks(list)}` : ''}`, safely(async (d) => {
       const s = sepOf(to);
       const items = [[fileName(app.path()), app.path()], ...checkedFiles(d, list)].map(([name, from]) => [from, to + s + name.replace(/[\\/]/g, s)]);
+      const blocked = items.find(([, path]) => inRecords(path));
+      if (blocked) {
+        app.toast(_t('{0} is in the records of a project (the folder "{1}"), which opensw keeps itself: a document cannot be saved there', blocked[1], RECORDS));
+        return;
+      }
       const there = [];
       for (const [, t] of items) if (await dk.fileExists(t)) there.push(fileName(t));
+      // (one of them can be the original the document was imported from: the question says so,
+      // and the project's records get that it was written over)
+      const original = app.original?.();
+      const onto = !!original && items.some(([, t]) => samePath(t, original));
       const go = async () => {
         for (const [f, t] of items) await dk.writeBytes(await dk.readPath(f), t);
+        if (onto) app.originalWritten?.();
         app.toast(_t('Copied {0} files to {1}', items.length, to));
       };
       if (!there.length) { await go(); return; }
-      dialog(_t('Replace files?'), `<p>${_t('These are already there and will be replaced:')}</p><p>${there.map(escHtml).join('<br>')}</p>`, safely(go));
+      dialog(_t('Replace files?'), `<p>${_t('These are already there and will be replaced:')}</p><p>${there.map(escHtml).join('<br>')}</p>
+        ${onto ? `<p><b>${_t('{0} is the original this document was imported from. Replacing it puts the document as last saved in its place.', escHtml(original))}</b></p>` : ''}`, safely(go));
     }));
   }
   async function dmRename() {
@@ -1199,7 +1217,8 @@ export function setupUI(app) {
   // Tools > User Setup: editing, the start-up document, files, formulas
   async function userSetup() {
     const s = settings();
-    const aiHomeFolder = isDesktop ? await (await import('./desktop.js')).aiHome() : null;
+    // (the desktop app) where the documents are kept; AI may open and save there
+    const projects = (isDesktop ? await (await import('./desktop.js')).projectsRoot().catch(() => null) : null) || PROJECTS_FOLDER;
     const opt = (v, l, cur) => `<option value="${v}"${v === cur ? ' selected' : ''}>${l}</option>`;
     dialog(_t('User setup (this computer)'), `<p><b>${_t('Edit')}</b>　<label><input id="d-auto" type="checkbox"${s.autoSub ? ' checked' : ''}> ${_t('Automatic substitution in formulas')}</label></p>
       <p>${_t('Default matrix')} <input id="d-mr" size="2" value="${s.matrix[0]}"> ${_t('rows ×')} <input id="d-mc" size="2" value="${s.matrix[1]}"> ${_t('columns')}　
@@ -1207,15 +1226,29 @@ export function setupUI(app) {
       <p><b>${_t('Start document')}</b>　${_t('When the program opens')} <select id="d-start">${opt('last', _t('Continue the last document'), s.startup)}${opt('blank', _t('Blank document'), s.startup)}${opt('demo', _t('Getting started'), s.startup)}</select></p>
       <p><b>${_t('File')}</b>　<label><input id="d-bak" type="checkbox"${s.backup ? ' checked' : ''}> ${_t('Keep the old file as .bak before saving over it')}</label></p>
       <p><b>${_t('Math')}</b>　${_t('Formula color')} <select id="d-color">${opt('#c00000', _t('Red (5.5 default)'), s.mathColor)}${opt('#000000', _t('Black'), s.mathColor)}${opt('#1a4fa0', _t('Blue'), s.mathColor)}</select></p>
-      <p><b>AI</b>　${_t('Folders where AI may open and save files (separate them with a semicolon; the open document\'s folder and {0} are always allowed)', escHtml(aiHomeFolder || _t('Documents\\opensw')))}<br>
+      <p><b>AI</b>　${_t('Folders where AI may open files (separate them with a semicolon; the open document\'s folder and {0} are always allowed). AI saves only in {0}', escHtml(projects))}<br>
         <input id="d-aifolders" size="56" value="${escHtml(s.aiFolders.join('; '))}" placeholder="${_t('e.g. D:\\Papers; D:\\Notes')}"></p>
-      <p><b>${_t('Interface language')}</b>　<select id="d-lang">${opt('auto', _t('Same as the system'), s.lang)}${Object.entries(LANGUAGES).map(([v, l]) => opt(v, l, s.lang)).join('')}</select> ${_t('(takes effect when the program is opened again)')}</p>`, (d) => {
+      <p><b>${_t('Projects folder')}</b>　${_t('Every file you open is copied into a folder of its own there, and you work on the copy; the file you opened is not changed (desktop app)')}<br>
+        <input id="d-projects" style="width:100%;box-sizing:border-box" value="${escHtml(s.projectsFolder)}" placeholder="${escHtml(_t('Empty: the folder "{0}" on the Desktop', PROJECTS_FOLDER))}"><br>
+        ${_t('After saving, show the document in its folder')} <select id="d-showfolder">${opt('first', _t('At the first save, and at every Save As'), s.showFolderOnSave)}${opt('always', _t('Always'), s.showFolderOnSave)}${opt('never', _t('Never'), s.showFolderOnSave)}</select></p>
+      <p><b>${_t('Interface language')}</b>　<select id="d-lang">${opt('auto', _t('Same as the system'), s.lang)}${Object.entries(LANGUAGES).map(([v, l]) => opt(v, l, s.lang)).join('')}</select> ${_t('(takes effect when the program is opened again)')}</p>`, async (d) => {
       const n = (id) => Math.round(+d.querySelector(id).value);
       const sizes = [n('#d-mr'), n('#d-mc'), n('#d-tr'), n('#d-tc')];
       if (sizes.some((x) => !(x >= 1 && x <= 20))) { app.toast(_t('Matrix and table sizes must be 1 to 20')); return; }
+      // (a folder named without its drive would be made wherever the program happens to run)
+      const projectsFolder = d.querySelector('#d-projects').value.trim();
+      if (projectsFolder && !/^([a-zA-Z]:)?[\\/]/.test(projectsFolder)) { app.toast(_t('The projects folder must be a full path, such as D:\\opensw projects')); return; }
+      const dk = isDesktop ? await import('./desktop.js') : null;
+      const before = dk && await dk.projectsRoot().catch(() => null);
       saveSettings({ ...settings(), autoSub: d.querySelector('#d-auto').checked, matrix: sizes.slice(0, 2), table: sizes.slice(2),
         startup: d.querySelector('#d-start').value, backup: d.querySelector('#d-bak').checked, mathColor: d.querySelector('#d-color').value,
-        lang: d.querySelector('#d-lang').value, aiFolders: d.querySelector('#d-aifolders').value.split(';').map((f) => f.trim()).filter(Boolean) });
+        lang: d.querySelector('#d-lang').value, aiFolders: d.querySelector('#d-aifolders').value.split(';').map((f) => f.trim()).filter(Boolean),
+        projectsFolder, showFolderOnSave: d.querySelector('#d-showfolder').value });
+      const after = dk && await dk.projectsRoot().catch(() => null);
+      const past = settings().pastProjectsFolders;
+      if (before && (!after || !samePath(before, after)) && !past.some((p) => samePath(p, before))) {
+        saveSettings({ ...settings(), pastProjectsFolders: [...past, before] });
+      }
       if (!lastMatrix) [$('#matrix-rows').value, $('#matrix-cols').value] = sizes.slice(0, 2);
       app.toast(_t('User setup saved'));
     });
@@ -1442,7 +1475,7 @@ export function setupUI(app) {
     try { localStorage.setItem('opensw-spell', on ? '1' : '0'); } catch (e) { /* storage off */ }
   }
   view.dom.spellcheck = localStorage.getItem('opensw-spell') === '1';
-  // Tools > Computation Engine: SymPy (built in) or an engine on this computer (desktop app;
+  // Tools > Engine Setup: SymPy (built in) or an engine on this computer (desktop app;
   // engine/engines.json, e.g. Mathematica). Choosing loads the engine and shows its version.
   // In the desktop app SymPy is run by the Python that comes with it (the engine "python";
   // in Pyodide when that cannot be started: the dialog then says so), or by another Python.
@@ -1488,7 +1521,7 @@ export function setupUI(app) {
     dialog(_t('Connect AI'), `<p>${_t('Lets the AI app on this computer read and change the document open in opensw. Tick the apps to connect and press OK.')}</p>
       ${apps.map(row).join('')}
       <p>${_t('Their settings files only get opensw added; a copy of each is kept first (.opensw-backup).')}</p>
-      <p>${_t('AI can open and save only in the open document\'s folder, Documents\\opensw and the folders allowed in Tools > User Setup; anywhere else you are asked. What it changes is tinted, and Edit > Undo AI Changes takes it back.')}</p>`, async (d) => {
+      <p>${_t('AI can open and save only in the projects folder, the open document\'s folder and the folders allowed in Tools > User Setup; anywhere else you are asked. A file it opens is first copied into the projects folder, and it works on the copy. What it changes is tinted, and Edit > Undo AI Changes takes it back.')}</p>`, async (d) => {
       const ids = [...d.querySelectorAll('input[data-ai]:checked')].map((i) => i.dataset.ai);
       if (!ids.length) return;
       try {
@@ -1515,7 +1548,7 @@ export function setupUI(app) {
     dialog(_t('Talking to AI'), `<p>${_t('Once an AI app is connected (Tools > Connect AI), ask it in your own words, in English or Chinese. For example:')}</p>
       <ul>${AI_EXAMPLES.map((t) => `<li>${escHtml(t)}</li>`).join('')}</ul>
       <p>${_t('While the AI works, the status bar says so, and what it changed is tinted. Edit > Undo AI Changes (or the button in the status bar) puts the document back as it was, in one step.')}</p>
-      <p>${_t('The AI works on the document open in opensw. It can save only in the document\'s folder, Documents\\opensw and the folders you allowed.')}</p>`, () => {});
+      <p>${_t('The AI works on the document open in opensw. It can save only in the projects folder, the document\'s folder and the folders you allowed.')}</p>`, () => {});
   }
   // Compute > Check with Lean: Lean 4 proves the equation at the cursor (over the real
   // numbers) or says it could not. Needs Lean with Mathlib on the computer.
@@ -1579,7 +1612,7 @@ export function setupUI(app) {
       [_t('Recent File'), null, app.recent], '-',
       [_t('Exit'), 'Alt+F4', app.exit], '-',
       [_t('Save as .sci…'), null, app.saveAsSci], [_t('Export LaTeX…'), null, app.exportLatex], [_t('Export HTML…'), null, app.exportHtml], [_t('Export Word (.docx)…'), null, app.exportDocx], [_t('Export for AI (Markdown)…'), null, app.exportMd],
-      [_t('Samples'), null, app.samples.map(([id, label]) => [label, null, () => app.openSample(id)])], [_t('Typeset PDF'), 'Ctrl+P', app.pdf],
+      [_t('Open Document Folder'), null, app.showFolder], [_t('Samples'), null, app.samples.map(([id, label]) => [label, null, () => app.openSample(id)])], [_t('Typeset PDF'), 'Ctrl+P', app.pdf],
     ]],
     [_t('Edit'), [
       [_t('Undo'), 'Ctrl+Z', () => run(undo)], [_t('Properties...'), 'Ctrl+F5', properties], '-',

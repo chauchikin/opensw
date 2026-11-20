@@ -11,12 +11,15 @@ export const DEFAULTS = {
   mathColor: '#c00000', // formulas on screen (5.5: red)
   htmlMath: 'mathml', // File > Export HTML: formulas as MathML, or LaTeX for MathJax
   pictureScale: 3, // Edit > Copy as Picture: pixels per screen pixel
-  engine: 'sympy', // Tools > Computation Engine: sympy, or the id of an engine in engine/engines.json (desktop app)
+  engine: 'sympy', // Tools > Engine Setup: sympy, or the id of an engine in engine/engines.json (desktop app)
   enginePrograms: {}, // engine id -> its program on this computer (wolfram.exe ...); none: found automatically
   solvePrincipal: false, // Solve > Exact gives one solution, not every one (5.5: Engine Setup, Solve Options, Principal Value Only)
   logBase10: false, // \log is base 10, not e (5.5: Computation Setup, General, Base for Log Function, Change from e to 10)
   basis: ['x', 'y', 'z'], // the variables of grad, div, curl, ∇ (5.5: Compute > Vector Calculus > Set Basis Variables)
-  aiFolders: [], // folders where AI (MCP) may open and save files, besides the open document's
+  aiFolders: [], // folders where AI (MCP) may open files, besides the open document's and the projects folder (it saves only in the projects folder)
+  projectsFolder: '', // where the desktop app keeps the documents, each in a folder of its own (projects.js); '': "opensw projects" on the Desktop
+  pastProjectsFolders: [], // previous locations, so their imports and originals can still be found
+  showFolderOnSave: 'first', // after a save the document is shown in its folder: first (the first save of a document, and every Save As), always, never
   lang: 'en', // the interface language (src/locales); auto: the system's language
 };
 
@@ -33,6 +36,8 @@ export function settings() {
     s.enginePrograms = { mathematica: s.wolframKernel, ...s.enginePrograms };
     delete s.wolframKernel;
   }
+  // (an AI may save in these folders: whatever was stored, only a list of folders is taken)
+  s.pastProjectsFolders = Array.isArray(s.pastProjectsFolders) ? s.pastProjectsFolders.filter((f) => typeof f === 'string' && f) : [];
   return s;
 }
 

@@ -1,6 +1,6 @@
 // SymPy in the desktop app, with a stand-in for the desktop shell and for the Python that
 // comes with it (the engine "python" of engine/engines.json): with nothing chosen in Tools >
-// Computation Engine the Compute menu goes to that Python and Pyodide is not loaded; what it
+// Engine Setup the Compute menu goes to that Python and Pyodide is not loaded; what it
 // leaves ({fallback: true}) goes to the SymPy in Pyodide; definitions and the Compute settings
 // reach it, again after it was started again; when it cannot be started the SymPy in Pyodide
 // answers and the user is told once; with Mathematica chosen it comes after Mathematica.
@@ -40,7 +40,7 @@ await page.addInitScript(() => {
       window.engineCalls.push({ engine: args.engine, program: args.program, op: args.op, json });
       if (args.engine === 'mathematica') return { data: enc(args.op === 'factor' ? { kind: 'value', latex: '\\text{mathematica}' } : { fallback: true }), started: false };
       const py = window.py;
-      if (py.broken) { py.running = false; throw `Cannot find SymPy (${args.program || 'C:\\opensw\\engine\\python\\python.exe'}): program not found. Its location can be set in Tools > Computation Engine`; }
+      if (py.broken) { py.running = false; throw `Cannot find SymPy (${args.program || 'C:\\opensw\\engine\\python\\python.exe'}): program not found. Its location can be set in Tools > Engine Setup`; }
       const started = !py.running;
       if (started) Object.assign(py, { running: true, defs: [], options: '' });
       return { data: enc(python(args.op, json)), started };
@@ -103,7 +103,7 @@ await page.evaluate(() => { document.querySelector('#toast').textContent = ''; }
 r = await call('compute', { latex: 'x^2-1', op: 'factor' });
 check('... once, and the Python is not tried again', r.ok && r.result.latex.includes('x - 1') && (await calls()).length === n && (await toast()) === '', { r, toast: await toast() });
 
-// Tools > Computation Engine says so under SymPy, and takes another Python: that one is tried
+// Tools > Engine Setup says so under SymPy, and takes another Python: that one is tried
 await page.click('.menu-top:has-text("工具")');
 await page.locator('.menu-list button:has(> span:text-is("計算引擎…"))').filter({ visible: true }).first().click();
 const dlg = await page.textContent('#dialog');

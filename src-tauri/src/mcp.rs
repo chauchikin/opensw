@@ -15,6 +15,9 @@ use crate::remote::control_file;
 /// Tool list generated from src/api.js COMMANDS (scripts/gen-mcp-tools.mjs).
 pub(crate) const TOOLS: &str = include_str!("../mcp-tools.json");
 pub(crate) const PREFIX: &str = "sw_";
+/// The AI app on the other end, as it named itself when it connected (clientInfo.name): sent
+/// with every command, so the editor's change log can say who made a change.
+static CLIENT: std::sync::OnceLock<String> = std::sync::OnceLock::new();
 
 pub fn run() {
     let stdin = std::io::stdin();
@@ -42,12 +45,17 @@ pub fn answer(msg: &Value) -> Option<Value> {
     let id = msg.get("id")?.clone();
     let method = msg["method"].as_str().unwrap_or("");
     let result = match method {
-        "initialize" => Ok(json!({
-            "protocolVersion": msg["params"]["protocolVersion"].as_str().unwrap_or("2025-06-18"),
-            "capabilities": { "tools": {} },
-            "serverInfo": { "name": "scientific-word-next", "version": env!("CARGO_PKG_VERSION") },
-            "instructions": "opensw (a math document editor in the style of Scientific Word 5.5). A document is made of blocks: use sw_outline to see the block numbers, then change them with sw_insert / sw_replaceBlock; content is always written in LaTeX. Open a .sci or Scientific Word 5.x .tex with sw_open, save with sw_save, typeset to PDF with sw_typeset."
-        })),
+        "initialize" => {
+            if let Some(name) = msg["params"]["clientInfo"]["name"].as_str() {
+                let _ = CLIENT.set(name.to_string());
+            }
+            Ok(json!({
+                "protocolVersion": msg["params"]["protocolVersion"].as_str().unwrap_or("2025-06-18"),
+                "capabilities": { "tools": {} },
+                "serverInfo": { "name": "scientific-word-next", "version": env!("CARGO_PKG_VERSION") },
+                "instructions": "opensw (a math document editor in the style of Scientific Word 5.5). A document is made of blocks: use sw_outline to see the block numbers, then change them with sw_insert / sw_replaceBlock; content is always written in LaTeX. Open a .sci or Scientific Word 5.x .tex with sw_open (the file is copied into a project folder and you work on the copy; the file you named is never written), save with sw_save, typeset to PDF with sw_typeset. Before your first edit read sw_records (what was done to this document before, and the notes the last AI left); before you finish leave a note for whoever goes on with sw_handoff."
+            }))
+        }
         "ping" => Ok(json!({})),
         "tools/list" => Ok(json!({ "tools": serde_json::from_str::<Value>(TOOLS).unwrap_or(json!([])) })),
         "tools/call" => Ok(call_tool(&msg["params"])),
@@ -94,7 +102,7 @@ fn try_send(cmd: &str, args: &Value) -> Result<Value, String> {
     let token = info["token"].as_str().ok_or("The control file has no token")?;
     let mut stream = TcpStream::connect(("127.0.0.1", port as u16)).map_err(|e| e.to_string())?;
     stream.set_read_timeout(Some(Duration::from_secs(320))).map_err(|e| e.to_string())?;
-    let body = json!({ "cmd": cmd, "args": args }).to_string();
+    let body = json!({ "cmd": cmd, "args": args, "client": CLIENT.get() }).to_string();
     write!(
         stream,
         "POST /call HTTP/1.1\r\nHost: 127.0.0.1\r\nX-SW-Token: {token}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
@@ -169,8 +177,15 @@ fn keep_own_pipes() {}
 
 #[cfg(test)]
 mod tests {
-    use super::answer;
+    use super::{CLIENT, answer};
     use serde_json::json;
+
+    #[test]
+    fn initialize_should_keep_the_ai_apps_name() {
+        // (the other tests give no name, so this one is the only one that sets it)
+        answer(&json!({ "jsonrpc": "2.0", "id": 1, "method": "initialize", "params": { "clientInfo": { "name": "Some AI App", "version": "1" } } })).unwrap();
+        assert_eq!(CLIENT.get().map(String::as_str), Some("Some AI App"));
+    }
 
     #[test]
     fn initialize_should_report_tools_capability() {

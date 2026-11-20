@@ -428,7 +428,7 @@ export function definitionOfI(tex, subscript = false) {
 // (\\log_b is base b; the parser would read a plain \\log as base 10)
 export const naturalLog = (tex) => tex.replace(/\\log(?![A-Za-z])(?!\s*_)/g, '\\ln');
 
-// ---------- the Compute settings that change what a formula means (Tools > Computation Engine) ----------
+// ---------- the Compute settings that change what a formula means (Tools > Engine Setup) ----------
 // \\log in base 10 (5.5's Base for Log Function, Change from e to 10; naturalLog() is not used then):
 // written Log10, which the engine shows as \\log_{10}, as 5.5 does then. ∇, grad, div, curl in other
 // basis variables than x, y, z (5.5's Set Basis Variables): the variables follow the formula.

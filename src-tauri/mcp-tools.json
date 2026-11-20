@@ -168,12 +168,15 @@
   },
   {
     "name": "sw_open",
-    "description": "Opens a file: in the desktop app give path (.sci or a 5.x .tex). Only files in the open document's folder, aiFolder (see info) and the folders the user allowed; anywhere else the user is asked first. It takes the place of the document on screen, unless that one has unsaved changes: then it stays open too (see documents).",
+    "description": "Opens a file: in the desktop app give path (.sci or a 5.x .tex). The file is not opened where it is: it is imported, that is copied with the files it uses (pictures, sub-documents, .bib) into a project folder of its own in the projects folder (aiFolder in info), and the copy is the open document; the file you named is never written. The answer is as info gives it (path is the copy), with imported: { from, folder, copied, notFound, notCopied }. A file imported before: its existing copy is opened instead, and the note says so and whether the original has changed since; fresh = true imports it again as a new copy. If no earlier import has this path but one has the same file name and the same contents, the file is imported all the same, and alike: { importedFrom, on, copy } with the note tell you of that copy (it may be this file under another path, such as a network drive; then go on in that copy). A file of a project (a folder of the projects folder that has opensw's records) is opened as it is; any other file is imported, also one in another folder of the projects folder or in a project's records. When it is open in the editor already it is not read again but brought to the screen as it is there, unsaved changes and all (alreadyOpen: true, and the note says so). Without asking only files in the projects folder, the open document's folder and the folders the user allowed; anywhere else the user is asked first. It takes the place of the document on screen, unless that one has unsaved changes: then it stays open too (see documents).",
     "inputSchema": {
       "type": "object",
       "properties": {
         "path": {
           "type": "string"
+        },
+        "fresh": {
+          "type": "boolean"
         }
       },
       "required": [
@@ -221,7 +224,7 @@
   },
   {
     "name": "sw_save",
-    "description": "Saves (desktop app): the main format is 5.x .tex (5.5 opens it); a path ending in .sci saves as .sci. Without path it saves back to the same file (keeping a .bak; an unchanged 5.x file is not rewritten; in an edited one only the edited parts are written again, the rest stays as it was in the file). A LaTeX file 5.x did not write (info: from55 false) is never written over: give a new path, the 5.x file goes there and the answer's note says so. Only .tex and .sci; saving outside the open document's folder, aiFolder (see info) and the folders the user allowed asks the user first.",
+    "description": "Saves (desktop app): the main format is 5.x .tex (5.5 opens it); a path ending in .sci saves as .sci. Without path it saves back to the same file in its project folder (keeping a .bak; an unchanged 5.x file is not rewritten; in an edited one only the edited parts are written again, the rest stays as it was in the file). A LaTeX file 5.x did not write (info: from55 false) is written as a 5.x file over the copy in the project folder; the LaTeX as it was imported stays in the project's records. What is edited is always in the projects folder (aiFolder in info), and this command saves there and nowhere else: a path in the document's own project folder makes that file the open document; a path anywhere else in the projects folder gives the document a new project folder of its own (the first save of a new document needs such a path). A path outside the projects folder is refused, and so is saving a document that was opened in place outside it: this command writes nothing out there, so the original a document was imported from can never be written by it, under whatever name. A copy outside the projects folder is for the user to make (File > Save As). A project's records are never saved to. The answer's path is the open document; note says when that is not the file you named. Only .tex and .sci.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -229,6 +232,29 @@
           "type": "string"
         }
       }
+    }
+  },
+  {
+    "name": "sw_records",
+    "description": "The records of the open document's project folder (desktop app); read them before your first edit. Returns folder, files (the paths of the three records), changeLog (the last entries of Change log.txt, about 60 lines: the import, every AI change with the blocks before and after, every save; opensw writes it, and counts blocks from 1 where the commands count from 0), fileMap (File map.txt: what is in the folder, where the document was imported from, what it uses) and handoff (the last three notes of Handoff notes.txt, left by the AI that worked on the document before).",
+    "inputSchema": {
+      "type": "object",
+      "properties": {}
+    }
+  },
+  {
+    "name": "sw_handoff",
+    "description": "Adds a note to Handoff notes.txt in the open document's project folder, for whoever goes on with the work (a person or another AI): what you set out to do, what is done, what is left. Plain English, a few lines. Write one before you finish; opensw puts the date and time above it.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "text": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "text"
+      ]
     }
   },
   {
@@ -241,7 +267,7 @@
   },
   {
     "name": "sw_info",
-    "description": "The document's name, path, number of blocks and formulas, from55 (it is a Scientific Word 5.x file; false for other LaTeX, a .sci or a new document), and aiFolder: the folder (Documents\\opensw) where AI may always save, e.g. a new document, without asking.",
+    "description": "The document's name, path, number of blocks and formulas, from55 (it is a Scientific Word 5.x file; false for other LaTeX, a .sci or a new document), and aiFolder: the projects folder, where the documents are kept (each in a folder of its own) and AI may always open and save without asking. For a document in a project folder also project: { folder, importedFrom (the file it was copied from; never written), records (the folder of its records, see records) } and handoff: the latest handoff note.",
     "inputSchema": {
       "type": "object",
       "properties": {}
@@ -249,7 +275,7 @@
   },
   {
     "name": "sw_compute",
-    "description": "Computes one formula with the chosen computation engine (SymPy or Mathematica, see Tools > Computation Engine), without changing the document. op: evaluate (default), numeric, simplify, expand, factor, combine, rewrite_exp, rewrite_sincos, solve, numericsolve, ode, odenumeric (Solve ODE > Numeric: a one-column matrix of equations (any order) and initial values y(0) = 1, y'(0) = 0; defines the solutions as functions, so y(1) can then be evaluated), check, partialfractions (params: [variable], when there are several), collect, differentiate (params: [variable, times]), integrate, series (params: [variable, number of terms, point], in this order; as in 5.5 the terms are counted from the lowest power, default 5: 1/(1-x) ends in O(x^5); point default 0), extrema, laplace, inverselaplace, fourier, determinant, inverse, transpose, eigenvalues, rank, rref, nullspace, trace, charpoly, adjugate, mean, median, variance, stddev, implicitdiff, integersolve, recursion (a one-column matrix: the recurrence and starting values), maximize, minimize, feasible, standardize, dual (simplex method: a one-column matrix, first row the objective, the other rows the constraints, all variables >= 0), gradient, divergence, curl, laplacian, hessian, jacobian, wronskian, potential, vectorpotential (params are the basis variables, default x, y, z), byparts (params: [u]), changevar (params: [\"u=g(x)\"]), approxint (params: [method, number of subintervals]; method is left, midpoint, right, trapezoid or simpson, in single quotes), iterate (params: [starting value, count]); and the rest of the Compute menu of 5.5, each as ENGINE.md describes its params: cholesky, plu, qr, svd, singularvalues, jordan, hermite, smith, rationalcanonical, ffgauss, gauss, minpoly, eigenvectors, colbasis, rowbasis, concat, stack, reshape, fillmatrix, randommatrix, condition, definiteness, norm, orthogonal, permanent, spectralradius, htranspose, rewrite_rational, rewrite_float, rewrite_factorial, rewrite_gamma, rewrite_log, rewrite_sinhcosh, rewrite_sin, rewrite_cos, rewrite_tan, rewrite_arcsin, rewrite_arccos, rewrite_arctan, rewrite_arccot, rewrite_polar, rewrite_rectangular, rewrite_normal, combine_exp, combine_log, combine_powers, combine_trig, combine_arctan, combine_hyp, eqs_to_matrix, matrix_to_eqs, mode, geomean, harmonicmean, meandev, moment, quantile, correlation, covariance, fitcurve, randomnumbers, divide, roots, sort, companion, interpret, inversefourier, odelaplace, odeseries. Returns the result as LaTeX; solve, numericsolve, integersolve, ode, extrema, maximize, minimize return a list of solutions.",
+    "description": "Computes one formula with the computation engine (SymPy with Giac and FriCAS; Mathematica first when it is chosen in Tools > Engine Setup), without changing the document. op: evaluate (default), numeric, simplify, expand, factor, combine, rewrite_exp, rewrite_sincos, solve, numericsolve, ode, odenumeric (Solve ODE > Numeric: a one-column matrix of equations (any order) and initial values y(0) = 1, y'(0) = 0; defines the solutions as functions, so y(1) can then be evaluated), check, partialfractions (params: [variable], when there are several), collect, differentiate (params: [variable, times]), integrate, series (params: [variable, number of terms, point], in this order; as in 5.5 the terms are counted from the lowest power, default 5: 1/(1-x) ends in O(x^5); point default 0), extrema, laplace, inverselaplace, fourier, determinant, inverse, transpose, eigenvalues, rank, rref, nullspace, trace, charpoly, adjugate, mean, median, variance, stddev, implicitdiff, integersolve, recursion (a one-column matrix: the recurrence and starting values), maximize, minimize, feasible, standardize, dual (simplex method: a one-column matrix, first row the objective, the other rows the constraints, all variables >= 0), gradient, divergence, curl, laplacian, hessian, jacobian, wronskian, potential, vectorpotential (params are the basis variables, default x, y, z), byparts (params: [u]), changevar (params: [\"u=g(x)\"]), approxint (params: [method, number of subintervals]; method is left, midpoint, right, trapezoid or simpson, in single quotes), iterate (params: [starting value, count]); and the rest of the Compute menu of 5.5, each as ENGINE.md describes its params: cholesky, plu, qr, svd, singularvalues, jordan, hermite, smith, rationalcanonical, ffgauss, gauss, minpoly, eigenvectors, colbasis, rowbasis, concat, stack, reshape, fillmatrix, randommatrix, condition, definiteness, norm, orthogonal, permanent, spectralradius, htranspose, rewrite_rational, rewrite_float, rewrite_factorial, rewrite_gamma, rewrite_log, rewrite_sinhcosh, rewrite_sin, rewrite_cos, rewrite_tan, rewrite_arcsin, rewrite_arccos, rewrite_arctan, rewrite_arccot, rewrite_polar, rewrite_rectangular, rewrite_normal, combine_exp, combine_log, combine_powers, combine_trig, combine_arctan, combine_hyp, eqs_to_matrix, matrix_to_eqs, mode, geomean, harmonicmean, meandev, moment, quantile, correlation, covariance, fitcurve, randomnumbers, divide, roots, sort, companion, interpret, inversefourier, odelaplace, odeseries. Returns the result as LaTeX; solve, numericsolve, integersolve, ode, extrema, maximize, minimize return a list of solutions.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -269,6 +295,18 @@
       "required": [
         "latex"
       ]
+    }
+  },
+  {
+    "name": "sw_engine",
+    "description": "The computation engine of the Compute menu (Tools > Engine Setup). Without engine: which one is chosen, the ones that can be chosen (available: id and name; sympy is SymPy with Giac and FriCAS, which comes with opensw; others, such as mathematica, are programs on this computer, desktop app only) and versions (what the chosen engine reports, loading it first). With engine (an id from available): chooses it for every document, as the dialog does, and answers the same. error: the chosen engine could not be started; notice: the Python that comes with opensw did not start, so SymPy runs in the slower Pyodide.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "engine": {
+          "type": "string"
+        }
+      }
     }
   },
   {

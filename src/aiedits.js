@@ -33,6 +33,23 @@ export function changedBlocks(doc) {
   return out;
 }
 
+// What one change made, in whole top-level blocks (for the project's change log, projects.js):
+// [{ index: where, removed: the blocks that went, added: those that came there }]; none when the
+// two documents are the same. Blocks before the first and after the last difference are left
+// out; when as many blocks came as went, each block that differs is given by itself (a text
+// replaced in the first and the last paragraph is two changes, not everything in between).
+export function blockDiff(before, after) {
+  let start = 0;
+  let [endB, endA] = [before.childCount, after.childCount];
+  while (start < endB && start < endA && before.child(start).eq(after.child(start))) start++;
+  while (endB > start && endA > start && before.child(endB - 1).eq(after.child(endA - 1))) { endB--; endA--; }
+  if (endB === start && endA === start) return [];
+  const blocks = (doc, to) => Array.from({ length: to - start }, (_, i) => doc.child(start + i));
+  const [removed, added] = [blocks(before, endB), blocks(after, endA)];
+  if (removed.length !== added.length) return [{ index: start, removed, added }];
+  return removed.map((node, i) => ({ index: start + i, removed: [node], added: [added[i]] })).filter((c) => !c.removed[0].eq(c.added[0]));
+}
+
 export function aiChangesPlugin() {
   let cache = null;
   return new Plugin({

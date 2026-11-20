@@ -96,6 +96,12 @@ g.WORKER.off = True
 off = [latex("evaluate", XEX), latex("evaluate", HEAVY), latex("determinant", VANDERMONDE), latex("series", SERIES)]
 g.WORKER.off = False
 check("compute(): the answers are written the same with Giac and without", on == off, [p for p in zip(on, off) if p[0] != p[1]])
+# An indefinite integral step proves derivative and exact SymPy equality without asking Giac.
+asked, real = [], g.WORKER.ask
+g.WORKER.ask = lambda text: (asked.append(text), real(text))[1]
+r = json.loads(compute("stepcheck", json.dumps({"expr": XEX, "params": [["Multiply", ["Subtract", "x", 1], ["Power", "ExponentialE", "x"]]]})))
+g.WORKER.ask = real
+check("stepcheck: derivative and exact SymPy equality without asking Giac", r.get("result") == "equal" and not any(t.startswith("integrate") for t in asked), (r, asked))
 
 # 5. no answer in time: SymPy computes, and the next question has a new process
 limit, g.TIME_LIMIT = g.TIME_LIMIT, 0.2

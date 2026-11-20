@@ -7,7 +7,7 @@ The Compute menu, plots and the Exam Builder of opensw all go through one interf
 ## How it works
 
 1. The editor (`src/compute.js`) turns the formula's LaTeX into MathJSON (the format of the CortexJS Compute Engine).
-2. It asks the engines in turn: first the one chosen in Tools > Computation Engine (desktop app; an engine in `engine/engines.json`), then SymPy.
+2. It asks the engines in turn: first the one chosen in Tools > Engine Setup (desktop app; an engine in `engine/engines.json`), then SymPy.
 3. An engine answers `{"fallback": true}` for an operation it does not do, and the next one is asked. SymPy is built in and does every operation, so it comes last.
 
 SymPy is run in two ways, both with the same `engine/opensw_compute.py`: by the Python that comes with the desktop app (fast), and in Pyodide in a browser. See "How SymPy is run" below.
@@ -47,7 +47,7 @@ Definitions are kept in one place: the editor (`src/compute.js`). An engine only
 - `showdefs`: list the definitions.
 - `cleardefs`: clear them all.
 
-Two settings of Tools > Computation Engine are written into the formula: with the log base set to 10, \log x is `["Log10", x]` (shown as \log_{10} x, as 5.5 then); with basis variables other than x, y, z, ∇ and its kin carry them after the formula: `["Gradient", f, "u", "v", "w"]`. An engine that does not know these heads falls back.
+Two settings of Tools > Engine Setup are written into the formula: with the log base set to 10, \log x is `["Log10", x]` (shown as \log_{10} x, as 5.5 then); with basis variables other than x, y, z, ∇ and its kin carry them after the formula: `["Gradient", f, "u", "v", "w"]`. An engine that does not know these heads falls back.
 
 The editor sends an engine the definitions it does not have yet before asking it anything else, and all of them again when the engine's program was started again. An engine keeps nothing in files and syncs nothing.
 
@@ -62,7 +62,7 @@ An engine is a program on the computer (e.g. `wolfram.exe`), kept running, talke
 |---|---|
 | `id`, `name` | the engine's id and the name shown |
 | `program` | where to look for the program. `*` is any folder name; of several found, the newest version (the numbers in the path) is used. A bare name (no `/` or `\`) is looked for on the PATH. `{engine}` at the start is the `engine/` folder (a program that comes with opensw, e.g. `{engine}/python/python.exe`); an engine without a bare name is never looked for on the PATH |
-| `example` | an example path shown in the Computation Engine dialog |
+| `example` | an example path shown in the Engine Setup dialog |
 | `args` | the program's arguments |
 | `adapter` | the adapter file (a file name in `engine/`) |
 | `load` | the first line sent after starting: loads the adapter and prints `@@OPENSW@@ready`. Empty: the program loads it from its arguments and prints that line itself |
@@ -78,7 +78,7 @@ In an installed opensw, `engine/` is in the program folder; changing an adapter 
 
 ## How SymPy is run
 
-The desktop app (Windows) comes with a Python of its own (`engine/python/`, made by `scripts/bundle-python.mjs`: the embeddable Python from python.org with SymPy, mpmath, giacpy and python-flint), kept running as above with `engine/opensw_stdio.py`. It is the entry `python` of `engines.json`, looked for in the `engine/` folder only: a Python installed on the computer is not used (another SymPy version gives other answers); to use another Python, give its location in Tools > Computation Engine. When this Python does not start (not there, broken), the SymPy in Pyodide is used instead and the user is told once. With Mathematica chosen it is the same: what Mathematica does not do goes to this Python first, then to Pyodide.
+The desktop app (Windows) comes with a Python of its own (`engine/python/`, made by `scripts/bundle-python.mjs`: the embeddable Python from python.org with SymPy, mpmath, giacpy and python-flint), kept running as above with `engine/opensw_stdio.py`. It is the entry `python` of `engines.json`, looked for in the `engine/` folder only: a Python installed on the computer is not used (another SymPy version gives other answers); to use another Python, give its location in Tools > Engine Setup. When this Python does not start (not there, broken), the SymPy in Pyodide is used instead and the user is told once. With Mathematica chosen it is the same: what Mathematica does not do goes to this Python first, then to Pyodide.
 
 This Python has `python-flint` (FLINT): SymPy, finding it, uses it by itself for the arithmetic of integers, rationals and polynomials (`sympy/external/gmpy.py`; the python-flint version must be one that SymPy version knows), and large polynomials are factored much faster. The answers are the same as without it (Pyodide has none); check that again when the version of python-flint or SymPy changes: run the acceptance below both ways and compare every answer.
 
@@ -164,7 +164,7 @@ This table is made by `node scripts/engine-doc.mjs` from the two engines' code (
 | `define` | Definitions > New Definition (x = 3, f(x) = x^2) | F | value | ✓ | ✓ |
 | `showdefs` | Definitions > Show Definitions | F | solutions | ✓ | ✓ |
 | `cleardefs` | Definitions > Clear Definitions | F | solutions | ✓ | ✓ |
-| `version` | Tools > Computation Engine: the version | F | solutions | ✓ | ✓ |
+| `version` | Tools > Engine Setup: the version | F | solutions | ✓ | ✓ |
 | `plot` | Plot 2D: points of y = f(x) | {expr, var, a, b, n} | points | ✓ | ✓ |
 | `plot3d` | Plot 3D: z = f(x, y) on a grid | {expr, vars, a, b, c, d, n, m} | grid | ✓ | ✓ |
 | `plotn` | Plots: several formulas on a grid (contours, fields, complex) | {exprs, vars, ranges, ns, grad, complex} | values | ✓ | ✓ |

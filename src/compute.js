@@ -1,6 +1,6 @@
 // The Compute menu of Scientific Word 5.5. A formula (LaTeX) is parsed into MathJSON by the
 // CortexJS Compute Engine here, then computed by the engines in turn (ENGINE.md): in the
-// desktop app first the one chosen in Tools > Computation Engine (Mathematica, or another one
+// desktop app first the one chosen in Tools > Engine Setup (Mathematica, or another one
 // in engine/engines.json), then SymPy (engine/opensw_compute.py): in the desktop app by the
 // Python that comes with it, otherwise, and in a browser, in Pyodide in a background worker
 // (engine/worker.mjs). The Compute menu, plots and the Exam Builder alike.
@@ -74,7 +74,7 @@ async function toMathJson(latex, options) {
   const fns = definedFunctions();
   const vectors = new Set(definitions.map((d) => definedVector(JSON.parse(d))).filter(Boolean));
   const o = { ...OPTIONS55, ...optionsOf() }; // Compute > Settings (src/c55_defsmisc.js); a document's own log base
-  const s = o.log10 === undefined ? settings() : { ...settings(), logBase10: o.log10 }; // \log in base 10, the basis variables (Tools > Computation Engine)
+  const s = o.log10 === undefined ? settings() : { ...settings(), logBase10: o.log10 }; // \log in base 10, the basis variables (Tools > Engine Setup)
   const log = s.logBase10 ? (t) => t : naturalLog;
   let src = o.trig_ordinary ? trigOrdinary(latex) : latex;
   if (!o.bessel_subscripts) src = src.replace(/(?<![\\A-Za-z])([JYIK])(?=\s*_)/g, '\\mathrm{$1}'); // J_v(z) is not the Bessel function then
@@ -216,7 +216,7 @@ export async function compute(op, latex, params) {
   }
   // assume(real), assume(x, positive) ... are kept like definitions (every engine gets them, again after a restart)
   if (op === 'evaluate' && !params && Array.isArray(expr) && ASSUMPTIONS.has(expr[0])) op = 'define';
-  // Principal Value Only (Tools > Computation Engine): one solution, asked for with the word 'principal'
+  // Principal Value Only (Tools > Engine Setup): one solution, asked for with the word 'principal'
   if (op === 'solve' && settings().solvePrincipal) params = [...(params || []), "'principal'"];
   const json = JSON.stringify(params ? { expr, params: await Promise.all(params.map((p) => (p.startsWith("'") ? p : toMathJson(p)))) } : expr);
   if (op === 'define') texOf.set(json, latex);
@@ -358,8 +358,8 @@ function outsideEngine(id) {
 // engine/opensw_compute.py as in Pyodide, much faster. Before it is asked anything when it is
 // not running, it is asked its version: when that fails (the Python is not there, or broken)
 // the SymPy in Pyodide does its work until the editor is closed or another location is set in
-// Tools > Computation Engine, and the user is told once (main.js shows the line; the dialog
-// of Tools > Computation Engine shows it too).
+// Tools > Engine Setup, and the user is told once (main.js shows the line; the dialog
+// of Tools > Engine Setup shows it too).
 const PYTHON = 'python';
 const desktop = () => '__TAURI_INTERNALS__' in globalThis;
 let pythonFailed; // the program location it could not be started with (undefined: none yet)

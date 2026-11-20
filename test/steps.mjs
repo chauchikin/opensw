@@ -2,6 +2,7 @@
 // "unchecked again" after a change, finding a formula again after it moved or 5.5 saved it.
 // node test/steps.mjs  (needs `npx vite preview --port 4173`)
 import { chromium } from 'playwright';
+import { standIn, ROOT, inProject } from './lib/desktop.mjs';
 import { statements, zeroTests, canon, nameFormulas, splitTop, rowsOf } from '../src/steps.js';
 
 let fails = 0;
@@ -47,26 +48,14 @@ const file = ['%2multibyte Version: 5.50.0.2960 CodePage: 950', '\\documentclass
   '\\input{tcilatex}', '\\begin{document}', '', 'Let', '\\[', 'f(x)=x^{2}e^{x}.', '\\]', 'Then', '\\[', "g(x)=\\frac{d}{dx}f(x)=(x^{2}+2x)e^{x},\\qquad g(0)=0.", '\\]',
   'Near 0', '\\[', 'f(x)=x^{2}+x^{3}+O(x^{4}).', '\\]', 'A wrong one:', '\\begin{equation}', 'g(1)=2e \\label{eq:wrong}', '\\end{equation}',
   'Several rows:', '\\begin{eqnarray*}', 'a &=&1 \\\\', 'b &=&2', '\\end{eqnarray*}', '', '\\end{document}', ''].join('\r\n');
-await page.addInitScript((text) => {
-  const files = new Map([['C:\\Work\\D.tex', Array.from(new TextEncoder().encode(text))]]);
-  window.shell = { files };
-  window.__TAURI_INTERNALS__ = {
-    transformCallback: () => 0,
-    invoke: async (cmd, args) => {
-      if (cmd === 'read_file') { if (files.has(args.path)) return files.get(args.path); throw new Error('no such file'); }
-      if (cmd === 'write_file') { files.set(args.path, args.data); return null; }
-      if (cmd === 'file_exists') return files.has(args.path);
-      return null;
-    },
-  };
-  localStorage.setItem('opensw-settings', JSON.stringify({ aiFolders: ['C:\\Work'], engine: 'sympy' }));
-}, file);
+// (the document is in a project folder: it is opened and saved as it is)
+await standIn(page, { files: { 'C:\\Users\\prof\\Desktop\\opensw projects\\Work\\D.tex': file, ...inProject(ROOT + '\\Work', 'D.tex') }, settings: { engine: 'sympy' } });
 await page.goto(`http://localhost:${process.env.OPENSW_PORT || 4173}/?lang=en`); await page.waitForTimeout(800);
 const call = async (cmd, args) => { const r = await page.evaluate(([c, a]) => window.sw.call(c, a), [cmd, args]); if (!r.ok) throw new Error(`${cmd}: ${r.error}`); return r.result; };
-const side = () => page.evaluate(() => { const d = window.shell.files.get('C:\\Work\\D.steps.json'); return d ? JSON.parse(new TextDecoder().decode(Uint8Array.from(d))) : null; });
-const docText = () => page.evaluate(() => new TextDecoder().decode(Uint8Array.from(window.shell.files.get('C:\\Work\\D.tex'))));
+const side = () => page.evaluate(() => { const d = window.shell.files.get('C:\\Users\\prof\\Desktop\\opensw projects\\Work\\D.steps.json'); return d ? JSON.parse(new TextDecoder().decode(Uint8Array.from(d))) : null; });
+const docText = () => page.evaluate(() => new TextDecoder().decode(Uint8Array.from(window.shell.files.get('C:\\Users\\prof\\Desktop\\opensw projects\\Work\\D.tex'))));
 
-await call('open', { path: 'C:\\Work\\D.tex' });
+await call('open', { path: 'C:\\Users\\prof\\Desktop\\opensw projects\\Work\\D.tex' });
 let r = await call('steps');
 check('a labelled formula is a step from the start; looking writes no file', r.steps.length === 1 && r.steps[0].name === 'eq:wrong' && r.problems.length === 4 && (await side()) === null, r);
 check('formulas and outline give the label', (await call('formulas')).some((f) => f.label === 'eq:wrong') && (await call('outline')).some((o) => o.label === 'eq:wrong'));
@@ -157,14 +146,14 @@ r = await call('checkSteps', { names: [sRows] });
 check('... and a wrong row fails', row(sRows).status === 'fail' && /x\(x\+2\)\+2/.test(row(sRows).why), row(sRows));
 
 // saved under another name: the steps file goes with the document, and replaces none that is there
-const stepsOf = (name) => page.evaluate((n) => { const d = window.shell.files.get(`C:\\Work\\${n}.steps.json`); return d ? JSON.parse(new TextDecoder().decode(Uint8Array.from(d))) : null; }, name);
-await call('save', { path: 'C:\\Work\\E.tex' });
+const stepsOf = (name) => page.evaluate((n) => { const d = window.shell.files.get(`C:\\Users\\prof\\Desktop\\opensw projects\\Work\\${n}.steps.json`); return d ? JSON.parse(new TextDecoder().decode(Uint8Array.from(d))) : null; }, name);
+await call('save', { path: 'C:\\Users\\prof\\Desktop\\opensw projects\\Work\\E.tex' });
 let moved = await stepsOf('E');
 check('Save As: the steps are beside the new file', moved && moved.doc === 'E.tex' && Object.keys(moved.lines).join() === Object.keys((await side()).lines).join() && moved.lines.s2.result.status === 'pass', moved && Object.keys(moved.lines));
 r = await call('steps');
-check('... and the open document has them', r.file === 'C:\\Work\\E.steps.json' && row('s2').status === 'pass', r);
+check('... and the open document has them', r.file === 'C:\\Users\\prof\\Desktop\\opensw projects\\Work\\E.steps.json' && row('s2').status === 'pass', r);
 await call('setStep', { name: 's1', note: 'changed in E' });
-await call('save', { path: 'C:\\Work\\D.tex' });
+await call('save', { path: 'C:\\Users\\prof\\Desktop\\opensw projects\\Work\\D.tex' });
 check('a steps file already beside the name saved to is kept', (await side()).lines.s1.note === '' && (await stepsOf('E')).lines.s1.note === 'changed in E', (await side()).lines.s1);
 
 check('no page errors', errs.length === 0, errs);

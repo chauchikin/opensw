@@ -43,11 +43,25 @@ opensw is a math editor rebuilt after Scientific Word 5.5. Its menus, shortcuts 
 
 \begin{itemize}
 \item Open: 6.x .sci, 5.x .tex and exam templates (.qiz) all work.
-\item Save: the main format is 5.x .tex (5.5 can open it; Chinese is saved in Big5). An opened .tex is saved back to the same file, keeping a .bak first; if nothing changed, it is not rewritten. A document opened from a .sci is saved as .sci.
+\item Save: the main format is 5.x .tex (5.5 can open it; Chinese is saved in Big5). An opened .tex is saved back to the same file (in the desktop app: the copy opensw works on, see below), keeping a .bak first; if nothing changed, it is not rewritten. A document opened from a .sci is saved as .sci.
 \item Save as .sci: the 6.x format, for those who need it.
 \item Before saving over an old file, a .bak copy is kept (it can be turned off in Tools \TEXTsymbol{>} User setup).
 \item Open location: an address ending in .tex or .sci opens here; other addresses open in the browser. Add ${'`'}${'`'} as .tex'' after an address to open a file without a .tex ending as a document.
 \item Recent files (desktop app), Samples, Document info (words, formulas, pictures).
+\end{itemize}
+
+\subsection{Where documents are kept (desktop app)}
+
+Opening a file imports it: opensw copies the file, with the pictures and other files it uses, into a folder of its own, and you work on the copy. opensw does not change the file you opened: saving writes the copy. (The file you opened is written only if you choose that very file yourself in File \TEXTsymbol{>} Save As; an AI can never write it.)
+
+\begin{itemize}
+\item The copies are in the projects folder: ${'`'}${'`'}opensw projects'' on the Desktop (Tools \TEXTsymbol{>} User Setup can name another folder). Each document has a folder there, named after the file and the day it was imported.
+\item The status bar always shows where the open document is. Click it, or use File \TEXTsymbol{>} Open Document Folder, to see the document in its folder. The folder is also shown after the first save of a document and after every Save As (Tools \TEXTsymbol{>} User Setup: always, or never).
+\item Opening the same file again: opensw offers the copy you worked on, or a new copy, and says so when the original has changed since it was imported.
+\item Save writes the copy. Save As under another name in the document's own folder goes on under that name; Save As to another place in the projects folder gives the document a new folder of its own. Save As to a place outside the projects folder writes a copy there, and you go on working on the document in the projects folder. That copy is the document file alone, without the pictures and sub-documents it uses; Tools \TEXTsymbol{>} Document Manager \TEXTsymbol{>} Copy takes those along. A new document gets its own folder there at its first save, wherever you point.
+\item A LaTeX file that 5.x did not write is saved as a 5.x file over the copy; the LaTeX as it was imported stays in the records.
+\item The records: each document's folder has a folder ${'`'}${'`'}opensw records'' with three plain text files. Change log.txt: the import, every change an AI made (with the text before and after), every save. File map.txt: what is in the folder and where the document came from. Handoff notes.txt: what an AI left for whoever goes on with the work. The file as it was imported is kept there too, in Original; opensw does not open that file or save over it (opening it makes a new copy). A folder is a project only when it has these records: a file in any other folder of the projects folder is imported like a file from anywhere.
+\item When a file cannot be imported (for example the disk is full) opensw asks; you can then open the original itself, and saving writes into that file.
 \end{itemize}
 
 \subsection{Fragments}
@@ -157,7 +171,7 @@ A fragment is a saved piece of text and formulas that can be put into any docume
 
 \section{Compute}
 
-Put the cursor in a formula and choose an action from the Compute menu. The result follows the formula. Computing uses SymPy, which takes a few seconds to load the first time; in the desktop app, Tools > Engine Setup can switch to Mathematica installed on this computer. Computing is opensw's own: 5.5 computed with MuPAD, which opensw does not have, so an answer may be written in a different (equal) form from 5.5's, and some commands may give more or fewer answers.
+Put the cursor in a formula and choose an action from the Compute menu. The result follows the formula. In the desktop app, computing is done by SymPy, with Giac and FriCAS built in for integrals, power series and large determinants; all three come with opensw, so there is nothing to install. The web version uses SymPy only, which takes a few seconds to load the first time. Mathematica is optional: if it is installed on this computer, Tools > Engine Setup can make it compute first. Computing is opensw's own: 5.5 computed with MuPAD, which opensw does not have, so an answer may be written in a different (equal) form from 5.5's, and some commands may give more or fewer answers.
 
 \includegraphics{manual/en/menu-compute.png}
 
@@ -251,7 +265,7 @@ Online quiz (a box in the dialog): one version is also saved as a web page to an
 \item Automatic substitution: a string of letters typed in a formula (for example sum10) becomes a formula. It can be turned off.
 \item User setup: default matrix and table sizes, the document shown when the program opens, keeping .bak files, the formula color, the interface language.
 \item Export settings: MathML or MathJax for formulas in HTML; the resolution of Copy as picture.
-\item Engine setup: choose SymPy or Mathematica (desktop app, installed on the computer) and see the versions. Lean setup: the Lean project folder.
+\item Engine setup: SymPy with Giac and FriCAS needs no setting; choose Mathematica (optional, installed on the computer) to compute first, and see the engine's version. Lean setup: the Lean project folder.
 \item Engine setup also holds the settings that change answers, as 5.5's computation setup: Solve gives the principal value only; the base for the log function changes from $e$ to $10$ ($\log x$ is then $\log_{10}x$, and Evaluate shows it so; $\ln$ stays the natural logarithm); the basis variables of vector calculus and $\nabla$ (default $x,y,z$).
 \end{itemize}
 
@@ -303,7 +317,7 @@ In the desktop app, an AI app such as Claude or ChatGPT can read the open docume
 \item While the AI works the status bar says so, and the paragraphs it changed are tinted. Edit $>$ Undo AI Changes (or the button in the status bar) puts the document back as it was, in one step.
 \end{enumerate}
 
-The AI can open and save only in the open document's folder, Documents\textbackslash{}opensw (where it can save a new document without asking) and the folders allowed in Tools $>$ User Setup; anywhere else opensw asks you first. It saves only .tex and .sci files. The details for setting it up by hand are in docs/AI.md in the source code.
+The AI can open files only in the projects folder (see ${'`'}${'`'}Where documents are kept''), the open document's folder and the folders allowed in Tools $>$ User Setup; anywhere else opensw asks you first. A file it opens is imported like any other: it works on the copy. It saves only in the projects folder, and only .tex and .sci files: a copy anywhere else is yours to make, with File $>$ Save As. What it changed is written in the document's Change log.txt, and it can leave Handoff notes.txt for whoever goes on with the work. The details for setting it up by hand are in docs/AI.md in the source code.
 
 On a computer where no AI app can be installed, or in a script, the same commands can be typed in a terminal with opensw-cli.exe, which is next to opensw.exe. For example, opensw-cli help lists the commands, and opensw-cli save saves the open document. They go to the open editor (it opens if it is not running), with the same folders allowed.
 

@@ -1,5 +1,5 @@
 (* Mathematica engine of opensw: the same Compute menu as opensw_compute.py, done by a
-   Wolfram kernel on the user's computer (Tools > Computation Engine > Mathematica).
+   Wolfram kernel on the user's computer (Tools > Engine Setup > Mathematica).
 
    The desktop app keeps one kernel running and sends it lines like
      OpenSW`OpenSWCompute["factor", "<base64 of the MathJSON text>"]

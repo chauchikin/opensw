@@ -1,4 +1,4 @@
-//! Tools > Computation Engine: the Compute menu done by a program on this computer
+//! Tools > Engine Setup: the Compute menu done by a program on this computer
 //! (Mathematica, or any engine listed in engine/engines.json; see ENGINE.md). Each engine's
 //! program is kept running, so only the first computation waits for it to start. The program
 //! loads an adapter file from engine/; each computation is one line in and one line out, both
@@ -29,7 +29,7 @@ pub struct Spec {
     pub name: String,
     /// where to look for the program; the newest version found wins (see find_program)
     pub program: Vec<String>,
-    /// a path shown in Tools > Computation Engine as an example
+    /// a path shown in Tools > Engine Setup as an example
     #[serde(default)]
     pub example: String,
     #[serde(default)]
@@ -190,7 +190,7 @@ impl Running {
         }
         let mut child = cmd
             .spawn()
-            .map_err(|e| format!("Cannot find {name} ({}): {e}. Its location can be set in Tools > Computation Engine", program.display()))?;
+            .map_err(|e| format!("Cannot find {name} ({}): {e}. Its location can be set in Tools > Engine Setup", program.display()))?;
         let input = child.stdin.take().ok_or(format!("{name} has no input pipe"))?;
         let mut output = BufReader::new(child.stdout.take().ok_or(format!("{name} has no output pipe"))?);
         let (send, lines) = mpsc::channel();

@@ -10,7 +10,8 @@ OPENSW_GIAC=0 in the environment turns it off. In Pyodide there are no processes
 
 Only formulas are sent, never definitions or assumptions: a formula goes out only when every
 part of it is of a kind listed here (to_giac), under made-up variable names, and an answer is
-taken only when every name in it is known (from_giac) and it passes a check with numbers."""
+taken only when every name in it is known (from_giac) and it passes numerical checks, plus
+a symbolic derivative proof for indefinite integrands with branch-risk structure."""
 import importlib.util
 import os
 import queue
@@ -293,32 +294,87 @@ def points(symbols):
     return out
 
 
-def numbers(exprs, symbols):
-    """The values (mpmath) of the expressions at each point; None where one has no value."""
-    symbols = sorted(symbols, key=str)
-    f = sp.lambdify(symbols, list(exprs), "mpmath")
-    out = []
-    for values in points(symbols):
-        try:
-            out.append([mpmath.mpmathify(v) for v in f(*[values[s] for s in symbols])])
-        except Exception:  # a pole, a function mpmath has not ..
-            out.append(None)
-    return out
+def close(a, b, digits, floor=0):
+    """Do a and b agree to `digits` digits? floor: the size below which both count as 0 (for a
+    definite integral, whose value can be 0 itself: quadrature leaves noise there)."""
+    return mpmath.isfinite(a) and mpmath.isfinite(b) and abs(a - b) <= mpmath.mpf(10) ** -digits * max(floor, abs(a), abs(b))
 
 
-def close(a, b, digits):
-    return mpmath.isfinite(a) and mpmath.isfinite(b) and abs(a - b) <= mpmath.mpf(10) ** -digits * max(1, abs(a), abs(b))
+# values for the variable of an indefinite integral, to check an antiderivative with: one can be
+# right on part of the line only (FriCAS's x^2/2 + x for sqrt(x^2 + 2x + 1) = |x + 1|, right for
+# x > -1, passed at the two values of POINTS), so both signs and sizes from about 0.1 to 10, not
+# special numbers; fixed, so that answers are the same each time
+VARIABLE_POINTS = ("0.1173", "-0.1931", "0.3530", "-0.4130", "0.6170", "-0.7310", "1.1030", "-1.2970", "1.5690",
+                   "-1.8710", "2.3170", "-2.7590", "3.4430", "-4.1590", "5.2710", "-6.3830", "7.7290", "-9.4370")
+# a point where a side has no value (a pole, a function mpmath has not) is no evidence; with
+# fewer than a third of the points left there is not enough to go on and the answer is no
+MIN_VALUED = 6
 
 
-def same_function(a, b):
-    """Are a and b the same at every check point (to 20 digits); a point where either has no
-    value is no evidence, and with fewer than two points left the answer is no."""
+def branch_risk(f):
+    """Roots/fractional powers of repeated symbolic factors, or Abs/sign.
+    Factor over all symbols, including parameters. This deliberately does not find hidden
+    squares such as 1-cos(x) or 1+sin(x): numerical checking alone is not a branch proof.
+    """
+    if f.has(sp.Abs, sp.sign):
+        return True
+    for n in sp.preorder_traversal(f):
+        if not n.is_Pow or n.exp.is_integer is True or not n.base.free_symbols:
+            continue
+        base = sp.factor(n.base, extension=True)
+        if any(t.is_Pow and t.exp.is_Integer and abs(t.exp) >= 2 and t.base.free_symbols
+               for t in sp.Mul.make_args(base)):
+            return True
+    return False
+
+
+def same_derivative(r, f, x):
+    """Numerical sieve, plus a symbolic proof for branch-risk integrands.
+    No assumptions are added and powers are never forcibly denested. Ordinary integrands
+    still get numerical checking only, not a proof. Parameter signs vary independently of x.
+    Undefined f and values below the working precision give no evidence; a finite f with an
+    undefined derivative rejects the candidate. At least MIN_VALUED comparisons are needed.
+    """
+    d = sp.diff(r, x)
+    if branch_risk(f) and sp.simplify(d - f) != 0:
+        return False
+    others = sorted((d.free_symbols | f.free_symbols) - {x}, key=str)
+    rows = points(others)
+    # The second column of POINTS used to stay positive, and its row was selected by the
+    # parity of x's index. Test each row at every x, with either sign of every parameter.
+    rows += [{s: (-v if not (s.is_nonnegative or s.is_nonpositive) else v) for s, v in row.items()}
+             for row in list(rows)]
+    rows = [dict(row) for row in dict.fromkeys(tuple(row.items()) for row in rows)]
     with mpmath.workdps(30):
         try:
-            rows = [r for r in numbers([a, b], a.free_symbols | b.free_symbols) if r is not None]
-        except Exception:
+            derivative = sp.lambdify([x] + others, d, "mpmath")
+            integrand = sp.lambdify([x] + others, f, "mpmath")
+        except Exception:  # a derivative left undone (of sign(x) ..): nothing can be checked
             return False
-        return len(rows) >= min(2, len(POINTS)) and all(close(x, y, 20) for x, y in rows)
+        valued = 0
+        for text in VARIABLE_POINTS:
+            v = mpmath.mpf(text)
+            v = abs(v) if (x.is_positive or x.is_nonnegative) else -abs(v) if (x.is_negative or x.is_nonpositive) else v
+            for values in rows:
+                args = [v] + [values[s] for s in others]
+                try:
+                    b = mpmath.mpmathify(integrand(*args))
+                except Exception:
+                    continue
+                if not mpmath.isfinite(b):
+                    continue
+                try:
+                    a = mpmath.mpmathify(derivative(*args))
+                except Exception:
+                    return False
+                if not mpmath.isfinite(a):
+                    return False
+                if max(abs(a), abs(b)) < mpmath.mpf(10) ** -mpmath.mp.dps:
+                    continue
+                if not close(a, b, 20):
+                    return False
+                valued += 1
+        return valued >= MIN_VALUED
 
 
 # ---------------------------------------------------------------------------
@@ -342,12 +398,12 @@ def asked(make, read):
 
 def integral(f, limit):
     """The integral of f; limit: (x,) or (x, a, b). None: not by Giac.
-    Indefinite: checked by differentiating. Definite: checked against numerical integration."""
+    Indefinite: checked by differentiating (same_derivative). Definite: checked against numerical integration."""
     x = limit[0]
     if len(limit) == 1:
         def read(text, names):
             r = from_giac(text, names, log_of_abs=False)
-            if not same_function(sp.diff(r, x), f):
+            if not same_derivative(r, f, x):
                 raise Refused(text)
             return sp.Add(*[multiplied_out(term) for term in sp.Add.make_args(r)])
         return asked(lambda names: "integrate(%s,%s)" % (to_giac(f, names), names.name(x)), read)
@@ -387,7 +443,7 @@ def definite_checked(f, x, a, b, r):
                 got, error = mpmath.quad(lambda t: g(t, *vs), [lo, hi], error=True)
             except Exception:
                 continue
-            if error > mpmath.mpf(10) ** -10 * max(1, abs(got)) or not close(got, mpmath.mpmathify(value), 10):
+            if error > mpmath.mpf(10) ** -10 * max(1, abs(got)) or not close(got, mpmath.mpmathify(value), 10, floor=1):
                 return False
             seen += 1
         return seen >= (1 if not symbols else 2)

@@ -18,6 +18,7 @@ import { compute, definitionList, undefineNames, mapName, setOptionsProvider, de
 import { settings, saveSettings } from './settings.js';
 import { odeRows } from './mathjson.js';
 import { plotPages, savePlotPages } from './plot55.js';
+import { inTurn } from './dialogs.js';
 
 // ---------- %TCIDATA{key=...} in a preamble ----------
 const is5x = (p) => p != null && /\\input\s*\{?tcilatex|%TCIDATA/.test(p);
@@ -76,7 +77,7 @@ const mappings = (text) => [...(text || '').matchAll(/\$([^$]+?)\\leftrightarrow
 
 // ---------- Compute > Settings ----------
 // this computer's defaults (5.5: Tools > Computation Setup); Principal Value and the log base are
-// the ones of Tools > Computation Engine
+// the ones of Tools > Engine Setup
 const DEFAULTS = { digits: 5, threshold: 5, trig_ordinary: false, imaginary_j: false, bessel_subscripts: false,
   comp_digits: 10, ode_series_order: 6, max_degree: 3, ignore_special: false, defs_open: 'always', defs_save: 'always' };
 const mine = () => ({ ...DEFAULTS, ...(settings().compute55 || {}) });
@@ -136,7 +137,7 @@ function settings55(ctx) {
     <div class="page55" data-page="2" hidden><fieldset><legend>${_t('Engine Setup (all documents)')}</legend>
       <p>${_t('Digits Used in Computations:')} ${num('d-cdig', m.comp_digits)}　${_t('Series Order for ODE Solutions:')} ${num('d-ser', m.ode_series_order)}</p>
       <p>${_t('Solve Options')}: ${_t('Maximum Degree:')} ${num('d-deg', m.max_degree)}　${chk('d-pv', settings().solvePrincipal, _t('Principal Value Only'))}　${chk('d-isc', m.ignore_special, _t('Ignore Special Cases'))}</p>
-      <p class="d-note">${_t('The engine itself is chosen in Tools > Computation Engine.')}</p>
+      <p class="d-note">${_t('The engine itself is chosen in Tools > Engine Setup.')}</p>
     </fieldset></div>
     ${plots.map(([t, html], i) => `<div class="page55" data-page="${i + 3}" hidden><fieldset><legend>${t}</legend>${html}</fieldset></div>`).join('')}`, (b) => {
     const plotError = savePlotPages(b, app);
@@ -209,14 +210,10 @@ async function restoreDefinitions(app) {
   }
   return { n, failed };
 }
-// a yes/no question (Definition Options: Ask for Confirmation)
+// a yes/no question (Definition Options: Ask for Confirmation), shown in its turn (dialogs.js: the
+// document may just have been imported, with a dialog of its own). Cancel, which closes it, is no
 function ask(ctx, title, text) {
-  return new Promise((resolve) => {
-    ctx.dialog(title, `<p>${text}</p>`, () => resolve(true));
-    const cancel = document.querySelector('#dialog-cancel');
-    const before = cancel.onclick;
-    cancel.onclick = (e) => { before?.(e); resolve(false); };
-  });
+  return inTurn((answer) => ctx.dialog(title, `<p>${text}</p>`, () => answer(true)), false);
 }
 const whenTo = (meta, which) => (docDefOptions(meta) || {})[which] || mine()[which === 'open' ? 'defs_open' : 'defs_save'];
 
